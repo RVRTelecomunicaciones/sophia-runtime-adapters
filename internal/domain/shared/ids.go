@@ -4,6 +4,7 @@
 package shared
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -71,6 +72,74 @@ func (r ReceiptID) String() string      { return r.v }
 func (h HandleID) String() string       { return h.v }
 func (c CorrelationID) String() string  { return c.v }
 func (k IdempotencyKey) String() string { return k.v }
+
+// MarshalJSON encodes the ReceiptID as a JSON string.
+func (r ReceiptID) MarshalJSON() ([]byte, error) { return json.Marshal(r.v) }
+
+// UnmarshalJSON decodes a JSON string and validates it via NewReceiptID.
+func (r *ReceiptID) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	parsed, err := NewReceiptID(s)
+	if err != nil {
+		return err
+	}
+	*r = parsed
+	return nil
+}
+
+// MarshalJSON encodes the HandleID as a JSON string.
+func (h HandleID) MarshalJSON() ([]byte, error) { return json.Marshal(h.v) }
+
+// UnmarshalJSON decodes a JSON string and validates it via NewHandleID.
+func (h *HandleID) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	parsed, err := NewHandleID(s)
+	if err != nil {
+		return err
+	}
+	*h = parsed
+	return nil
+}
+
+// MarshalJSON encodes the CorrelationID as a JSON string.
+func (c CorrelationID) MarshalJSON() ([]byte, error) { return json.Marshal(c.v) }
+
+// UnmarshalJSON decodes a JSON string and validates it via NewCorrelationID.
+func (c *CorrelationID) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	parsed, err := NewCorrelationID(s)
+	if err != nil {
+		return err
+	}
+	*c = parsed
+	return nil
+}
+
+// MarshalJSON encodes the IdempotencyKey as a JSON string.
+func (k IdempotencyKey) MarshalJSON() ([]byte, error) { return json.Marshal(k.v) }
+
+// UnmarshalJSON decodes a JSON string and validates it via NewIdempotencyKey.
+func (k *IdempotencyKey) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	parsed, err := NewIdempotencyKey(s)
+	if err != nil {
+		return err
+	}
+	*k = parsed
+	return nil
+}
 
 func validateULID(s string) error {
 	if !ulidRegex.MatchString(s) {
