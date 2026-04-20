@@ -2,9 +2,7 @@ package services
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"runtime/debug"
 	"time"
 
 	"github.com/sophia-ecosystem/runtime-adapters/internal/domain/execution/entities"
@@ -157,7 +155,7 @@ func (s *ExecuteService) Execute(ctx context.Context, req entities.ExecutionRequ
 	}
 
 	tStart := s.clock.Now()
-	raw, adapterErr := s.safeExecute(execCtx, adapter, cap, req.Payload())
+	raw, adapterErr := SafeExecute(execCtx, adapter, cap, req.Payload())
 	tEnd := s.clock.Now()
 
 	// After the adapter returns, we may need to persist even when ctx (or
@@ -169,7 +167,7 @@ func (s *ExecuteService) Execute(ctx context.Context, req entities.ExecutionRequ
 
 	// Step 7b: classify ctx outcome.
 	if execCtx.Err() != nil {
-		raw = s.ctxOutcomeFor(execCtx.Err(), raw)
+		raw = ctxOutcomeFor(execCtx.Err(), raw)
 		adapterErr = nil
 	}
 	if adapterErr != nil && raw == nil {
@@ -255,59 +253,6 @@ func (s *ExecuteService) Execute(ctx context.Context, req entities.ExecutionRequ
 	return saved, nil
 }
 
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
-// minDuration returns the minimum of non-zero durations. Ignores zero or
-// negative values (treated as "no cap from this source"). Returns 0 when
-// all inputs are ≤ 0.
-func minDuration(ds ...time.Duration) time.Duration {
-	var min time.Duration
-	for _, d := range ds {
-		if d <= 0 {
-			continue
-		}
-		if min == 0 || d < min {
-			min = d
-		}
-	}
-	return min
-}
-
-// safeExecute wraps adapter.Execute with panic recovery. On panic returns
-// (panicRaw, nil). On a structural Go error returns (nil, err).
-func (s *ExecuteService) safeExecute(
-	ctx context.Context,
-	a outbound.Adapter,
-	cap valueobjects.Capability,
-	p valueobjects.Payload,
-) (raw domainservices.AdapterRawOutcome, err error) {
-	defer func() {
-		if rec := recover(); rec != nil {
-			raw = &panicRaw{
-				recoveredValue: rec,
-				stack:          truncateStack(debug.Stack(), 4096),
-			}
-			err = nil
-		}
-	}()
-	return a.Execute(ctx, cap, p)
-}
-
-// ctxOutcomeFor translates a context error into an AdapterRawOutcome that
-// carries the right ErrorClass. Overrides the adapter's raw when the
-// caller's ctx is the source of truth.
-func (s *ExecuteService) ctxOutcomeFor(ctxErr error, fallback domainservices.AdapterRawOutcome) domainservices.AdapterRawOutcome {
-	switch {
-	case errors.Is(ctxErr, context.DeadlineExceeded):
-		return &ctxRaw{kind: ctxKindTimeout, ctxErr: ctxErr}
-	case errors.Is(ctxErr, context.Canceled):
-		return &ctxRaw{kind: ctxKindCancelled, ctxErr: ctxErr}
-	}
-	return fallback
-}
-
 // persistStructural builds a receipt for a pre-adapter failure (capability
 // unknown, timeout ≤ 0, handle generation, etc.), persists it, and returns
 // it. On persistence error returns the wrapped error per A4.3.
@@ -350,57 +295,3 @@ func (s *ExecuteService) persistStructural(
 	}
 	return saved, nil
 }
-
-// mustBuildTimings constructs a Timings value directly using exact
-// timestamps from the flow rather than "now" at each mark point.
-func mustBuildTimings(submitted, started, completed time.Time, persisted *time.Time) entities.Timings {
-	return entities.Timings{
-		SubmittedAt: submitted.UTC(),
-		StartedAt:   started.UTC(),
-		CompletedAt: completed.UTC(),
-		PersistedAt: persisted,
-	}
-}
-
-// truncateStack returns a copy of b limited to max bytes.
-func truncateStack(b []byte, max int) []byte {
-	if len(b) <= max {
-		cp := make([]byte, len(b))
-		copy(cp, b)
-		return cp
-	}
-	cp := make([]byte, max)
-	copy(cp, b[:max])
-	return cp
-}
-
-// ---------------------------------------------------------------------------
-// Internal raw-outcome types (application-layer only; not registered with
-// ResultNormalizer — dispatched directly by the Execute switch, Option A).
-// ---------------------------------------------------------------------------
-
-// panicRaw implements services.AdapterRawOutcome and carries a recovered
-// panic value plus truncated stack for diagnostics.
-type panicRaw struct {
-	recoveredValue any
-	stack          []byte
-	structuralErr  error
-}
-
-func (*panicRaw) IsAdapterRawOutcome() {}
-
-type ctxKind int
-
-const (
-	ctxKindTimeout   ctxKind = iota
-	ctxKindCancelled ctxKind = iota
-)
-
-// ctxRaw implements services.AdapterRawOutcome and carries a context
-// error with a pre-classified kind (timeout vs cancelled).
-type ctxRaw struct {
-	kind   ctxKind
-	ctxErr error
-}
-
-func (*ctxRaw) IsAdapterRawOutcome() {}
