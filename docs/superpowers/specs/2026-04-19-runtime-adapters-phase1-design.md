@@ -7,8 +7,6 @@
 **Stack**: Go, PostgreSQL, `go-git`, OpenTelemetry, hexagonal/clean architecture
 **Purpose**: Close the design of `runtime-adapters` with the same rigor used for `agent-governance-core`. This document is self-contained — it consolidates 13 sections of brainstorming, each with closed decisions (`Dn.m`) and post-approval adjustments (`An.m`). No code, no implementation plan — **only the spec**.
 
-> ⚠️ **Authoring context**: this file was written inside the working directory of another repo (`agent-governance-core`) by operational accident. It is intended to be moved to a freshly-created `runtime-adapters` repository. Any folder paths referenced below describe the **target** layout, not the current filesystem.
-
 ---
 
 ## Table of contents
