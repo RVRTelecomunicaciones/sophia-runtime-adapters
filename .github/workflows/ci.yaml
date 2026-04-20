@@ -1,0 +1,64 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint-unit-contract:
+    name: lint + unit + contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: true
+      - name: vet
+        run: go vet ./...
+      - name: lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+      - name: unit
+        run: make test-unit
+      - name: contract
+        run: make test-contract
+      - name: coverage gate — domain + application
+        run: |
+          go tool cover -func=coverage.out > cov.txt
+          cat cov.txt
+          awk '
+            /^(github\.com\/sophia-ecosystem\/runtime-adapters\/internal\/(domain|application))/ {
+              match($3, /[0-9.]+/); val=substr($3, RSTART, RLENGTH)+0;
+              if (val < 85) { print "coverage gate failed:", $1, val; exit 1 }
+            }
+          ' cov.txt
+        if: ${{ !cancelled() }}
+
+  integration:
+    name: integration (PR only)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: true
+      - name: integration
+        run: make test-integration
+
+  e2e:
+    name: e2e (main only)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: true
+      - name: e2e
+        run: make test-e2e
