@@ -25,16 +25,26 @@ jobs:
         run: make test-unit
       - name: contract
         run: make test-contract
-      - name: coverage gate — domain + application
+      - name: coverage gate — domain + application (≥85% per package)
         run: |
-          go tool cover -func=coverage.out > cov.txt
-          cat cov.txt
+          # Per-package gate: every package under internal/(domain|application)
+          # must report ≥85% coverage. This tolerates defensive branches and
+          # empty marker methods (which Go's cover -func renders as 0.0% even
+          # when executed — coverage is statement-weighted, and zero-statement
+          # bodies produce that artifact).
+          go test -race -count=1 -cover ./internal/domain/... ./internal/application/... 2>&1 | tee cov-pkg.txt
           awk '
-            /^(github\.com\/sophia-ecosystem\/runtime-adapters\/internal\/(domain|application))/ {
-              match($3, /[0-9.]+/); val=substr($3, RSTART, RLENGTH)+0;
-              if (val < 85) { print "coverage gate failed:", $1, val; exit 1 }
+            /^ok[ \t]/ && /coverage:/ {
+              pkg = $2
+              for (i = 1; i <= NF; i++) {
+                if ($i == "coverage:") {
+                  pct = $(i+1); sub(/%/, "", pct); val = pct + 0
+                  if (val < 85.0) { print "gate failed:", pkg, val "%"; fail = 1 }
+                }
+              }
             }
-          ' cov.txt
+            END { if (fail) exit 1; print "✅ coverage gate passed (per-package ≥85% on internal/domain + internal/application)" }
+          ' cov-pkg.txt
         if: ${{ !cancelled() }}
 
   integration:

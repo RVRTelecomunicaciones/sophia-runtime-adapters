@@ -174,6 +174,11 @@ func TestErrorClass_DefaultRetryHint_AllMappings(t *testing.T) {
 		{valueobjects.ErrInterrupted, valueobjects.HintRetryable},
 		{valueobjects.ErrNormalizationFailure, valueobjects.HintNonRetryable},
 		{valueobjects.ErrAdapterInternalError, valueobjects.HintNonRetryable},
+		// Defensive default-branch coverage: an ErrorClass value outside the
+		// 10-entry closed set (only constructible by bypassing the Parse
+		// constructor) falls through to HintUnknown.
+		{valueobjects.ErrorClass("synthetic_unknown_class"), valueobjects.HintUnknown},
+		{valueobjects.ErrorClass(""), valueobjects.HintUnknown},
 	}
 
 	for _, tt := range tests {
