@@ -1047,7 +1047,7 @@ git commit -m "feat(domain/vo): add ExecutionStatus, RetryHint, ErrorClass close
 **Files:**
 - Create: `internal/domain/execution/valueobjects/adapter_id.go` + `_test.go`
 
-- [ ] **Step 1: Test regex (D3.6) — valid `shell`, `git`, `filesystem`, `httpreq`; invalid uppercase, too-short, too-long, leading digit**
+- [ ] **Step 1: Test regex (D3.6) — valid `shell`, `git`, `filesystem`, `http`; invalid uppercase, too-short, too-long, leading digit**
 
 - [ ] **Step 2: Implement `AdapterID` as struct wrapping validated string**
 
@@ -1661,7 +1661,7 @@ func NewPhase1Capabilities() ([]Capability, error) {
 	shellID, _ := NewAdapterID("shell")
 	gitID, _   := NewAdapterID("git")
 	fsID, _    := NewAdapterID("filesystem")
-	httpID, _  := NewAdapterID("httpreq") // wire name "http.request@v1" still uses subspace
+	httpID, _  := NewAdapterID("http") // wire name = "http.request@v1"; Go package is `httpreq/` (avoids net/http clash) but AdapterID is the external `"http"`.
 	must := func(c Capability, err error) Capability { if err != nil { panic(err) }; return c }
 	return []Capability{
 		must(NewCapability(shellID, "exec",        "v1", false, 30*time.Second)),
@@ -1676,7 +1676,7 @@ func NewPhase1Capabilities() ([]Capability, error) {
 }
 ```
 
-> **Note on wire names:** the adapter package lives at `internal/adapters/outbound/httpreq/` to avoid shadowing Go's `net/http`, but the `AdapterID` string is `"httpreq"`. The canonical wire form for the HTTP capability is therefore `"httpreq.request@v1"`. If the spec expects literal `"http.request@v1"` on the wire (§5.4 table), override `AdapterID.String()` via an exported mapping, OR rename the adapter folder to `httpadp/`. **Flag this at T1 for user decision; default behavior here is `httpreq.request@v1` on the wire.**
+> **Wire name — decided:** external contract is `AdapterID = "http"` and canonical `http.request@v1` exactly as specified in §5.4. The Go package and directory remain `internal/adapters/outbound/httpreq/` purely as an internal detail to avoid shadowing Go's stdlib `net/http`. This is a deliberate split between **external identity** (the AdapterID string, observable on the wire and in receipts) and **internal package name** (Go-only, never observable). No alias machinery is introduced — the adapter's `ID()` method simply returns `NewAdapterID("http")` despite living in package `httpreq`. This resolves Gap-1.
 
 - [ ] **Step 3 — 4: Green + commit**
 
@@ -2596,7 +2596,7 @@ git commit -m "test(adapter/filesystem): apply AdapterContractTestSuite"
 - [ ] **Step 3: Commit**
 
 ```bash
-git commit -m "feat(adapter/httpreq): add SSRF helper (private-IP block by default, configurable override)"
+git commit -m "feat(adapter/http): add SSRF helper (private-IP block by default, configurable override)"
 ```
 
 ---
@@ -2642,7 +2642,7 @@ type RequestPayload struct {
 - [ ] **Step 6: Commit**
 
 ```bash
-git commit -m "feat(adapter/httpreq): implement http.request@v1 (strict SSRF, TLS verify, redirect cap, status mapping)"
+git commit -m "feat(adapter/http): implement http.request@v1 (strict SSRF, TLS verify, redirect cap, status mapping)"
 ```
 
 ---
@@ -2673,7 +2673,7 @@ func RegisterAllPhase1(
 	normalizer.Register("git.commit@v1",            g.NormalizeCommit)
 	normalizer.Register("filesystem.read_file@v1",  f.NormalizeRead)
 	normalizer.Register("filesystem.write_file@v1", f.NormalizeWrite)
-	normalizer.Register("httpreq.request@v1",       h.Normalize)
+	normalizer.Register("http.request@v1",          h.Normalize)
 
 	return map[vo.AdapterID]outbound.Adapter{
 		s.ID(): s, g.ID(): g, f.ID(): f, h.ID(): h,
@@ -3458,7 +3458,7 @@ Walk each spec section and confirm a task (or explicit deferral) covers it.
 
 **Gaps found during self-review:**
 
-- **Gap-1: HTTP wire name `http.request@v1` vs folder `httpreq`.** T24 flags this with a default (wire = `httpreq.request@v1`). If the spec §5.4 requires literal `http.request@v1` on the wire, add a single-task addendum: either rename the package to `httpadp` (cheapest) or add an `AdapterID.Alias()` / canonical override. **Flag this at T1 for user confirmation.**
+- **Gap-1 (RESOLVED 2026-04-20):** HTTP wire name. Decision: external contract is `AdapterID = "http"` and canonical `http.request@v1` exactly as §5.4 specifies; the Go package remains `internal/adapters/outbound/httpreq/` as an internal-only name to avoid `net/http` shadowing. No alias machinery — the adapter's `ID()` returns `NewAdapterID("http")` inside package `httpreq`. See T24 for the capability catalog and T44–T46 for adapter wiring and commit scopes.
 - **Gap-2: Spec does not fix the HTTP address / port default.** Plan assumes `:8080` at T56. If the spec reserves a different default, override there.
 - **Gap-3: `docs/skills-roadmap.md`** mentioned in §7.3 — add as a deferred doc at T7 (list Phase 2A–F tracks) or explicitly note as out-of-scope in CLAUDE.md. Recommended: add one-paragraph section inside `AGENTS.md` listing the 6 reserved tracks.
 

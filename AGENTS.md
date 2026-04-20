@@ -63,7 +63,7 @@ A dedicated `docs/skills-roadmap.md` is deferred until a track activates (§7.3 
 ```
 
 - Types: `feat`, `fix`, `chore`, `ci`, `docs`, `test`
-- Scope = layer or adapter name: `shell`, `git`, `filesystem`, `httpreq`, `domain`, `ports`, `application`, `bootstrap`, `ci`, `docs`
+- Scope = layer or adapter name: `shell`, `git`, `filesystem`, `http`, `domain`, `ports`, `application`, `bootstrap`, `ci`, `docs`
 - Subject: imperative mood, lowercase, ≤ 72 chars, no period
 - Body: include only when the rationale is not obvious from the diff
 

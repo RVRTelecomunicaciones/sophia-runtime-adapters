@@ -64,7 +64,7 @@ Every execution gets three guarantees: a **contract** (caller knows exactly what
 
 ## Output style
 
-Conventional commits (`feat(scope)`, `fix(scope)`, `chore(scope)`, `docs(scope)`, `test(scope)`). Never `Co-Authored-By` or any AI attribution. Scope = layer or adapter name (`shell`, `git`, `filesystem`, `httpreq`, `domain`, `ports`, `application`, `bootstrap`, `ci`, `docs`). Terse technical prose in docs; one sentence per principle; no filler.
+Conventional commits (`feat(scope)`, `fix(scope)`, `chore(scope)`, `docs(scope)`, `test(scope)`). Never `Co-Authored-By` or any AI attribution. Scope = layer or adapter name (`shell`, `git`, `filesystem`, `http`, `domain`, `ports`, `application`, `bootstrap`, `ci`, `docs`). Terse technical prose in docs; one sentence per principle; no filler.
 
 ## Never-do list
 

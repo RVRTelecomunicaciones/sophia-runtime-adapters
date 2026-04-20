@@ -2,7 +2,9 @@
 
 ## Overview
 
-`runtime-adapters` follows hexagonal (clean) architecture. There is one bounded context — `execution` — and one aggregate root — `ExecutionReceipt`. Inbound adapters (HTTP, SDK) depend on inbound port interfaces; application services depend on outbound port interfaces; concrete outbound adapters (shell, git, filesystem, httpreq) and PostgreSQL implementations depend on nothing inside the domain. The dependency arrow always points inward, toward the domain.
+`runtime-adapters` follows hexagonal (clean) architecture. There is one bounded context — `execution` — and one aggregate root — `ExecutionReceipt`. Inbound adapters (HTTP, SDK) depend on inbound port interfaces; application services depend on outbound port interfaces; concrete outbound adapters (shell, git, filesystem, http) and PostgreSQL implementations depend on nothing inside the domain. The dependency arrow always points inward, toward the domain.
+
+> **Naming note:** the HTTP outbound adapter has external `AdapterID = "http"` (per spec §5.4, canonical `http.request@v1`). Its Go package lives under `internal/adapters/outbound/httpreq/` purely to avoid shadowing the stdlib `net/http` at import sites. The `httpreq` directory name is an internal-only detail and is not observable on the wire or in receipts.
 
 ## Dependency diagram
 
@@ -24,7 +26,7 @@
 │ adapters/outbound   pg               (future)                   │
 │ (shell, git,       (receipts,                                   │
 │  filesystem,        idempotency)                                │
-│  httpreq)                                                       │
+│  http [pkg:httpreq])                                            │
 └─────────────────────────────────────────────────────────────────┘
 
         domain/  (execution entities, VOs, ResultNormalizer, shared)
