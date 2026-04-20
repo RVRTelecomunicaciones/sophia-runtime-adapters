@@ -1,0 +1,29 @@
+run:
+  timeout: 5m
+  go: "1.22"
+  tests: true
+
+linters:
+  disable-all: true
+  enable:
+    - errcheck
+    - errorlint
+    - gocritic
+    - gofmt
+    - goimports
+    - gosec
+    - govet
+    - ineffassign
+    - misspell
+    - revive
+    - staticcheck
+    - unused
+
+linters-settings:
+  gosec:
+    excludes:
+      - G104 # errcheck covers it
+  revive:
+    rules:
+      - name: exported
+        disabled: true # we'll add doc.go files later
