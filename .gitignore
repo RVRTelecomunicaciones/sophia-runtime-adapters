@@ -1,0 +1,24 @@
+# Binaries
+/bin/
+/dist/
+runtime-adapters
+*.exe
+
+# Go
+*.test
+*.out
+coverage.out
+coverage.html
+
+# Env / local
+.env
+.env.local
+.direnv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
