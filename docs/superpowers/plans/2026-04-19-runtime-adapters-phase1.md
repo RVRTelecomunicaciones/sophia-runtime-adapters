@@ -7,7 +7,7 @@
 **Architecture:** Hexagonal / clean architecture with one bounded context (`execution`). Single aggregate root `ExecutionReceipt`. Rigid separation between adapter-specific `AdapterRawOutcome` (never crosses the domain boundary) and normalized `ExecutionResult`. `context.Context` is the sole mechanism for timeout / cancellation. Runtime never retries — it emits a `RetryHint` as signal and persists the receipt before returning. All decisions (`Dn.m`) and adjustments (`An.m`) are frozen in `docs/superpowers/specs/2026-04-19-runtime-adapters-phase1-design.md`.
 
 **Tech Stack:**
-- Language: Go `1.22+`
+- Language: Go `1.26+` (toolchain pinned to `go1.26.2`)
 - DB: PostgreSQL `15+` via `jackc/pgx/v5`
 - HTTP router: `go-chi/chi/v5`
 - Git: `go-git/go-git/v5` (D8.7 — no hooks in Phase 1)
@@ -221,7 +221,7 @@ cd /Users/russell/Documents/2026/sophia-runtime-adapters
 git init -b main
 go mod init github.com/sophia-ecosystem/runtime-adapters
 ```
-Expected: `.git/` created; `go.mod` contains `module github.com/sophia-ecosystem/runtime-adapters` and `go 1.22`.
+Expected: `.git/` created; `go.mod` contains `module github.com/sophia-ecosystem/runtime-adapters` and `go 1.26` with `toolchain go1.26.2`.
 
 - [ ] **Step 3: Write `.gitignore`**
 
@@ -453,7 +453,7 @@ git commit -m "chore: add Makefile with test/lint/build targets"
 ```yaml
 run:
   timeout: 5m
-  go: "1.22"
+  go: "1.26"
   tests: true
 
 linters:
@@ -526,7 +526,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.26"
           cache: true
       - name: vet
         run: go vet ./...
@@ -558,7 +558,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.26"
           cache: true
       - name: integration
         run: make test-integration
@@ -571,7 +571,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.26"
           cache: true
       - name: e2e
         run: make test-e2e
@@ -593,7 +593,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: { go-version: "1.22", cache: true }
+        with: { go-version: "1.26", cache: true }
       - name: gosec
         uses: securego/gosec@master
         with: { args: "./..." }
@@ -3321,7 +3321,7 @@ git commit -m "test(e2e): idempotency replay-everything scenario"
 
 - [ ] **Step 1: Add sections**
 
-- Prerequisites: Go 1.22+, Docker (for PG), golangci-lint.
+- Prerequisites: Go 1.26+, Docker (for PG), golangci-lint.
 - Quickstart (dev):
   ```bash
   make test

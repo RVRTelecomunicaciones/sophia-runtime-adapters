@@ -54,7 +54,7 @@ Every execution gets three guarantees: a **contract** (caller knows exactly what
 
 ## Tech stack
 
-- Language: Go 1.22+
+- Language: Go 1.26+ (toolchain pinned to `go1.26.2`)
 - DB: PostgreSQL 15+ via `pgx/v5`
 - HTTP router: `chi/v5`
 - Git library: `go-git/v5` — no hooks executed (A8.1)
