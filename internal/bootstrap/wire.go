@@ -167,6 +167,15 @@ func BuildRuntime(ctx context.Context, cfg config.Config) (*Runtime, error) {
 	}
 
 	shutdown := func(ctx context.Context) error {
+		// Shutdown order (deliberate):
+		//  1. HTTP server first — stops accepting new requests and
+		//     drains in-flight handlers; any handler still holding a
+		//     pool connection gets to finish cleanly.
+		//  2. OTel second — flushes any spans/metrics generated during
+		//     the handler drain before closing exporters.
+		//  3. Pool last — by now no handler needs it; closing earlier
+		//     would abort in-flight receipts mid-persist (A4.3).
+		// Errors are collected but the sequence is always completed.
 		var firstErr error
 		if err := server.Shutdown(ctx); err != nil && firstErr == nil {
 			firstErr = fmt.Errorf("http shutdown: %w", err)
