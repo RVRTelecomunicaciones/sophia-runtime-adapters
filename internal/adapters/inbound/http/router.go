@@ -12,9 +12,8 @@ import (
 // NewRouter builds the Phase 1 HTTP router. svc and query are the
 // inbound ports; both must be non-nil.
 //
-// The three routes are registered as STUBS in T51 — T52 (execute),
-// T53 (capabilities + receipts) replace the stub bodies with real
-// handlers.
+// T52 (execute) and T53 (capabilities + receipts) provide the real
+// handler implementations wired below.
 func NewRouter(svc inbound.RuntimeService, query inbound.QueryService) http.Handler {
 	if svc == nil {
 		panic("http.NewRouter: RuntimeService is required")
@@ -32,9 +31,9 @@ func NewRouter(svc inbound.RuntimeService, query inbound.QueryService) http.Hand
 
 	// API v1 group.
 	r.Route("/api/v1", func(r chi.Router) {
-		r.Post("/execute", stubNotImplemented("execute"))
-		r.Get("/capabilities", stubNotImplemented("capabilities"))
-		r.Get("/receipts/{id}", stubNotImplemented("receipts"))
+		r.Post("/execute", NewExecuteHandler(svc, ExecuteHandlerConfig{}))
+		r.Get("/capabilities", NewCapabilitiesHandler(query))
+		r.Get("/receipts/{id}", NewReceiptsHandler(query))
 	})
 
 	// Health check (useful for ops from day one — not in spec but
@@ -44,14 +43,4 @@ func NewRouter(svc inbound.RuntimeService, query inbound.QueryService) http.Hand
 	})
 
 	return r
-}
-
-// stubNotImplemented returns a 501 handler that marks the route as
-// pending (T52/T53 replace these).
-func stubNotImplemented(route string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		writeHTTPError(w, http.StatusNotImplemented,
-			"adapter_internal_error",
-			"handler pending for route: "+route)
-	}
 }
