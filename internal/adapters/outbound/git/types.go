@@ -107,7 +107,7 @@ type diffRaw struct {
 	validation string
 	patch      []byte
 	truncated  bool
-	totalBytes int   // pre-truncation size for adapter_meta
+	totalBytes int // pre-truncation size for adapter_meta
 	durationMs int64
 	ctxErr     error
 	runErr     error
