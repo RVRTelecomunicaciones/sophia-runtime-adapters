@@ -972,3 +972,73 @@ func (r *alwaysFailRepo) FindByID(_ context.Context, _ shared.ReceiptID) (entiti
 }
 
 var _ outbound.ReceiptRepository = (*alwaysFailRepo)(nil)
+
+// ---------------------------------------------------------------------------
+// T61 — Panic recovery regression: 4 KiB truncation + goroutine-trace shape.
+//
+// TestExecuteService_AdapterPanics_PanicRecoveredReceipt (Scenario 8 / T28)
+// already asserts status=failure, error_class=adapter_internal_error, and
+// the presence of adapter_meta["panic.stack"]. This test adds the two
+// invariants NOT covered by T28:
+//  1. The stack is ≤ 4096 bytes (truncation limit in safeExecute).
+//  2. The stack contains "goroutine" — i.e. it is a genuine Go stack trace.
+// ---------------------------------------------------------------------------
+
+func TestExecuteService_AdapterPanics_StackTruncatedTo4KiB(t *testing.T) {
+	clk := &shared.FakeClock{T: time.Date(2026, 4, 21, 0, 0, 0, 0, time.UTC)}
+	aid, _ := valueobjects.NewAdapterID("shell")
+	cap, _ := valueobjects.NewCapability(aid, "exec", "v1", false, 5*time.Second)
+	registry, _ := valueobjects.NewCapabilityRegistry(cap)
+	normalizer := domainservices.NewResultNormalizer(4096)
+	_ = normalizer.Register(cap.Canonical(), func(_ valueobjects.Capability, _ domainservices.AdapterRawOutcome, _ shared.Clock) (entities.ExecutionResult, error) {
+		return entities.ExecutionResult{}, nil
+	})
+	repo := testdoubles.NewInMemoryReceiptRepository(clk)
+	idemp := testdoubles.NewInMemoryIdempotencyStore(clk)
+	prov, _ := entities.NewProvenance(entities.ProvTest, "v0.0.1", "test-host", "runtime-v0.0.1", "")
+	idGen := &entities.FakeIDGen{IDs: []string{ulid01, ulid02, ulid03, ulid04, ulid05}}
+
+	svc, err := services.NewExecuteService(services.ExecuteServiceConfig{
+		Adapters:    map[string]outbound.Adapter{"shell": &panicAdapterStub{id: aid, caps: []valueobjects.Capability{cap}}},
+		Registry:    registry,
+		Normalizer:  normalizer,
+		Receipts:    repo,
+		Idempotency: idemp,
+		Limiter:     services.NewConcurrencyLimiter(10),
+		Clock:       clk,
+		IDGen:       idGen,
+		MaxTimeout:  30 * time.Second,
+		IdempWindow: 24 * time.Hour,
+		Provenance:  prov,
+	})
+	if err != nil {
+		t.Fatalf("NewExecuteService: %v", err)
+	}
+
+	cid, _ := shared.NewCorrelationID(ulid13)
+	pl, _ := valueobjects.NewPayload(valueobjects.ContentTypeJSON, []byte(`{}`), 0)
+	tb, _ := valueobjects.NewTimeoutBudget(5000, 0)
+	req, _ := entities.NewExecutionRequest(entities.ExecutionRequestInput{
+		CorrelationID: cid, AdapterID: aid,
+		CapabilityName: "exec", CapabilityVersion: "v1",
+		Payload: pl, TimeoutBudget: tb,
+	}, clk)
+
+	receipt, execErr := svc.Execute(context.Background(), req)
+	if execErr != nil {
+		t.Fatalf("Execute returned unexpected error: %v", execErr)
+	}
+
+	stack, ok := receipt.Result().AdapterMeta["panic.stack"]
+	if !ok || stack == "" {
+		t.Fatalf("adapter_meta missing panic.stack; got %+v", receipt.Result().AdapterMeta)
+	}
+	// Invariant 1: stack must be ≤ 4 KiB (safeExecute truncation limit).
+	if len(stack) > 4*1024 {
+		t.Errorf("panic.stack length %d exceeds 4 KiB truncation limit", len(stack))
+	}
+	// Invariant 2: stack must look like a real Go stack trace.
+	if !strings.Contains(stack, "goroutine") {
+		t.Errorf("panic.stack does not look like a Go stack trace (missing 'goroutine'): %q", stack)
+	}
+}
