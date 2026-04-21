@@ -607,17 +607,50 @@ func TestExecutionReceipt_MarshalJSON_NestedFields(t *testing.T) {
 	}
 }
 
-// ─── No UnmarshalJSON ─────────────────────────────────────────────────────────
+// ─── JSON round-trip (Added in Bundle 5 T48 for persistence round-trip support) ─
 
-func TestExecutionReceipt_NoUnmarshalJSON(t *testing.T) {
-	r := entities.ExecutionReceipt{}
-	rType := reflect.TypeOf(r)
-	if _, ok := rType.MethodByName("UnmarshalJSON"); ok {
-		t.Error("ExecutionReceipt must NOT have an UnmarshalJSON method")
+// TestExecutionReceipt_JSONRoundTrip verifies Marshal → Unmarshal yields
+// a receipt with equal public state.
+func TestExecutionReceipt_JSONRoundTrip(t *testing.T) {
+	original := mustReceipt(t)
+
+	b, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("MarshalJSON: %v", err)
 	}
-	rPtrType := reflect.TypeOf(&r)
-	if _, ok := rPtrType.MethodByName("UnmarshalJSON"); ok {
-		t.Error("*ExecutionReceipt must NOT have an UnmarshalJSON method")
+
+	var restored entities.ExecutionReceipt
+	if err := json.Unmarshal(b, &restored); err != nil {
+		t.Fatalf("UnmarshalJSON: %v", err)
+	}
+
+	if restored.ReceiptID().String() != original.ReceiptID().String() {
+		t.Errorf("ReceiptID: got %q, want %q", restored.ReceiptID(), original.ReceiptID())
+	}
+	if restored.SchemaVersion() != original.SchemaVersion() {
+		t.Errorf("SchemaVersion: got %q, want %q", restored.SchemaVersion(), original.SchemaVersion())
+	}
+	if restored.Request().CorrelationID().String() != original.Request().CorrelationID().String() {
+		t.Errorf("Request.CorrelationID: got %q, want %q", restored.Request().CorrelationID(), original.Request().CorrelationID())
+	}
+	if restored.Handle().HandleID().String() != original.Handle().HandleID().String() {
+		t.Errorf("Handle.HandleID: got %q, want %q", restored.Handle().HandleID(), original.Handle().HandleID())
+	}
+	if restored.Result().Status != original.Result().Status {
+		t.Errorf("Result.Status: got %q, want %q", restored.Result().Status, original.Result().Status)
+	}
+	if restored.Provenance().Source != original.Provenance().Source {
+		t.Errorf("Provenance.Source: got %q, want %q", restored.Provenance().Source, original.Provenance().Source)
+	}
+	if !restored.Timings().SubmittedAt.Equal(original.Timings().SubmittedAt) {
+		t.Errorf("Timings.SubmittedAt: got %v, want %v", restored.Timings().SubmittedAt, original.Timings().SubmittedAt)
+	}
+	if !restored.CreatedAt().Equal(original.CreatedAt()) {
+		t.Errorf("CreatedAt: got %v, want %v", restored.CreatedAt(), original.CreatedAt())
+	}
+	_, ok := restored.PersistedAt()
+	if ok {
+		t.Error("PersistedAt should be absent after round-trip of unset receipt")
 	}
 }
 

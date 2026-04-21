@@ -274,20 +274,46 @@ func TestExecutionHandle_MarshalJSON(t *testing.T) {
 	}
 }
 
-// ─── No UnmarshalJSON ─────────────────────────────────────────────────────────
+// ─── JSON round-trip (Added in Bundle 5 T48 for persistence round-trip support) ─
 
-func TestExecutionHandle_NoUnmarshalJSON(t *testing.T) {
-	// ExecutionHandle intentionally has no UnmarshalJSON method.
-	// Verify via reflection that the method does not exist.
-	h := entities.ExecutionHandle{}
-	hType := reflect.TypeOf(h)
-	if _, ok := hType.MethodByName("UnmarshalJSON"); ok {
-		t.Error("ExecutionHandle must NOT have an UnmarshalJSON method")
+// TestExecutionHandle_JSONRoundTrip verifies Marshal → Unmarshal yields
+// a handle with equal public state.
+func TestExecutionHandle_JSONRoundTrip(t *testing.T) {
+	now := time.Date(2026, 4, 19, 12, 30, 45, 0, time.UTC)
+	clk := fakeClock(now)
+	cid := mustCorrelationID(t, validULID)
+	cap := mustCapability(t)
+	gen := &entities.FakeIDGen{IDs: []string{validULID}}
+
+	original, err := entities.NewExecutionHandle(gen, cid, cap, clk)
+	if err != nil {
+		t.Fatalf("NewExecutionHandle: %v", err)
 	}
-	// Also check pointer receiver.
-	hPtrType := reflect.TypeOf(&h)
-	if _, ok := hPtrType.MethodByName("UnmarshalJSON"); ok {
-		t.Error("*ExecutionHandle must NOT have an UnmarshalJSON method")
+
+	b, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("MarshalJSON: %v", err)
+	}
+
+	var restored entities.ExecutionHandle
+	if err := json.Unmarshal(b, &restored); err != nil {
+		t.Fatalf("UnmarshalJSON: %v", err)
+	}
+
+	if restored.HandleID().String() != original.HandleID().String() {
+		t.Errorf("HandleID: got %q, want %q", restored.HandleID(), original.HandleID())
+	}
+	if restored.CorrelationID().String() != original.CorrelationID().String() {
+		t.Errorf("CorrelationID: got %q, want %q", restored.CorrelationID(), original.CorrelationID())
+	}
+	if restored.AdapterID().String() != original.AdapterID().String() {
+		t.Errorf("AdapterID: got %q, want %q", restored.AdapterID(), original.AdapterID())
+	}
+	if restored.Capability().Canonical() != original.Capability().Canonical() {
+		t.Errorf("Capability.Canonical: got %q, want %q", restored.Capability().Canonical(), original.Capability().Canonical())
+	}
+	if !restored.StartedAt().Equal(original.StartedAt()) {
+		t.Errorf("StartedAt: got %v, want %v", restored.StartedAt(), original.StartedAt())
 	}
 }
 

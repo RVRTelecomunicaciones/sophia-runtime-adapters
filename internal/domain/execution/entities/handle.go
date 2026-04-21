@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -116,10 +117,7 @@ func (h ExecutionHandle) Capability() valueobjects.Capability { return h.capabil
 func (h ExecutionHandle) StartedAt() time.Time { return h.startedAt }
 
 // MarshalJSON emits snake_case wire format per D5.14. The capability is
-// serialized as its canonical string (e.g. "shell.exec@v1"). No
-// UnmarshalJSON is provided: handles are embedded in receipts that are
-// only READ after persistence, and capability reconstruction from wire
-// requires registry access not available at the domain layer.
+// serialized as its canonical string (e.g. "shell.exec@v1").
 func (h ExecutionHandle) MarshalJSON() ([]byte, error) {
 	type wire struct {
 		HandleID      shared.HandleID        `json:"handle_id"`
@@ -135,4 +133,66 @@ func (h ExecutionHandle) MarshalJSON() ([]byte, error) {
 		CapabilityCan: h.capability.Canonical(),
 		StartedAt:     h.startedAt.UTC().Format("2006-01-02T15:04:05.000Z07:00"),
 	})
+}
+
+// UnmarshalJSON reconstructs an ExecutionHandle from its MarshalJSON output.
+// The capability field on the wire is a canonical string; this decoder
+// parses the canonical back into an AdapterID + name + version + defaults
+// (AllowsPartial=false, DefaultTimeout=time.Second — the persisted receipt
+// is trusted, and capability timeouts live in the registry, not the receipt).
+//
+// This is used by persistence adapters (internal/adapters/outbound/pg/)
+// when rehydrating receipts from the database. It is NOT intended for
+// untrusted wire inputs — those should go through a registry lookup.
+func (h *ExecutionHandle) UnmarshalJSON(b []byte) error {
+	type wire struct {
+		HandleID      string `json:"handle_id"`
+		CorrelationID string `json:"correlation_id"`
+		AdapterID     string `json:"adapter_id"`
+		CapabilityCan string `json:"capability"`
+		StartedAt     string `json:"started_at"`
+	}
+	var w wire
+	if err := json.Unmarshal(b, &w); err != nil {
+		return err
+	}
+	hid, err := shared.NewHandleID(w.HandleID)
+	if err != nil {
+		return fmt.Errorf("handle_id: %w", err)
+	}
+	cid, err := shared.NewCorrelationID(w.CorrelationID)
+	if err != nil {
+		return fmt.Errorf("correlation_id: %w", err)
+	}
+	aid, err := valueobjects.NewAdapterID(w.AdapterID)
+	if err != nil {
+		return fmt.Errorf("adapter_id: %w", err)
+	}
+	// Parse capability canonical "<adapter>.<name>@<version>" to reconstruct.
+	canon := w.CapabilityCan
+	atIdx := strings.LastIndex(canon, "@")
+	if atIdx < 0 {
+		return fmt.Errorf("capability missing @version: %q", canon)
+	}
+	version := canon[atIdx+1:]
+	nameWithAdapter := canon[:atIdx]
+	dotIdx := strings.Index(nameWithAdapter, ".")
+	if dotIdx < 0 {
+		return fmt.Errorf("capability missing adapter.name: %q", canon)
+	}
+	name := nameWithAdapter[dotIdx+1:]
+	cap, err := valueobjects.NewCapability(aid, name, version, false, time.Second)
+	if err != nil {
+		return fmt.Errorf("capability: %w", err)
+	}
+	t, err := time.Parse(time.RFC3339Nano, w.StartedAt)
+	if err != nil {
+		return fmt.Errorf("started_at: %w", err)
+	}
+	h.handleID = hid
+	h.correlationID = cid
+	h.adapterID = aid
+	h.capability = cap
+	h.startedAt = t.UTC()
+	return nil
 }

@@ -8,6 +8,57 @@ import (
 	"github.com/sophia-ecosystem/runtime-adapters/internal/domain/shared"
 )
 
+// UnmarshalJSON reconstructs an ExecutionReceipt from its MarshalJSON
+// output. Intended for persistence adapters (pg/) that rehydrate
+// trusted receipts from storage. NOT for untrusted wire inputs.
+func (r *ExecutionReceipt) UnmarshalJSON(b []byte) error {
+	type wire struct {
+		ReceiptID     string           `json:"receipt_id"`
+		SchemaVersion string           `json:"schema_version"`
+		Request       ExecutionRequest `json:"request"`
+		Handle        ExecutionHandle  `json:"handle"`
+		Result        ExecutionResult  `json:"result"`
+		Provenance    Provenance       `json:"provenance"`
+		Timings       Timings          `json:"timings"`
+		CreatedAt     string           `json:"created_at"`
+		PersistedAt   *string          `json:"persisted_at,omitempty"`
+	}
+	var w wire
+	if err := json.Unmarshal(b, &w); err != nil {
+		return err
+	}
+	rid, err := shared.NewReceiptID(w.ReceiptID)
+	if err != nil {
+		return fmt.Errorf("receipt_id: %w", err)
+	}
+	if w.SchemaVersion != SchemaVersionV1 {
+		return fmt.Errorf("schema_version mismatch: %q (want %q)", w.SchemaVersion, SchemaVersionV1)
+	}
+	createdAt, err := time.Parse(time.RFC3339Nano, w.CreatedAt)
+	if err != nil {
+		return fmt.Errorf("created_at: %w", err)
+	}
+	var persistedAt *time.Time
+	if w.PersistedAt != nil {
+		t, err := time.Parse(time.RFC3339Nano, *w.PersistedAt)
+		if err != nil {
+			return fmt.Errorf("persisted_at: %w", err)
+		}
+		tUTC := t.UTC()
+		persistedAt = &tUTC
+	}
+	r.receiptID = rid
+	r.schemaVersion = w.SchemaVersion
+	r.request = w.Request
+	r.handle = w.Handle
+	r.result = w.Result
+	r.provenance = w.Provenance
+	r.timings = w.Timings
+	r.createdAt = createdAt.UTC()
+	r.persistedAt = persistedAt
+	return nil
+}
+
 // SchemaVersionV1 is the Phase 1 schema version. Bumping requires ADR +
 // migration plan (R15 / I20).
 const SchemaVersionV1 = "v1"
