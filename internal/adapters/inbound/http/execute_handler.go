@@ -38,6 +38,17 @@ func NewExecuteHandler(svc inbound.RuntimeService, cfg ExecuteHandlerConfig) htt
 
 		// Decode with DisallowUnknownFields per D5.14. ExecutionRequest's
 		// own UnmarshalJSON applies the domain invariants.
+		//
+		// Known stdlib limitation: DisallowUnknownFields is honored only
+		// at THIS decoder level for plain-struct decode paths. It does
+		// NOT propagate into types that implement custom UnmarshalJSON
+		// (like ExecutionRequest does). Extra fields inside a typed
+		// UnmarshalJSON are silently dropped by json.Unmarshal. The
+		// outer DisallowUnknownFields still catches top-level shape
+		// mismatches (e.g. a JSON array where an object is expected),
+		// so malformed bodies are rejected — but nested unknown fields
+		// pass through unnoticed. A future Phase 2D hardening task
+		// (central JSON Schema validation) will close this gap.
 		dec := json.NewDecoder(r.Body)
 		dec.DisallowUnknownFields()
 		var req entities.ExecutionRequest
