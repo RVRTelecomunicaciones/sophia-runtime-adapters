@@ -17,7 +17,98 @@
 
 ## Quick start (developer)
 
-_Deferred to Bundle 8 Task T65._ The runtime binary is not yet implemented; current tasks scaffold the repo skeleton, tooling, and documentation.
+### Prerequisites
+
+- Go 1.26+ (the `toolchain` directive in `go.mod` auto-downloads `go1.26.2` if you have Go 1.21+ installed).
+- Docker daemon running — required for integration tests and the dev quickstart below (PostgreSQL via testcontainers / docker run).
+- `golangci-lint` — optional but recommended for local lint parity with CI.
+- `make` — GNU make works fine.
+
+### Run the full test suite
+
+```bash
+# Unit + contract tests (fast, no external deps).
+make test
+
+# Integration tests — spins up ephemeral Postgres via testcontainers.
+# Requires Docker running.
+make test-integration
+
+# E2E smoke scenarios — full runtime + Postgres + HTTP round trip.
+make test-e2e
+
+# Coverage for domain + application.
+make cover
+```
+
+### Run the runtime locally
+
+```bash
+# 1. Start Postgres in the background (replace the tag if you prefer).
+docker run --rm -d --name runtime-pg \
+  -p 5432:5432 \
+  -e POSTGRES_PASSWORD=dev \
+  -e POSTGRES_USER=dev \
+  -e POSTGRES_DB=runtime_adapters \
+  postgres:15-alpine
+
+# 2. Set required env + run.
+export RUNTIME_POSTGRES_DSN="postgres://dev:dev@localhost:5432/runtime_adapters?sslmode=disable"
+make run
+```
+
+You should see:
+
+```
+runtime-adapters v0.1.0 starting on :8080 (host=<hostname>)
+HTTP listen on :8080
+```
+
+### Call the API
+
+```bash
+# Health check.
+curl -s localhost:8080/healthz
+# → {"status":"ok"}
+
+# List the 8 Phase 1 capabilities.
+curl -s localhost:8080/api/v1/capabilities | jq
+
+# Execute a shell.exec command (adjust correlation_id — must be a valid ULID).
+curl -s -X POST localhost:8080/api/v1/execute \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "correlation_id": "01HZXK5JC6QK7XV0YQXA0QJ0YZ",
+    "adapter_id": "shell",
+    "capability_name": "exec",
+    "capability_version": "v1",
+    "payload": { "command": "echo", "args": ["hello"] },
+    "timeout_budget_ms": 5000
+  }' | jq
+
+# Fetch the resulting receipt (replace the id).
+curl -s "localhost:8080/api/v1/receipts/<receipt_id>?include_streams=true" | jq
+```
+
+### Configuration reference
+
+All runtime settings come from environment variables with sane defaults — see `internal/infrastructure/config/config.go` godoc or the Phase 1 spec §9.8 table. Key overrides:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `RUNTIME_HTTP_ADDR` | `:8080` | HTTP listen address |
+| `RUNTIME_POSTGRES_DSN` | **required** | Postgres connection string |
+| `RUNTIME_MAX_TIMEOUT_BUDGET` | `30m` | Cap on per-request timeout (A4.1) |
+| `RUNTIME_MAX_PAYLOAD_BYTES` | `1048576` | 1 MiB payload cap |
+| `RUNTIME_MAX_CONCURRENT_EXECUTIONS` | `64` | Fast-reject semaphore (A9.1) |
+| `RUNTIME_IDEMPOTENCY_WINDOW` | `24h` | Caller-owned idempotency window |
+| `RUNTIME_SHUTDOWN_GRACE_PERIOD` | `30s` | Graceful drain on SIGTERM |
+| `RUNTIME_ALLOWED_COMMANDS_PATH` | `/usr/bin:/bin` | Shell adapter command allowlist (colon-sep) |
+| `RUNTIME_ALLOWED_WORKING_DIRS` | `$HOME` | Shell + git working-dir allowlist |
+| `RUNTIME_ALLOWED_FILESYSTEM_ROOTS` | `$HOME` | Filesystem adapter path allowlist |
+| `RUNTIME_HTTP_ALLOW_PRIVATE_NETWORKS` | `false` | Disable SSRF strict block (A8.3) |
+| `OTEL_ENABLED` | `false` | Opt into OpenTelemetry export |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | (empty) | Required when OTel enabled |
 
 ## License
 
