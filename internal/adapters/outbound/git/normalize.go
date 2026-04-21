@@ -14,9 +14,7 @@ import (
 )
 
 // NormalizeStatus / NormalizeClone / NormalizeDiff / NormalizeCommit are
-// the registered closures consumed by services.ResultNormalizer. T34
-// scaffolds them with notImpl + ctx handling; T35..T38 add the real
-// per-capability normalization.
+// the registered closures consumed by services.ResultNormalizer.
 
 // NormalizeStatus normalizes a git.status@v1 raw outcome.
 func (a *Adapter) NormalizeStatus(_ valueobjects.Capability, raw services.AdapterRawOutcome, clk shared.Clock) (entities.ExecutionResult, error) {
@@ -261,52 +259,72 @@ func (a *Adapter) NormalizeDiff(_ valueobjects.Capability, raw services.AdapterR
 }
 
 // NormalizeCommit normalizes a git.commit@v1 raw outcome.
-func (a *Adapter) NormalizeCommit(cap valueobjects.Capability, raw services.AdapterRawOutcome, clk shared.Clock) (entities.ExecutionResult, error) {
+func (a *Adapter) NormalizeCommit(_ valueobjects.Capability, raw services.AdapterRawOutcome, clk shared.Clock) (entities.ExecutionResult, error) {
 	r, ok := raw.(*commitRaw)
 	if !ok {
 		return entities.ExecutionResult{}, fmt.Errorf("git.NormalizeCommit: unexpected raw type %T", raw)
 	}
-	return a.normalizePlaceholder(r.ctxErr, r.notImpl, r.validation, r.durationMs, clk)
-}
-
-// normalizePlaceholder is the shared stub logic used by all four normalizers
-// until T35..T38 replace them with real per-capability normalization.
-func (a *Adapter) normalizePlaceholder(ctxErr error, notImpl bool, validation string, durationMs int64, clk shared.Clock) (entities.ExecutionResult, error) {
 	now := clk.Now()
-	dur := msToDuration(durationMs)
 
-	if ctxErr != nil {
-		if errors.Is(ctxErr, context.DeadlineExceeded) {
+	if r.ctxErr != nil {
+		if errors.Is(r.ctxErr, context.DeadlineExceeded) {
 			return entities.NewExecutionResult(
 				valueobjects.StatusTimeout, valueobjects.HintRetryable,
-				valueobjects.ErrTimeout, ctxErr.Error(),
-				nil, nil, nil, nil, nil, 0, 0, dur, now,
+				valueobjects.ErrTimeout, r.ctxErr.Error(),
+				nil, nil, nil, nil, nil, 0, 0, msToDuration(r.durationMs), now,
 			)
 		}
 		return entities.NewExecutionResult(
 			valueobjects.StatusCancelled, valueobjects.HintNonRetryable,
-			valueobjects.ErrCancelled, ctxErr.Error(),
-			nil, nil, nil, nil, nil, 0, 0, dur, now,
+			valueobjects.ErrCancelled, r.ctxErr.Error(),
+			nil, nil, nil, nil, nil, 0, 0, msToDuration(r.durationMs), now,
 		)
 	}
-	if validation != "" {
+	if r.validation != "" {
 		return entities.NewExecutionResult(
 			valueobjects.StatusFailure, valueobjects.HintNonRetryable,
-			valueobjects.ErrValidationFailure, validation,
-			nil, nil, nil, nil, nil, 0, 0, dur, now,
+			valueobjects.ErrValidationFailure, r.validation,
+			nil, nil, nil, nil, nil, 0, 0, msToDuration(r.durationMs), now,
 		)
 	}
-	if notImpl {
+	if r.runErr != nil {
 		return entities.NewExecutionResult(
-			valueobjects.StatusFailure, valueobjects.HintNonRetryable,
-			valueobjects.ErrAdapterInternalError, "git adapter capability is not implemented yet (T34 scaffolding)",
-			nil, nil, nil, nil, nil, 0, 0, dur, now,
+			valueobjects.StatusFailure, valueobjects.HintUnknown,
+			valueobjects.ErrExternalFailure, r.runErr.Error(),
+			nil, nil, nil, nil, nil, 0, 0, msToDuration(r.durationMs), now,
 		)
+	}
+
+	// Success: emit git_commit + git_ref artifacts.
+	var artifacts []entities.Artifact
+	if commitArt, err := entities.NewArtifact(
+		entities.ArtifactGitCommit,
+		"git://commit/"+r.commitSHA,
+		0, "",
+		map[string]string{"sha": r.commitSHA, "branch": r.branch},
+	); err == nil {
+		artifacts = append(artifacts, commitArt)
+	}
+	if r.branch != "" {
+		if refArt, err := entities.NewArtifact(
+			entities.ArtifactGitRef,
+			"git://ref/"+r.branch,
+			0, "",
+			map[string]string{"ref": r.branch, "sha": r.commitSHA},
+		); err == nil {
+			artifacts = append(artifacts, refArt)
+		}
+	}
+	meta := map[string]string{
+		"commit_sha": r.commitSHA,
+		"branch":     r.branch,
 	}
 	return entities.NewExecutionResult(
-		valueobjects.StatusFailure, valueobjects.HintNonRetryable,
-		valueobjects.ErrAdapterInternalError, "git adapter normalize: unhandled raw state",
-		nil, nil, nil, nil, nil, 0, 0, dur, now,
+		valueobjects.StatusSuccess, valueobjects.HintNonRetryable,
+		"", "",
+		nil, nil, nil,
+		artifacts, meta,
+		0, 0, msToDuration(r.durationMs), now,
 	)
 }
 

@@ -125,9 +125,7 @@ type CommitPayload struct {
 	AllowEmpty  bool     `json:"allow_empty,omitempty"`
 }
 
-// commitRaw — see T38. Fields not yet read are forward declarations for T38.
-//
-//nolint:unused
+// commitRaw holds the raw outcome of a git.commit@v1 execution.
 type commitRaw struct {
 	validation string
 	commitSHA  string
@@ -135,7 +133,6 @@ type commitRaw struct {
 	durationMs int64
 	ctxErr     error
 	runErr     error
-	notImpl    bool
 }
 
 func (*commitRaw) IsAdapterRawOutcome() {}

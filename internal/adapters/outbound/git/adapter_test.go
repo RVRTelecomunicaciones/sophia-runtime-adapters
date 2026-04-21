@@ -226,13 +226,11 @@ func TestExecute_CommitReturnsCommitRaw(t *testing.T) {
 	}
 }
 
-func TestExecute_CommitStubReturnsNotImpl(t *testing.T) {
+func TestExecute_CommitReturnsValidationForEmptyPayload(t *testing.T) {
+	// T38: commit is real now — empty payload returns validation error (missing repo_path).
 	a := newTestAdapter(t)
-	p := mustPayload(t)
-	// commit is still a T34 stub (notImpl=true); diff is T37-real (returns
-	// validation error for empty payload), status is T35-real, clone is T36-real.
 	cap := capByName(t, a, "commit")
-	raw, err := a.Execute(context.Background(), cap, p)
+	raw, err := a.Execute(context.Background(), cap, mustPayload(t))
 	if err != nil {
 		t.Fatalf("commit Execute: %v", err)
 	}
@@ -240,8 +238,8 @@ func TestExecute_CommitStubReturnsNotImpl(t *testing.T) {
 	if !ok {
 		t.Fatalf("raw type = %T, want *commitRaw", raw)
 	}
-	if !r.notImpl {
-		t.Errorf("commit stub: notImpl should be true")
+	if r.validation == "" {
+		t.Error("expected validation error for empty commit payload, got none")
 	}
 }
 
@@ -431,16 +429,20 @@ func TestNormalizeDiff_RunErr_ReturnsExternalFailure(t *testing.T) {
 	}
 }
 
-func TestNormalizeCommit_NotImpl_ReturnsAdapterInternalError(t *testing.T) {
+func TestNormalizeCommit_ValidationFailure_ReturnsValidationError(t *testing.T) {
+	// T38: commit is real — a raw with validation error → StatusFailure + ErrValidationFailure.
 	a := newTestAdapter(t)
 	clk := &shared.FakeClock{T: time.Now()}
 	cap := capByName(t, a, "commit")
-	result, err := a.NormalizeCommit(cap, &commitRaw{notImpl: true}, clk)
+	result, err := a.NormalizeCommit(cap, &commitRaw{validation: "repo_path is required"}, clk)
 	if err != nil {
 		t.Fatalf("NormalizeCommit: %v", err)
 	}
-	if result.ErrorClass != valueobjects.ErrAdapterInternalError {
-		t.Errorf("error_class = %q, want adapter_internal_error", result.ErrorClass)
+	if result.Status != valueobjects.StatusFailure {
+		t.Errorf("status = %q, want failure", result.Status)
+	}
+	if result.ErrorClass != valueobjects.ErrValidationFailure {
+		t.Errorf("error_class = %q, want validation_failure", result.ErrorClass)
 	}
 }
 

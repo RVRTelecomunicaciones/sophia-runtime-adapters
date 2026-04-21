@@ -82,8 +82,7 @@ func (a *Adapter) Capabilities() []valueobjects.Capability {
 
 // Execute dispatches by capability name. Per-capability methods are
 // implemented in dedicated files (status.go, clone.go, diff.go,
-// commit.go) per T35..T38. T34 scaffolds them as "not implemented"
-// stubs returning the per-capability raw with notImpl=true.
+// commit.go) per T35..T38.
 func (a *Adapter) Execute(ctx context.Context, cap valueobjects.Capability, payload valueobjects.Payload) (services.AdapterRawOutcome, error) {
 	if err := ctx.Err(); err != nil {
 		// Honor cancelled ctx by returning the canonical-typed raw with
