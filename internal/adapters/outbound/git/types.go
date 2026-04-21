@@ -77,20 +77,19 @@ type ClonePayload struct {
 	AuthMode        AuthMode `json:"auth_mode,omitempty"`
 }
 
-// cloneRaw — see T36. Fields not yet read are forward declarations for T36.
-//
-//nolint:unused
+// cloneRaw holds the raw outcome of a git.clone@v1 execution.
+// AllowsPartial=true (D4.6): when fetchOK=true but checkoutOK=false and
+// repoPath is non-empty the normalizer classifies the outcome as "partial".
 type cloneRaw struct {
 	validation  string
 	fetchOK     bool
 	checkoutOK  bool
-	repoPath    string
-	headSHA     string
-	refResolved string
+	repoPath    string // resolved destination (populated once PlainCloneContext begins)
+	headSHA     string // populated when fetch succeeds and HEAD is readable
+	refResolved string // ref short-name, e.g. "main", "v1.0.0"
 	durationMs  int64
 	ctxErr      error
 	runErr      error
-	notImpl     bool
 }
 
 func (*cloneRaw) IsAdapterRawOutcome() {}

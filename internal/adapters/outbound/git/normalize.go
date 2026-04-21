@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/sophia-ecosystem/runtime-adapters/internal/domain/execution/entities"
@@ -77,13 +78,132 @@ func (a *Adapter) NormalizeStatus(_ valueobjects.Capability, raw services.Adapte
 	)
 }
 
-// NormalizeClone normalizes a git.clone@v1 raw outcome.
+// NormalizeClone normalizes a git.clone@v1 raw outcome with D4.6 partial
+// classification: partial when fetch succeeds, checkout fails, ≥1 artifact
+// present, and the destination was NOT reverted.
 func (a *Adapter) NormalizeClone(cap valueobjects.Capability, raw services.AdapterRawOutcome, clk shared.Clock) (entities.ExecutionResult, error) {
 	r, ok := raw.(*cloneRaw)
 	if !ok {
 		return entities.ExecutionResult{}, fmt.Errorf("git.NormalizeClone: unexpected raw type %T", raw)
 	}
-	return a.normalizePlaceholder(r.ctxErr, r.notImpl, r.validation, r.durationMs, clk)
+	now := clk.Now()
+
+	if r.ctxErr != nil {
+		if errors.Is(r.ctxErr, context.DeadlineExceeded) {
+			return entities.NewExecutionResult(
+				valueobjects.StatusTimeout, valueobjects.HintRetryable,
+				valueobjects.ErrTimeout, r.ctxErr.Error(),
+				nil, nil, nil, nil, nil, 0, 0, msToDuration(r.durationMs), now,
+			)
+		}
+		return entities.NewExecutionResult(
+			valueobjects.StatusCancelled, valueobjects.HintNonRetryable,
+			valueobjects.ErrCancelled, r.ctxErr.Error(),
+			nil, nil, nil, nil, nil, 0, 0, msToDuration(r.durationMs), now,
+		)
+	}
+	if r.validation != "" {
+		return entities.NewExecutionResult(
+			valueobjects.StatusFailure, valueobjects.HintNonRetryable,
+			valueobjects.ErrValidationFailure, r.validation,
+			nil, nil, nil, nil, nil, 0, 0, msToDuration(r.durationMs), now,
+		)
+	}
+
+	// Build artifacts when the clone produced a directory.
+	var artifacts []entities.Artifact
+	if r.repoPath != "" && (r.fetchOK || r.runErr != nil) {
+		// Directory artifact: present whenever something was written to dest.
+		if _, statErr := os.Stat(r.repoPath); statErr == nil {
+			if dirArt, err := entities.NewArtifact(
+				entities.ArtifactDirectory,
+				"file://"+r.repoPath,
+				0, "",
+				map[string]string{"path": r.repoPath},
+			); err == nil {
+				artifacts = append(artifacts, dirArt)
+			}
+		}
+	}
+	if r.headSHA != "" {
+		if commitArt, err := entities.NewArtifact(
+			entities.ArtifactGitCommit,
+			"git://"+r.repoPath+"#"+r.headSHA,
+			0, "",
+			map[string]string{"sha": r.headSHA},
+		); err == nil {
+			artifacts = append(artifacts, commitArt)
+		}
+	}
+	if r.refResolved != "" {
+		if refArt, err := entities.NewArtifact(
+			entities.ArtifactGitRef,
+			"git://"+r.repoPath+"@"+r.refResolved,
+			0, "",
+			map[string]string{"ref": r.refResolved},
+		); err == nil {
+			artifacts = append(artifacts, refArt)
+		}
+	}
+
+	// Apply D4.6 4-AND partial classification.
+	classification := entities.PartialClassification{
+		AllowsPartial:      cap.AllowsPartial(),
+		HasArtifacts:       len(artifacts) > 0,
+		HasUncompletedStep: !r.checkoutOK,
+		Reverted:           false, // go-git clone does not roll back on checkout failure
+	}
+	status := classification.Classify()
+
+	meta := map[string]string{
+		"fetch_ok":    fmt.Sprintf("%t", r.fetchOK),
+		"checkout_ok": fmt.Sprintf("%t", r.checkoutOK),
+	}
+	if r.repoPath != "" {
+		meta["repo_path"] = r.repoPath
+	}
+	if r.refResolved != "" {
+		meta["ref_resolved"] = r.refResolved
+	}
+	if r.headSHA != "" {
+		meta["head_sha"] = r.headSHA
+	}
+
+	switch status {
+	case valueobjects.StatusSuccess:
+		return entities.NewExecutionResult(
+			valueobjects.StatusSuccess, valueobjects.HintNonRetryable,
+			"", "",
+			nil, nil, nil,
+			artifacts, meta,
+			0, 0, msToDuration(r.durationMs), now,
+		)
+	case valueobjects.StatusPartial:
+		errMsg := "clone partial: fetch succeeded but checkout failed"
+		if r.runErr != nil {
+			errMsg += " — " + r.runErr.Error()
+		}
+		return entities.NewExecutionResult(
+			valueobjects.StatusPartial, valueobjects.HintUnknown,
+			valueobjects.ErrExternalFailure, errMsg,
+			nil, nil, nil,
+			artifacts, meta,
+			0, 0, msToDuration(r.durationMs), now,
+		)
+	default:
+		// Failure — either runErr without artifacts, or total clone failure.
+		errMsg := "clone failed"
+		if r.runErr != nil {
+			errMsg = r.runErr.Error()
+		}
+		return entities.NewExecutionResult(
+			valueobjects.StatusFailure, valueobjects.HintUnknown,
+			valueobjects.ErrExternalFailure, errMsg,
+			nil, nil, nil,
+			artifacts, meta,
+			0, 0, msToDuration(r.durationMs), now,
+		)
+	}
 }
 
 // NormalizeDiff normalizes a git.diff@v1 raw outcome.
