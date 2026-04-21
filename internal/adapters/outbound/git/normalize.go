@@ -207,12 +207,57 @@ func (a *Adapter) NormalizeClone(cap valueobjects.Capability, raw services.Adapt
 }
 
 // NormalizeDiff normalizes a git.diff@v1 raw outcome.
-func (a *Adapter) NormalizeDiff(cap valueobjects.Capability, raw services.AdapterRawOutcome, clk shared.Clock) (entities.ExecutionResult, error) {
+func (a *Adapter) NormalizeDiff(_ valueobjects.Capability, raw services.AdapterRawOutcome, clk shared.Clock) (entities.ExecutionResult, error) {
 	r, ok := raw.(*diffRaw)
 	if !ok {
 		return entities.ExecutionResult{}, fmt.Errorf("git.NormalizeDiff: unexpected raw type %T", raw)
 	}
-	return a.normalizePlaceholder(r.ctxErr, r.notImpl, r.validation, r.durationMs, clk)
+	now := clk.Now()
+
+	if r.ctxErr != nil {
+		if errors.Is(r.ctxErr, context.DeadlineExceeded) {
+			return entities.NewExecutionResult(
+				valueobjects.StatusTimeout, valueobjects.HintRetryable,
+				valueobjects.ErrTimeout, r.ctxErr.Error(),
+				nil, nil, nil, nil, nil, 0, 0, msToDuration(r.durationMs), now,
+			)
+		}
+		return entities.NewExecutionResult(
+			valueobjects.StatusCancelled, valueobjects.HintNonRetryable,
+			valueobjects.ErrCancelled, r.ctxErr.Error(),
+			nil, nil, nil, nil, nil, 0, 0, msToDuration(r.durationMs), now,
+		)
+	}
+	if r.validation != "" {
+		return entities.NewExecutionResult(
+			valueobjects.StatusFailure, valueobjects.HintNonRetryable,
+			valueobjects.ErrValidationFailure, r.validation,
+			nil, nil, nil, nil, nil, 0, 0, msToDuration(r.durationMs), now,
+		)
+	}
+	if r.runErr != nil {
+		return entities.NewExecutionResult(
+			valueobjects.StatusFailure, valueobjects.HintUnknown,
+			valueobjects.ErrExternalFailure, r.runErr.Error(),
+			nil, nil, nil, nil, nil, 0, 0, msToDuration(r.durationMs), now,
+		)
+	}
+
+	// Success: patch in stdout_ref, no artifacts (read-only).
+	stdout, _ := entities.NewStreamRef(r.patch, int64(r.totalBytes), a.cfg.InlineStreamLimit)
+	meta := map[string]string{
+		"truncated":   fmt.Sprintf("%t", r.truncated),
+		"total_bytes": fmt.Sprintf("%d", r.totalBytes),
+	}
+	return entities.NewExecutionResult(
+		valueobjects.StatusSuccess, valueobjects.HintNonRetryable,
+		"", "",
+		&stdout, nil, nil,
+		nil, // no artifacts (read-only)
+		meta,
+		int64(r.totalBytes), 0,
+		msToDuration(r.durationMs), now,
+	)
 }
 
 // NormalizeCommit normalizes a git.commit@v1 raw outcome.

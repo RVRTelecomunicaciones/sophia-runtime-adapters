@@ -102,17 +102,15 @@ type DiffPayload struct {
 	MaxBytes int    `json:"max_bytes,omitempty"`
 }
 
-// diffRaw — see T37. Fields not yet read are forward declarations for T37.
-//
-//nolint:unused
+// diffRaw holds the raw outcome of a git.diff@v1 execution.
 type diffRaw struct {
 	validation string
 	patch      []byte
 	truncated  bool
+	totalBytes int   // pre-truncation size for adapter_meta
 	durationMs int64
 	ctxErr     error
 	runErr     error
-	notImpl    bool
 }
 
 func (*diffRaw) IsAdapterRawOutcome() {}

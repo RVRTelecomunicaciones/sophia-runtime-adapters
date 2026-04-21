@@ -226,29 +226,39 @@ func TestExecute_CommitReturnsCommitRaw(t *testing.T) {
 	}
 }
 
-func TestExecute_StubsReturnNotImpl(t *testing.T) {
+func TestExecute_CommitStubReturnsNotImpl(t *testing.T) {
 	a := newTestAdapter(t)
 	p := mustPayload(t)
-	// diff/commit are still T34 stubs (notImpl=true); status is T35-real,
-	// clone is T36-real (returns validation error for empty repo_url).
-	for _, name := range []string{"diff", "commit"} {
-		cap := capByName(t, a, name)
-		raw, err := a.Execute(context.Background(), cap, p)
-		if err != nil {
-			t.Fatalf("%s Execute: %v", name, err)
-		}
-		switch r := raw.(type) {
-		case *diffRaw:
-			if !r.notImpl {
-				t.Errorf("diff stub: notImpl should be true")
-			}
-		case *commitRaw:
-			if !r.notImpl {
-				t.Errorf("commit stub: notImpl should be true")
-			}
-		default:
-			t.Errorf("unexpected raw type %T for %s", raw, name)
-		}
+	// commit is still a T34 stub (notImpl=true); diff is T37-real (returns
+	// validation error for empty payload), status is T35-real, clone is T36-real.
+	cap := capByName(t, a, "commit")
+	raw, err := a.Execute(context.Background(), cap, p)
+	if err != nil {
+		t.Fatalf("commit Execute: %v", err)
+	}
+	r, ok := raw.(*commitRaw)
+	if !ok {
+		t.Fatalf("raw type = %T, want *commitRaw", raw)
+	}
+	if !r.notImpl {
+		t.Errorf("commit stub: notImpl should be true")
+	}
+}
+
+func TestExecute_DiffReturnsValidationForEmptyPayload(t *testing.T) {
+	// T37: diff is real now — empty payload returns validation error, not notImpl.
+	a := newTestAdapter(t)
+	cap := capByName(t, a, "diff")
+	raw, err := a.Execute(context.Background(), cap, mustPayload(t))
+	if err != nil {
+		t.Fatalf("Execute diff: %v", err)
+	}
+	r, ok := raw.(*diffRaw)
+	if !ok {
+		t.Fatalf("raw type = %T, want *diffRaw", raw)
+	}
+	if r.validation == "" {
+		t.Error("expected validation error for empty diff payload, got none")
 	}
 }
 
@@ -404,16 +414,20 @@ func TestNormalizeClone_RunErrNoArtifacts_ReturnsFailure(t *testing.T) {
 	}
 }
 
-func TestNormalizeDiff_NotImpl_ReturnsAdapterInternalError(t *testing.T) {
+func TestNormalizeDiff_RunErr_ReturnsExternalFailure(t *testing.T) {
+	// T37: diff is real now — a raw with runErr produces external_failure.
 	a := newTestAdapter(t)
 	clk := &shared.FakeClock{T: time.Now()}
 	cap := capByName(t, a, "diff")
-	result, err := a.NormalizeDiff(cap, &diffRaw{notImpl: true}, clk)
+	result, err := a.NormalizeDiff(cap, &diffRaw{runErr: fmt.Errorf("open repo: repository does not exist")}, clk)
 	if err != nil {
 		t.Fatalf("NormalizeDiff: %v", err)
 	}
-	if result.ErrorClass != valueobjects.ErrAdapterInternalError {
-		t.Errorf("error_class = %q, want adapter_internal_error", result.ErrorClass)
+	if result.Status != valueobjects.StatusFailure {
+		t.Errorf("status = %q, want failure", result.Status)
+	}
+	if result.ErrorClass != valueobjects.ErrExternalFailure {
+		t.Errorf("error_class = %q, want external_failure", result.ErrorClass)
 	}
 }
 
