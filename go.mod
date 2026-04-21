@@ -5,6 +5,7 @@ go 1.26
 toolchain go1.26.2
 
 require (
+	github.com/go-chi/chi/v5 v5.2.5
 	github.com/go-git/go-git/v5 v5.18.0
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/jackc/pgx/v5 v5.9.2
