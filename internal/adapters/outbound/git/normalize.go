@@ -18,12 +18,63 @@ import (
 // per-capability normalization.
 
 // NormalizeStatus normalizes a git.status@v1 raw outcome.
-func (a *Adapter) NormalizeStatus(cap valueobjects.Capability, raw services.AdapterRawOutcome, clk shared.Clock) (entities.ExecutionResult, error) {
+func (a *Adapter) NormalizeStatus(_ valueobjects.Capability, raw services.AdapterRawOutcome, clk shared.Clock) (entities.ExecutionResult, error) {
 	r, ok := raw.(*statusRaw)
 	if !ok {
 		return entities.ExecutionResult{}, fmt.Errorf("git.NormalizeStatus: unexpected raw type %T", raw)
 	}
-	return a.normalizePlaceholder(r.ctxErr, r.notImpl, r.validation, r.durationMs, clk)
+	now := clk.Now()
+
+	// Priority 1: ctx error.
+	if r.ctxErr != nil {
+		if errors.Is(r.ctxErr, context.DeadlineExceeded) {
+			return entities.NewExecutionResult(
+				valueobjects.StatusTimeout, valueobjects.HintRetryable,
+				valueobjects.ErrTimeout, r.ctxErr.Error(),
+				nil, nil, nil, nil, nil, 0, 0, msToDuration(r.durationMs), now,
+			)
+		}
+		return entities.NewExecutionResult(
+			valueobjects.StatusCancelled, valueobjects.HintNonRetryable,
+			valueobjects.ErrCancelled, r.ctxErr.Error(),
+			nil, nil, nil, nil, nil, 0, 0, msToDuration(r.durationMs), now,
+		)
+	}
+
+	// Priority 2: validation.
+	if r.validation != "" {
+		return entities.NewExecutionResult(
+			valueobjects.StatusFailure, valueobjects.HintNonRetryable,
+			valueobjects.ErrValidationFailure, r.validation,
+			nil, nil, nil, nil, nil, 0, 0, msToDuration(r.durationMs), now,
+		)
+	}
+
+	// Priority 3: external (go-git) error.
+	if r.runErr != nil {
+		return entities.NewExecutionResult(
+			valueobjects.StatusFailure, valueobjects.HintUnknown,
+			valueobjects.ErrExternalFailure, r.runErr.Error(),
+			nil, nil, nil, nil, nil, 0, 0, msToDuration(r.durationMs), now,
+		)
+	}
+
+	// Success — pack metadata. No artifacts (read-only).
+	meta := map[string]string{
+		"branch":        r.branch,
+		"head":          r.head,
+		"clean":         fmt.Sprintf("%t", r.clean),
+		"entries_count": fmt.Sprintf("%d", len(r.entries)),
+	}
+	return entities.NewExecutionResult(
+		valueobjects.StatusSuccess, valueobjects.HintNonRetryable,
+		"", "",
+		nil, nil, nil,
+		nil,
+		meta,
+		0, 0,
+		msToDuration(r.durationMs), now,
+	)
 }
 
 // NormalizeClone normalizes a git.clone@v1 raw outcome.

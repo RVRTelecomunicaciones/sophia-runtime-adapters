@@ -228,17 +228,14 @@ func TestExecute_CommitReturnsCommitRaw(t *testing.T) {
 func TestExecute_StubsReturnNotImpl(t *testing.T) {
 	a := newTestAdapter(t)
 	p := mustPayload(t)
-	for _, name := range []string{"status", "clone", "diff", "commit"} {
+	// clone/diff/commit are still T34 stubs (notImpl=true); status is T35-real.
+	for _, name := range []string{"clone", "diff", "commit"} {
 		cap := capByName(t, a, name)
 		raw, err := a.Execute(context.Background(), cap, p)
 		if err != nil {
 			t.Fatalf("%s Execute: %v", name, err)
 		}
 		switch r := raw.(type) {
-		case *statusRaw:
-			if !r.notImpl {
-				t.Errorf("status stub: notImpl should be true")
-			}
 		case *cloneRaw:
 			if !r.notImpl {
 				t.Errorf("clone stub: notImpl should be true")
@@ -252,7 +249,7 @@ func TestExecute_StubsReturnNotImpl(t *testing.T) {
 				t.Errorf("commit stub: notImpl should be true")
 			}
 		default:
-			t.Errorf("unexpected raw type %T", raw)
+			t.Errorf("unexpected raw type %T for %s", raw, name)
 		}
 	}
 }
@@ -358,19 +355,17 @@ func TestExecute_UnknownCapabilityReturnsValidationRaw(t *testing.T) {
 // Normalizer — notImpl path
 // ---------------------------------------------------------------------------
 
-func TestNormalizeStatus_NotImpl_ReturnsAdapterInternalError(t *testing.T) {
+func TestNormalizeStatus_UnhandledRaw_ReturnsSuccess(t *testing.T) {
+	// T35: statusRaw with no error, no validation, no runErr → success.
 	a := newTestAdapter(t)
 	clk := &shared.FakeClock{T: time.Now()}
 	cap := capByName(t, a, "status")
-	result, err := a.NormalizeStatus(cap, &statusRaw{notImpl: true}, clk)
+	result, err := a.NormalizeStatus(cap, &statusRaw{clean: true, branch: "main", head: "abc"}, clk)
 	if err != nil {
 		t.Fatalf("NormalizeStatus: %v", err)
 	}
-	if result.Status != valueobjects.StatusFailure {
-		t.Errorf("status = %q, want failure", result.Status)
-	}
-	if result.ErrorClass != valueobjects.ErrAdapterInternalError {
-		t.Errorf("error_class = %q, want adapter_internal_error", result.ErrorClass)
+	if result.Status != valueobjects.StatusSuccess {
+		t.Errorf("status = %q, want success", result.Status)
 	}
 }
 

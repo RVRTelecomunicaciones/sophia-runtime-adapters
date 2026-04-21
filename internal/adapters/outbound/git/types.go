@@ -48,9 +48,7 @@ type StatusPayload struct {
 	RepoPath string `json:"repo_path"`
 }
 
-// statusRaw — see T35. Fields not yet read are forward declarations for T35.
-//
-//nolint:unused
+// statusRaw holds the raw outcome of a git.status@v1 execution.
 type statusRaw struct {
 	validation string
 	clean      bool
@@ -60,10 +58,8 @@ type statusRaw struct {
 	durationMs int64
 	ctxErr     error
 	runErr     error
-	notImpl    bool
 }
 
-//nolint:unused
 type statusEntry struct {
 	Path     string
 	Staging  byte
