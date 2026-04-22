@@ -1,0 +1,31 @@
+rule_files:
+  - infra_migrate.yaml
+
+evaluation_interval: 30s
+
+tests:
+  - name: migrate_failure_fires_critical
+    interval: 30s
+    input_series:
+      # Stuck at 1 (the failure already happened at boot).
+      - series: 'runtime_adapters_migrate_failures'
+        values: '1x10'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: MigrateFailureOnStartup
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "Migración de schema falló en startup"
+              description: "Bootstrap abortado. El runtime no puede aceptar requests hasta resolver."
+
+  - name: migrate_healthy_no_alert
+    interval: 30s
+    input_series:
+      - series: 'runtime_adapters_migrate_failures'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: MigrateFailureOnStartup
+        exp_alerts: []

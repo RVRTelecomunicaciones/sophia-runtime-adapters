@@ -1,0 +1,23 @@
+# Bootstrap health — startup migration failures.
+# Metric contract (§6.3): runtime_adapters.migrate.failures (counter).
+#
+# This metric is strictly monotonic during the lifetime of a process;
+# a non-zero value means the migrate step failed at boot and the
+# runtime either aborted or is running degraded. Either way oncall
+# needs to know immediately.
+#
+# Spec §8 (infra alerts, hand-written).
+
+groups:
+  - name: runtime-adapters-migrate
+    interval: 30s
+    rules:
+      - alert: MigrateFailureOnStartup
+        expr: |
+          runtime_adapters_migrate_failures > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Migración de schema falló en startup"
+          description: "Bootstrap abortado. El runtime no puede aceptar requests hasta resolver."
