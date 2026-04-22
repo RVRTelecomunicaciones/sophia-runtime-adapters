@@ -1,0 +1,48 @@
+# Pool saturation alerts for the pgx connection pool used by
+# runtime-adapters' PostgreSQL outbound. Metric contract: see
+# internal/infrastructure/obs/metrics.go — instrument
+# runtime_adapters.pool.connections.acquired.duration (histogram, seconds).
+#
+# Spec §8 (infra alerts, hand-written).
+
+groups:
+  - name: runtime-adapters-pool
+    interval: 30s
+    rules:
+      - alert: PoolAcquireLatencyHigh
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (
+              rate(runtime_adapters_pool_connections_acquired_duration_seconds_bucket[5m])
+            )
+          ) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pgx pool acquire p95 > 1s durante 5m"
+          description: "Acquire latency sostenida. Revisar concurrencia upstream o salud de DB."
+
+      - alert: PoolConnectionsExhausted
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (
+              rate(runtime_adapters_pool_connections_acquired_duration_seconds_bucket[5m])
+            )
+          ) > 5
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "pgx pool saturada (p95 acquire > 5s durante 2m)"
+          description: "El pool pgx está al límite. Puede ser carga legítima o DB degradada."
+
+      - alert: PoolIdleZero
+        expr: |
+          min_over_time(pgx_pool_idle_conns[1m]) == 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pgx pool sin conexiones idle durante 1m"
+          description: "Saturación completa transitoria — si persiste escalar a critical."

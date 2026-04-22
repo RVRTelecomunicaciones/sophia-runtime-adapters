@@ -1,0 +1,53 @@
+rule_files:
+  - infra_pool.yaml
+
+evaluation_interval: 30s
+
+tests:
+  - name: pool_exhausted_fires_critical
+    interval: 30s
+    input_series:
+      # Synthetic histogram where every observation lands in the 5–10s bucket.
+      # histogram_quantile interpolates linearly between adjacent buckets:
+      # with le=5 at 0 and le=10 at rate > 0, p95 lands at 5 + 0.95·(10−5) = 9.75s,
+      # above the 5s threshold. Avoids +Inf-bucket quirks in promtool.
+      - series: 'runtime_adapters_pool_connections_acquired_duration_seconds_bucket{le="1"}'
+        values: '0+0x20'
+      - series: 'runtime_adapters_pool_connections_acquired_duration_seconds_bucket{le="5"}'
+        values: '0+0x20'
+      - series: 'runtime_adapters_pool_connections_acquired_duration_seconds_bucket{le="10"}'
+        values: '0+10x20'
+      - series: 'runtime_adapters_pool_connections_acquired_duration_seconds_bucket{le="+Inf"}'
+        values: '0+10x20'
+    alert_rule_test:
+      - eval_time: 7m30s
+        alertname: PoolConnectionsExhausted
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "pgx pool saturada (p95 acquire > 5s durante 2m)"
+              description: "El pool pgx está al límite. Puede ser carga legítima o DB degradada."
+
+  - name: pool_healthy_no_critical
+    interval: 30s
+    input_series:
+      # Observations all land ≤0.5s — p95 is ≤0.5s, well under 1s threshold
+      # (so no warning) and well under 5s threshold (no critical).
+      - series: 'runtime_adapters_pool_connections_acquired_duration_seconds_bucket{le="0.5"}'
+        values: '0+10x20'
+      - series: 'runtime_adapters_pool_connections_acquired_duration_seconds_bucket{le="1"}'
+        values: '0+10x20'
+      - series: 'runtime_adapters_pool_connections_acquired_duration_seconds_bucket{le="5"}'
+        values: '0+10x20'
+      - series: 'runtime_adapters_pool_connections_acquired_duration_seconds_bucket{le="10"}'
+        values: '0+10x20'
+      - series: 'runtime_adapters_pool_connections_acquired_duration_seconds_bucket{le="+Inf"}'
+        values: '0+10x20'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: PoolConnectionsExhausted
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: PoolAcquireLatencyHigh
+        exp_alerts: []
