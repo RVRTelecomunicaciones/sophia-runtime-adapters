@@ -25,14 +25,14 @@ jobs:
         run: make test-unit
       - name: contract
         run: make test-contract
-      - name: coverage gate — domain + application (≥85% per package)
+      - name: coverage gate — domain + application + obs/log (≥85% per package)
         run: |
           # Per-package gate: every package under internal/(domain|application)
-          # must report ≥85% coverage. This tolerates defensive branches and
-          # empty marker methods (which Go's cover -func renders as 0.0% even
-          # when executed — coverage is statement-weighted, and zero-statement
-          # bodies produce that artifact).
-          go test -race -count=1 -cover ./internal/domain/... ./internal/application/... 2>&1 | tee cov-pkg.txt
+          # and internal/infrastructure/obs/log must report ≥85% coverage. This
+          # tolerates defensive branches and empty marker methods (which Go's
+          # cover -func renders as 0.0% even when executed — coverage is
+          # statement-weighted, and zero-statement bodies produce that artifact).
+          go test -race -count=1 -cover ./internal/domain/... ./internal/application/... ./internal/infrastructure/obs/log/... 2>&1 | tee cov-pkg.txt
           awk '
             /^ok[ \t]/ && /coverage:/ {
               pkg = $2
@@ -43,7 +43,7 @@ jobs:
                 }
               }
             }
-            END { if (fail) exit 1; print "✅ coverage gate passed (per-package ≥85% on internal/domain + internal/application)" }
+            END { if (fail) exit 1; print "✅ coverage gate passed (per-package ≥85% on internal/domain + internal/application + internal/infrastructure/obs/log)" }
           ' cov-pkg.txt
         if: ${{ !cancelled() }}
 
