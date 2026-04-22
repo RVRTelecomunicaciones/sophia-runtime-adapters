@@ -11,12 +11,14 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
 
 	"github.com/sophia-ecosystem/runtime-adapters/internal/application/services"
 	"github.com/sophia-ecosystem/runtime-adapters/internal/domain/execution/entities"
 	domainservices "github.com/sophia-ecosystem/runtime-adapters/internal/domain/execution/services"
 	"github.com/sophia-ecosystem/runtime-adapters/internal/domain/execution/valueobjects"
 	"github.com/sophia-ecosystem/runtime-adapters/internal/domain/shared"
+	"github.com/sophia-ecosystem/runtime-adapters/internal/infrastructure/obs"
 	logpkg "github.com/sophia-ecosystem/runtime-adapters/internal/infrastructure/obs/log"
 	"github.com/sophia-ecosystem/runtime-adapters/internal/ports/outbound"
 	"github.com/sophia-ecosystem/runtime-adapters/internal/ports/outbound/testdoubles"
@@ -1278,4 +1280,203 @@ func TestExecuteService_PersistStructuralFailureEmitsError(t *testing.T) {
 		}
 	}
 	require.True(t, found, "expected ERROR log with message 'persist receipt' from persistStructural")
+}
+
+// ---------------------------------------------------------------------------
+// T20 — Metrics Registry wiring.
+//
+// These tests verify that ExecuteService accepts an optional *obs.Registry
+// and that emission paths (ExecutionActive ±1, ConcurrencyRejects,
+// RecordExecution) are reachable without panic. Exported-value assertions
+// are deferred to 2C.2 integration-level tests.
+// ---------------------------------------------------------------------------
+
+// TestExecuteService_MetricsWiredNilSafe verifies ExecuteService works when
+// Metrics is nil (legacy test path) AND when a real Registry is passed.
+func TestExecuteService_MetricsWiredNilSafe(t *testing.T) {
+	// Happy path without metrics — covered by every existing test; this
+	// subtest makes the invariant explicit.
+	t.Run("nil metrics does not panic", func(t *testing.T) {
+		svc, deps := newTestService(t)
+		deps.adapter.Program(deps.cap.Canonical(), testdoubles.StubProgram{
+			Raw: &successRaw{dur: 10 * time.Millisecond},
+		})
+		req := buildRequest(t, deps, deps.clock)
+
+		_, err := svc.Execute(context.Background(), req)
+		require.NoError(t, err)
+	})
+
+	// With a real Registry bound to the global no-op meter, emission paths
+	// are exercised but no values are exported. This confirms the wiring
+	// compiles and the helper methods are reachable.
+	t.Run("real registry emits without panic", func(t *testing.T) {
+		meter := otel.Meter("test.t20")
+		reg, err := obs.NewRegistry(meter)
+		require.NoError(t, err)
+
+		clk := &shared.FakeClock{T: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
+		aid, _ := valueobjects.NewAdapterID("shell")
+		cap, _ := valueobjects.NewCapability(aid, "exec", "v1", false, 5*time.Second)
+		registry, _ := valueobjects.NewCapabilityRegistry(cap)
+		normalizer := domainservices.NewResultNormalizer(4096)
+		require.NoError(t, normalizer.Register(cap.Canonical(), func(_ valueobjects.Capability, raw domainservices.AdapterRawOutcome, clk shared.Clock) (entities.ExecutionResult, error) {
+			sr, ok := raw.(*successRaw)
+			if !ok {
+				return entities.ExecutionResult{}, fmt.Errorf("unexpected raw type %T", raw)
+			}
+			result, err := entities.NewExecutionResult(
+				valueobjects.StatusSuccess, valueobjects.HintRetryable,
+				"", "",
+				nil, nil, nil, nil, nil, 0, 0, sr.dur, clk.Now(),
+			)
+			return result, err
+		}))
+		stub := testdoubles.NewStubAdapter(aid, cap)
+		stub.Program(cap.Canonical(), testdoubles.StubProgram{
+			Raw: &successRaw{dur: 10 * time.Millisecond},
+		})
+		repo := testdoubles.NewInMemoryReceiptRepository(clk)
+		idemp := testdoubles.NewInMemoryIdempotencyStore(clk)
+		prov, _ := entities.NewProvenance(entities.ProvTest, "v0.0.1", "test-host", "runtime-v0.0.1", "")
+		idGen := &entities.FakeIDGen{IDs: []string{ulid01, ulid02, ulid03, ulid04, ulid05}}
+
+		svc, err := services.NewExecuteService(services.ExecuteServiceConfig{
+			Adapters:    map[string]outbound.Adapter{"shell": stub},
+			Registry:    registry,
+			Metrics:     reg,
+			Normalizer:  normalizer,
+			Receipts:    repo,
+			Idempotency: idemp,
+			Limiter:     services.NewConcurrencyLimiter(10),
+			Clock:       clk,
+			IDGen:       idGen,
+			MaxTimeout:  30 * time.Second,
+			IdempWindow: 24 * time.Hour,
+			Provenance:  prov,
+		})
+		require.NoError(t, err)
+
+		cid, _ := shared.NewCorrelationID(ulid13)
+		pl, _ := valueobjects.NewPayload(valueobjects.ContentTypeJSON, []byte(`{}`), 0)
+		tb, _ := valueobjects.NewTimeoutBudget(5000, 0)
+		req, _ := entities.NewExecutionRequest(entities.ExecutionRequestInput{
+			CorrelationID: cid, AdapterID: aid,
+			CapabilityName: "exec", CapabilityVersion: "v1",
+			Payload: pl, TimeoutBudget: tb,
+		}, clk)
+
+		_, err = svc.Execute(context.Background(), req)
+		require.NoError(t, err)
+	})
+
+	// Pre-adapter structural failure path (capability unknown) must also
+	// reach RecordExecution without panic when Metrics is wired.
+	t.Run("structural failure path emits without panic", func(t *testing.T) {
+		meter := otel.Meter("test.t20.structural")
+		reg, err := obs.NewRegistry(meter)
+		require.NoError(t, err)
+
+		clk := &shared.FakeClock{T: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
+		aid, _ := valueobjects.NewAdapterID("shell")
+		cap, _ := valueobjects.NewCapability(aid, "exec", "v1", false, 5*time.Second)
+		registry, _ := valueobjects.NewCapabilityRegistry(cap)
+		normalizer := domainservices.NewResultNormalizer(4096)
+		_ = normalizer.Register(cap.Canonical(), func(_ valueobjects.Capability, _ domainservices.AdapterRawOutcome, _ shared.Clock) (entities.ExecutionResult, error) {
+			return entities.ExecutionResult{}, nil
+		})
+		stub := testdoubles.NewStubAdapter(aid, cap)
+		repo := testdoubles.NewInMemoryReceiptRepository(clk)
+		idemp := testdoubles.NewInMemoryIdempotencyStore(clk)
+		prov, _ := entities.NewProvenance(entities.ProvTest, "v0.0.1", "test-host", "runtime-v0.0.1", "")
+		idGen := &entities.FakeIDGen{IDs: []string{ulid01, ulid02, ulid03, ulid04, ulid05}}
+
+		svc, err := services.NewExecuteService(services.ExecuteServiceConfig{
+			Adapters:    map[string]outbound.Adapter{"shell": stub},
+			Registry:    registry,
+			Metrics:     reg,
+			Normalizer:  normalizer,
+			Receipts:    repo,
+			Idempotency: idemp,
+			Limiter:     services.NewConcurrencyLimiter(10),
+			Clock:       clk,
+			IDGen:       idGen,
+			MaxTimeout:  30 * time.Second,
+			IdempWindow: 24 * time.Hour,
+			Provenance:  prov,
+		})
+		require.NoError(t, err)
+
+		cid, _ := shared.NewCorrelationID(ulid13)
+		pl, _ := valueobjects.NewPayload(valueobjects.ContentTypeJSON, []byte(`{}`), 0)
+		tb, _ := valueobjects.NewTimeoutBudget(5000, 0)
+		req, _ := entities.NewExecutionRequest(entities.ExecutionRequestInput{
+			CorrelationID: cid, AdapterID: aid,
+			CapabilityName: "unknown.op", CapabilityVersion: "v1",
+			Payload: pl, TimeoutBudget: tb,
+		}, clk)
+
+		receipt, err := svc.Execute(context.Background(), req)
+		require.NoError(t, err)
+		require.Equal(t, valueobjects.StatusFailure, receipt.Result().Status)
+		require.Equal(t, valueobjects.ErrCapabilityUnknown, receipt.Result().ErrorClass)
+	})
+}
+
+// TestExecuteService_ConcurrencyRejectCountsMetric verifies the counter is
+// bumped when the limiter is at capacity. Same "no exported value" caveat —
+// we assert no panic + the error propagates.
+func TestExecuteService_ConcurrencyRejectCountsMetric(t *testing.T) {
+	meter := otel.Meter("test.t20.reject")
+	reg, err := obs.NewRegistry(meter)
+	require.NoError(t, err)
+
+	clk := &shared.FakeClock{T: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
+	aid, _ := valueobjects.NewAdapterID("shell")
+	cap, _ := valueobjects.NewCapability(aid, "exec", "v1", false, 5*time.Second)
+	registry, _ := valueobjects.NewCapabilityRegistry(cap)
+	normalizer := domainservices.NewResultNormalizer(4096)
+	_ = normalizer.Register(cap.Canonical(), func(_ valueobjects.Capability, _ domainservices.AdapterRawOutcome, _ shared.Clock) (entities.ExecutionResult, error) {
+		return entities.ExecutionResult{}, nil
+	})
+	stub := testdoubles.NewStubAdapter(aid, cap)
+	repo := testdoubles.NewInMemoryReceiptRepository(clk)
+	idemp := testdoubles.NewInMemoryIdempotencyStore(clk)
+	prov, _ := entities.NewProvenance(entities.ProvTest, "v0.0.1", "test-host", "runtime-v0.0.1", "")
+	idGen := &entities.FakeIDGen{IDs: []string{ulid01, ulid02, ulid03, ulid04, ulid05}}
+
+	// Limiter with max=1; pre-acquire the only slot so every subsequent
+	// TryAcquire returns ErrTooManyExecutions. (NewConcurrencyLimiter(0)
+	// panics — see concurrency.go.)
+	limiter := services.NewConcurrencyLimiter(1)
+	require.NoError(t, limiter.TryAcquire(), "pre-acquire must succeed")
+	t.Cleanup(limiter.Release)
+
+	svc, err := services.NewExecuteService(services.ExecuteServiceConfig{
+		Adapters:    map[string]outbound.Adapter{"shell": stub},
+		Registry:    registry,
+		Metrics:     reg,
+		Normalizer:  normalizer,
+		Receipts:    repo,
+		Idempotency: idemp,
+		Limiter:     limiter,
+		Clock:       clk,
+		IDGen:       idGen,
+		MaxTimeout:  30 * time.Second,
+		IdempWindow: 24 * time.Hour,
+		Provenance:  prov,
+	})
+	require.NoError(t, err)
+
+	cid, _ := shared.NewCorrelationID(ulid13)
+	pl, _ := valueobjects.NewPayload(valueobjects.ContentTypeJSON, []byte(`{}`), 0)
+	tb, _ := valueobjects.NewTimeoutBudget(5000, 0)
+	req, _ := entities.NewExecutionRequest(entities.ExecutionRequestInput{
+		CorrelationID: cid, AdapterID: aid,
+		CapabilityName: "exec", CapabilityVersion: "v1",
+		Payload: pl, TimeoutBudget: tb,
+	}, clk)
+
+	_, execErr := svc.Execute(context.Background(), req)
+	require.ErrorIs(t, execErr, services.ErrTooManyExecutions)
 }

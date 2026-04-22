@@ -15,6 +15,7 @@ import (
 	nethttp "net/http"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/otel"
 
 	inboundhttp "github.com/sophia-ecosystem/runtime-adapters/internal/adapters/inbound/http"
 	"github.com/sophia-ecosystem/runtime-adapters/internal/adapters/outbound/filesystem"
@@ -109,6 +110,18 @@ func BuildRuntime(ctx context.Context, cfg config.Config) (*Runtime, error) {
 	}
 	normalizer := domainservices.NewResultNormalizer(cfg.InlineStreamLimit)
 
+	// Metrics Registry (§6.3). Bound to the process-wide MeterProvider
+	// installed by SetupOTel; safe with the no-op provider if OTel is
+	// disabled. ExecuteService uses this to emit execution.active /
+	// concurrency.rejects / execution.total / execution.duration /
+	// partial.signal from a single choke-point.
+	metricsRegistry, err := obs.NewRegistry(otel.Meter("runtime-adapters"))
+	if err != nil {
+		pool.Close()
+		_ = otelShutdown(ctx)
+		return nil, fmt.Errorf("metrics registry: %w", err)
+	}
+
 	// 6. Concrete adapters + register normalizers.
 	clk := shared.RealClock{}
 	adapters, err := registration.RegisterAllPhase1(normalizer, adapterConfig(cfg), clk)
@@ -148,6 +161,7 @@ func BuildRuntime(ctx context.Context, cfg config.Config) (*Runtime, error) {
 	execSvc, err := services.NewExecuteService(services.ExecuteServiceConfig{
 		Adapters:    adaptersByString,
 		Registry:    registry,
+		Metrics:     metricsRegistry,
 		Normalizer:  normalizer,
 		Receipts:    receiptRepo,
 		Idempotency: idempStore,

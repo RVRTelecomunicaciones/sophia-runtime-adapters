@@ -2,14 +2,19 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 
 	"github.com/sophia-ecosystem/runtime-adapters/internal/domain/execution/entities"
 	domainservices "github.com/sophia-ecosystem/runtime-adapters/internal/domain/execution/services"
 	"github.com/sophia-ecosystem/runtime-adapters/internal/domain/execution/valueobjects"
 	"github.com/sophia-ecosystem/runtime-adapters/internal/domain/shared"
+	"github.com/sophia-ecosystem/runtime-adapters/internal/infrastructure/obs"
 	obslog "github.com/sophia-ecosystem/runtime-adapters/internal/infrastructure/obs/log"
 	"github.com/sophia-ecosystem/runtime-adapters/internal/ports/inbound"
 	"github.com/sophia-ecosystem/runtime-adapters/internal/ports/outbound"
@@ -28,6 +33,7 @@ var _ inbound.RuntimeService = (*ExecuteService)(nil)
 type ExecuteService struct {
 	adapters    map[string]outbound.Adapter // keyed by AdapterID.String()
 	registry    *valueobjects.CapabilityRegistry
+	metrics     *obs.Registry // optional; nil-safe (production wiring always non-nil)
 	normalizer  *domainservices.ResultNormalizer
 	receipts    outbound.ReceiptRepository
 	idempotency outbound.IdempotencyStore
@@ -41,9 +47,15 @@ type ExecuteService struct {
 
 // ExecuteServiceConfig bundles the constructor arguments so callers
 // (bootstrap/wire.go) construct by name rather than positional args.
+//
+// Metrics is optional (nil-safe). Production wiring (bootstrap) always
+// passes a non-nil *obs.Registry; tests may leave it nil — every emission
+// site guards against nil. The field is named Metrics (not Registry) to
+// avoid collision with the Registry field that holds the capability catalog.
 type ExecuteServiceConfig struct {
 	Adapters    map[string]outbound.Adapter
 	Registry    *valueobjects.CapabilityRegistry
+	Metrics     *obs.Registry
 	Normalizer  *domainservices.ResultNormalizer
 	Receipts    outbound.ReceiptRepository
 	Idempotency outbound.IdempotencyStore
@@ -94,6 +106,7 @@ func NewExecuteService(cfg ExecuteServiceConfig) (*ExecuteService, error) {
 	return &ExecuteService{
 		adapters:    cfg.Adapters,
 		registry:    cfg.Registry,
+		metrics:     cfg.Metrics, // optional — nil is valid in tests
 		normalizer:  cfg.Normalizer,
 		receipts:    cfg.Receipts,
 		idempotency: cfg.Idempotency,
@@ -122,8 +135,13 @@ func (s *ExecuteService) Execute(ctx context.Context, req entities.ExecutionRequ
 	)
 	ctx = obslog.ContextWith(ctx, logger)
 
-	// Step 0: concurrency limiter (A9.1 fast-reject).
+	// Step 0: concurrency limiter (A9.1 fast-reject). On rejection we bump
+	// the ConcurrencyRejects counter (§6.3) on the caller's ctx before
+	// returning — the execution never starts so no receipt/handle exists.
 	if err := s.limiter.TryAcquire(); err != nil {
+		if s.metrics != nil && errors.Is(err, ErrTooManyExecutions) {
+			s.metrics.ConcurrencyRejects.Add(ctx, 1)
+		}
 		return entities.ExecutionReceipt{}, err
 	}
 	defer s.limiter.Release()
@@ -174,6 +192,15 @@ func (s *ExecuteService) Execute(ctx context.Context, req entities.ExecutionRequ
 	adapter, ok := s.adapters[cap.AdapterID().String()]
 	if !ok {
 		return s.persistStructural(ctx, req, valueobjects.ErrCapabilityUnknown, "no adapter registered for "+cap.AdapterID().String())
+	}
+
+	// Bracket the dispatch with ExecutionActive ±1 (§6.3). The defer guards
+	// against the (recovered) panic path — SafeExecute recovers, but this
+	// discipline costs nothing and keeps the invariant visible.
+	if s.metrics != nil {
+		capAttr := attribute.NewSet(attribute.String("capability", cap.Canonical()))
+		s.metrics.ExecutionActive.Add(execCtx, 1, metric.WithAttributeSet(capAttr))
+		defer s.metrics.ExecutionActive.Add(execCtx, -1, metric.WithAttributeSet(capAttr))
 	}
 
 	tStart := s.clock.Now()
@@ -281,6 +308,17 @@ func (s *ExecuteService) Execute(ctx context.Context, req entities.ExecutionRequ
 
 	// Step 11: final emit — "execution complete" with all §5.3 contract
 	// fields. Level is chosen by LevelFor(status, errClass) per §5.4.
+	// Metrics recorded here so execution.total / execution.duration /
+	// partial.signal are all emitted from a single choke-point before
+	// the final log (§6.3).
+	if s.metrics != nil {
+		dur := time.Duration(saved.Result().DurationMs) * time.Millisecond
+		s.metrics.RecordExecution(ctx,
+			cap.Canonical(),
+			saved.Result().Status.String(),
+			dur.Seconds(),
+		)
+	}
 	emitExecutionComplete(ctx, logger, saved)
 
 	return saved, nil
@@ -359,6 +397,19 @@ func (s *ExecuteService) persistStructural(
 			slog.String("error", err.Error()),
 		)
 		return entities.ExecutionReceipt{}, fmt.Errorf("persistence failed; side effect may have occurred: %w", err)
+	}
+
+	// Record metrics for the structural path. Duration is 0 for pre-adapter
+	// failures (no adapter ran). RecordExecution still increments
+	// execution.total{capability, status=failure}; success-only histograms
+	// and partial.signal are no-ops here by design.
+	if s.metrics != nil {
+		dur := time.Duration(saved.Result().DurationMs) * time.Millisecond
+		s.metrics.RecordExecution(ctx,
+			pseudoCap.Canonical(),
+			saved.Result().Status.String(),
+			dur.Seconds(),
+		)
 	}
 
 	// Final emit for the pre-adapter structural-failure path. The logger
