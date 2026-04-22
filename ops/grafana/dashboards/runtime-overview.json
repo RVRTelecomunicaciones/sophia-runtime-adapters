@@ -345,7 +345,7 @@
       "id": 20,
       "type": "table",
       "title": "Burn rate matrix (1h / 6h, availability SLOs)",
-      "description": "Per-capability current burn rate across 1h and 6h windows. >1 means the budget for the window is exhausted. Row click → data link into the adapter dashboard.",
+      "description": "Per-capability burn rate across 1h and 6h windows (spec §10.4). >1 means the budget for the window is exhausted. Row click → data link into the adapter dashboard. Formula: slo:sli_error:ratio_rate{1h|6h} / slo:error_budget:ratio — the same formula Sloth uses internally for slo:current_burn_rate:ratio, applied to the 1h and 6h SLI error rates. The emitted slo:current_burn_rate:ratio metric is not consumed directly because it uses a fixed 5m window and would collapse both matrix columns to the same value.",
       "datasource": {"type": "prometheus", "uid": "${datasource}"},
       "gridPos": {"h": 9, "w": 12, "x": 0, "y": 4},
       "fieldConfig": {
