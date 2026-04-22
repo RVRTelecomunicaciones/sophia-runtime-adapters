@@ -47,6 +47,122 @@ jobs:
           ' cov-pkg.txt
         if: ${{ !cancelled() }}
 
+  observability:
+    name: observability (sloth + promtool + amtool + dashboard-linter + obs Go tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache: true
+
+      - name: install sloth (pinned)
+        run: |
+          set -euo pipefail
+          VERSION="$(cat ops/slo/.sloth-version)"
+          curl -sSL --fail \
+            "https://github.com/slok/sloth/releases/download/v${VERSION}/sloth-linux-amd64" \
+            -o /usr/local/bin/sloth
+          chmod +x /usr/local/bin/sloth
+
+      - name: install promtool (pinned)
+        run: |
+          set -euo pipefail
+          VERSION="$(cat ops/prometheus/.prometheus-version)"
+          TARBALL="prometheus-${VERSION}.linux-amd64.tar.gz"
+          curl -sSL --fail \
+            "https://github.com/prometheus/prometheus/releases/download/v${VERSION}/${TARBALL}" \
+            -o "/tmp/${TARBALL}"
+          tar -xzf "/tmp/${TARBALL}" -C /tmp
+          sudo install -m 0755 "/tmp/prometheus-${VERSION}.linux-amd64/promtool" /usr/local/bin/promtool
+
+      - name: install amtool (pinned)
+        run: |
+          set -euo pipefail
+          VERSION="$(cat ops/alertmanager/.alertmanager-version)"
+          TARBALL="alertmanager-${VERSION}.linux-amd64.tar.gz"
+          curl -sSL --fail \
+            "https://github.com/prometheus/alertmanager/releases/download/v${VERSION}/${TARBALL}" \
+            -o "/tmp/${TARBALL}"
+          tar -xzf "/tmp/${TARBALL}" -C /tmp
+          sudo install -m 0755 "/tmp/alertmanager-${VERSION}.linux-amd64/amtool" /usr/local/bin/amtool
+
+      - name: install dashboard-linter (pinned)
+        run: |
+          set -euo pipefail
+          VERSION="$(cat ops/grafana/.dashboard-linter-version)"
+          go install "github.com/grafana/dashboard-linter@${VERSION}"
+          echo "${HOME}/go/bin" >> "${GITHUB_PATH}"
+
+      - name: version pin gate — sloth
+        run: |
+          set -euo pipefail
+          sloth version 2>&1 | grep -qF "$(cat ops/slo/.sloth-version)"
+
+      - name: version pin gate — promtool
+        run: |
+          set -euo pipefail
+          promtool --version 2>&1 | grep -qF "$(cat ops/prometheus/.prometheus-version)"
+
+      - name: version pin gate — amtool
+        run: |
+          set -euo pipefail
+          amtool --version 2>&1 | grep -qF "$(cat ops/alertmanager/.alertmanager-version)"
+
+      - name: sloth idempotency gate
+        run: |
+          set -euo pipefail
+          # Regenerate into a temp dir and diff against checked-in output.
+          # The hand-written promtool test fixture (slo_rules.test.yaml) is
+          # excluded: sloth does not emit it, so it cannot appear in the
+          # regenerated tree.
+          mkdir -p /tmp/slo-regen
+          sloth generate --input ops/slo/ --out /tmp/slo-regen/
+          diff -ru --exclude='*.test.yaml' ops/prometheus/generated/ /tmp/slo-regen/
+
+      - name: promtool check rules (infra + generated SLOs)
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s extglob
+          # Exclude *.test.yaml — those are promtool test-rules fixtures,
+          # not rule files.
+          promtool check rules \
+            ops/prometheus/rules/!(*.test).yaml \
+            ops/prometheus/generated/!(*.test).yaml
+
+      - name: promtool test rules (infra + generated fixtures)
+        run: |
+          set -euo pipefail
+          promtool test rules \
+            ops/prometheus/rules/*.test.yaml \
+            ops/prometheus/generated/*.test.yaml
+
+      - name: amtool check-config
+        run: |
+          set -euo pipefail
+          amtool check-config ops/alertmanager/alertmanager.yaml
+
+      - name: dashboard-linter lint
+        run: |
+          set -euo pipefail
+          dashboard-linter lint \
+            -c ops/grafana/dashboards/.lint \
+            ops/grafana/dashboards/*.json
+
+      - name: go test — obs (race)
+        run: go test -race -count=1 ./internal/infrastructure/obs/...
+
+      - name: go test — ops/slo (sloth tag)
+        run: go test -tags sloth ./ops/slo/...
+
+      - name: go test — ops/alertmanager (alertmanager tag)
+        run: go test -tags alertmanager ./ops/alertmanager/...
+
+      - name: go test — ops/grafana (dashboards tag)
+        run: go test -tags dashboards ./ops/grafana/...
+
   integration:
     name: integration (PR only)
     if: github.event_name == 'pull_request'
