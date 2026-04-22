@@ -1,0 +1,18 @@
+apiVersion: 1
+
+# File provider that mounts the versioned dashboard JSONs at runtime.
+# path points to /var/lib/grafana/dashboards (disjoint from provisioning
+# mount at /etc/grafana/provisioning). D2C1.19.
+#
+# allowUiUpdates: false — dashboards are source-of-truth in git. UI edits
+# are warned against; changes land via PR. disableDeletion guards against
+# operator mistakes.
+
+providers:
+  - name: runtime-adapters
+    folder: "Runtime Adapters"
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards
