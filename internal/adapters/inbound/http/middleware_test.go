@@ -2,10 +2,15 @@ package http
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/sophia-ecosystem/runtime-adapters/internal/infrastructure/obs/log"
 )
 
 // panicHandler is a test handler that panics with a controlled value.
@@ -117,4 +122,54 @@ func TestRequestIDHeader_AbsentWhenNotInRequest(t *testing.T) {
 	if got != "" {
 		t.Errorf("X-Request-Id should be absent when not in request, got %q", got)
 	}
+}
+
+func TestLoggerMiddleware_BindsLoggerAndCorrelationID(t *testing.T) {
+	root := log.NewNop()
+	mw := LoggerMiddleware(root)
+
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got := log.FromContext(r.Context())
+		require.NotNil(t, got, "LoggerMiddleware must bind a logger into ctx")
+		// Emit must not panic — the request-scoped logger is usable.
+		got.Info(r.Context(), "probe", slog.String("probe", "ok"))
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("X-Correlation-Id", "corr-abc-123")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestLoggerMiddleware_GeneratesCorrelationIDWhenMissing(t *testing.T) {
+	root := log.NewNop()
+	mw := LoggerMiddleware(root)
+
+	var captured string
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		captured = r.Header.Get("X-Correlation-Id")
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest("GET", "/", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	require.NotEmpty(t, captured, "X-Correlation-Id should be generated when absent")
+	require.Regexp(t, `^[0-9A-HJKMNP-TV-Z]{26}$`, captured, "ULID shape")
+}
+
+func TestLoggerMiddleware_NilRootFallsBackToNop(t *testing.T) {
+	mw := LoggerMiddleware(nil)
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got := log.FromContext(r.Context())
+		require.NotNil(t, got, "nil root must fall back to Nop — never-nil invariant")
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest("GET", "/", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
 }

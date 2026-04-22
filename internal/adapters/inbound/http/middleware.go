@@ -2,9 +2,14 @@ package http
 
 import (
 	"fmt"
-	"log"
+	stdlog "log"
+	"log/slog"
 	"net/http"
 	"runtime/debug"
+
+	"github.com/oklog/ulid/v2"
+
+	"github.com/sophia-ecosystem/runtime-adapters/internal/infrastructure/obs/log"
 )
 
 // panicRecoverer recovers from panics in downstream handlers and
@@ -19,7 +24,7 @@ func panicRecoverer(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				log.Printf("http: panic recovered: %v\nstack:\n%s", rec, debug.Stack())
+				stdlog.Printf("http: panic recovered: %v\nstack:\n%s", rec, debug.Stack())
 				writeHTTPError(w, http.StatusInternalServerError,
 					"adapter_internal_error",
 					fmt.Sprintf("panic recovered: %v", rec))
@@ -40,4 +45,41 @@ func requestIDHeader(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// LoggerMiddleware binds a request-scoped logger to ctx, enriched with
+// correlation_id. Correlation id sources, in order:
+//
+//  1. X-Correlation-Id request header (trusted, pass-through).
+//  2. A generated ULID when absent (written back into the request
+//     headers so downstream handlers can read it too).
+//
+// A nil root falls back to a Nop logger so the never-nil ctx invariant
+// holds regardless of how the middleware is wired in bootstrap.
+//
+// Registration order in router.go must be:
+//
+//	chimw.RequestID → LoggerMiddleware → requestIDHeader → panicRecoverer
+//
+// LoggerMiddleware runs AFTER chimw.RequestID (to inherit the request-id
+// context) and BEFORE panicRecoverer (so recovered panics have a logger
+// already bound).
+//
+// Spec §5.5.
+func LoggerMiddleware(root *log.Logger) func(http.Handler) http.Handler {
+	if root == nil {
+		root = log.NewNop()
+	}
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			corr := r.Header.Get("X-Correlation-Id")
+			if corr == "" {
+				corr = ulid.Make().String()
+				r.Header.Set("X-Correlation-Id", corr)
+			}
+			reqLogger := root.With(slog.String("correlation_id", corr))
+			ctx := log.ContextWith(r.Context(), reqLogger)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
 }
