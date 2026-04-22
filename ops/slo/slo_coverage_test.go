@@ -44,9 +44,16 @@ func TestSloth_CoversAllPhase1Capabilities(t *testing.T) {
 
 	has := map[string]map[string]bool{}
 
-	matches, err := filepath.Glob("*.yaml")
+	// Resolve ops/slo/*.yaml via repo-root walk instead of CWD-relative
+	// glob. Standard `go test ./ops/slo/` sets CWD to the package dir, but
+	// compiled test binaries invoked elsewhere (e.g. integration runners)
+	// would silently find zero matches. Parity with findRepoRoot pattern
+	// in internal/infrastructure/obs/metrics_test.go.
+	repoRoot := findRepoRoot(t)
+	matches, err := filepath.Glob(filepath.Join(repoRoot, "ops", "slo", "*.yaml"))
 	require.NoError(t, err)
-	require.NotEmpty(t, matches, "no ops/slo/*.yaml files found — run from ops/slo/ directory")
+	require.NotEmpty(t, matches,
+		"no ops/slo/*.yaml files found under %s", repoRoot)
 
 	for _, f := range matches {
 		data, err := os.ReadFile(f)
@@ -85,4 +92,28 @@ func TestSloth_CoversAllPhase1Capabilities(t *testing.T) {
 				"missing latency SLO for capability %q", id)
 		})
 	}
+}
+
+// findRepoRoot walks up the filesystem until it finds a directory that
+// contains go.mod. Fails the test if not found within 10 levels.
+// Mirrors the helper in internal/infrastructure/obs/metrics_test.go —
+// duplicated locally instead of extracted because the obs package is
+// not importable from a _test package under build-tagged ops/ tests.
+func findRepoRoot(t *testing.T) string {
+	t.Helper()
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+	dir := cwd
+	for i := 0; i < 10; i++ {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	t.Fatalf("could not find repo root (go.mod) starting from %s", cwd)
+	return ""
 }
