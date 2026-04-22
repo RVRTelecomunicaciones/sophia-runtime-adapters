@@ -38,6 +38,14 @@ func TestLevelFor_Status(t *testing.T) {
 		{valueobjects.StatusFailure, valueobjects.ErrAdapterInternalError, slog.LevelError},
 		{valueobjects.StatusFailure, valueobjects.ErrNormalizationFailure, slog.LevelError},
 
+		// Defensive: ErrTimeout / ErrCancelled as ErrorClass under StatusFailure
+		// are unspecced in §5.4. They fall through to the outer default → ERROR.
+		// These cases exist to pin the current behavior and prevent silent drift
+		// if someone later adds these values to the sub-switch without updating
+		// this table.
+		{valueobjects.StatusFailure, valueobjects.ErrTimeout, slog.LevelError},
+		{valueobjects.StatusFailure, valueobjects.ErrCancelled, slog.LevelError},
+
 		// defensive: unknown status escalates to ERROR
 		{valueobjects.ExecutionStatus("impossible"), "", slog.LevelError},
 	}
