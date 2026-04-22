@@ -121,3 +121,17 @@ A semaphore cap must be configured at startup. Excess requests receive a fast re
 `success`, `failure`, `timeout`, `cancelled`, `partial` are the only valid `ExecutionStatus` values. Adding a new status requires an ADR and a `schema_version` bump.
 
 **Rationale:** D4.3, I3.
+
+---
+
+## R16 — Metric cardinality bounded
+
+Every declared instrument has an explicit label whitelist. Only
+bounded-value labels are permitted: `capability`, `adapter`, `status`,
+`signal`. Unbounded or high-cardinality identifiers (`error_class`,
+`receipt_id`, `handle_id`, `correlation_id`, `trace_id`, `retry_hint`)
+are prohibited as metric labels; they belong in logs or exemplars.
+CI enforces this via `TestMetricContract_LabelBlacklist` and
+`TestMetricContract_LabelWhitelist`.
+
+**Rationale:** §6.4 + §12.1 (spec). Added in Phase 2C.1.
