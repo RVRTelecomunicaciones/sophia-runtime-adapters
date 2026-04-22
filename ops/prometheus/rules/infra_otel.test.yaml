@@ -1,0 +1,50 @@
+rule_files:
+  - infra_otel.yaml
+
+evaluation_interval: 30s
+
+tests:
+  - name: otel_queue_full_fires_critical
+    interval: 30s
+    input_series:
+      # Queue stuck at 9500 (95% of 10000 capacity) sustained >5m.
+      - series: 'runtime_adapters_otel_exporter_queue_size{signal="metrics"}'
+        values: '9500x20'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: OTelExporterQueueFull
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              signal: metrics
+            exp_annotations:
+              summary: "OTel exporter queue > 90% durante 5m"
+              description: "El collector no está aceptando telemetría. Riesgo de pérdida de datos."
+
+  - name: otel_healthy_no_alert
+    interval: 30s
+    input_series:
+      # Queue oscillating normally between 10 and 100 — healthy flush cadence.
+      - series: 'runtime_adapters_otel_exporter_queue_size{signal="metrics"}'
+        values: '10+10x20'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: OTelExporterQueueFull
+        exp_alerts: []
+
+  - name: concurrency_rejects_elevated_info
+    interval: 30s
+    input_series:
+      # 10 rejects per 30s step sustained >10m → rate ≈ 0.33/s over 5m,
+      # above the 0.1/s threshold.
+      - series: 'runtime_adapters_concurrency_rejects'
+        values: '0+10x40'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: ConcurrencyRejectsElevated
+        exp_alerts:
+          - exp_labels:
+              severity: info
+            exp_annotations:
+              summary: "Fast-reject rate elevado (capacity planning)"
+              description: "Señal de capacity planning, sin receiver activo (info silenciado al root de Alertmanager)."

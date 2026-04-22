@@ -1,0 +1,50 @@
+# OTel exporter health + concurrency reject capacity signal.
+# Metric contract (§6.3):
+# - runtime_adapters.otel.exporter.queue.size (gauge, {items}, signal)
+# - runtime_adapters.concurrency.rejects     (counter, {rejects}, —)
+#
+# Queue capacity 10000 is the OTel default (go.opentelemetry.io/otel/sdk/metric
+# default BatchSpanProcessor queue). Expressed as a fraction to keep the rule
+# portable if capacity is tuned in bootstrap.
+#
+# Spec §8 (infra alerts, hand-written).
+
+groups:
+  - name: runtime-adapters-otel
+    interval: 30s
+    rules:
+      - alert: OTelExporterQueueFull
+        expr: |
+          (runtime_adapters_otel_exporter_queue_size / 10000) > 0.9
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "OTel exporter queue > 90% durante 5m"
+          description: "El collector no está aceptando telemetría. Riesgo de pérdida de datos."
+
+      - alert: OTelExporterDown
+        expr: |
+          (
+            max_over_time(runtime_adapters_otel_exporter_queue_size[10m])
+            -
+            min_over_time(runtime_adapters_otel_exporter_queue_size[10m])
+          ) == 0
+          and
+          runtime_adapters_otel_exporter_queue_size > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "OTel exporter no drena queue hace 10m"
+          description: "Exporter potencialmente caído — telemetría acumulándose localmente sin flush."
+
+      - alert: ConcurrencyRejectsElevated
+        expr: |
+          rate(runtime_adapters_concurrency_rejects[5m]) > 0.1
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: "Fast-reject rate elevado (capacity planning)"
+          description: "Señal de capacity planning, sin receiver activo (info silenciado al root de Alertmanager)."
