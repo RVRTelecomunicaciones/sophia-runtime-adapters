@@ -1134,6 +1134,12 @@ func TestExecuteService_LoggerEnrichedAtEachStep(t *testing.T) {
 	require.Equal(t, "success", attrs["status"])
 	require.GreaterOrEqual(t, attrs["duration_ms"].(int64), int64(0))
 
+	// Negative assert: success records must NOT carry error_class (§5.3).
+	// Guards against drift if someone later adds error_class unconditionally
+	// to the emit helper.
+	_, hasErrClass := attrs["error_class"]
+	require.False(t, hasErrClass, "error_class must be absent on success records")
+
 	require.Equal(t, slog.LevelInfo, final.Level, "success must emit at INFO")
 }
 
