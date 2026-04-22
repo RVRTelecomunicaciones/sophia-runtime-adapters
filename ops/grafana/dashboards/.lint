@@ -1,0 +1,22 @@
+# dashboard-linter configuration for runtime-adapters.
+#
+# The default ruleset assumes a multi-job Prometheus deployment where
+# every metric carries `job` and `instance` labels. runtime-adapters is
+# a single-service runtime (spec §6.3): metrics are keyed by
+# `capability` / `adapter` / `sloth_slo`, not by job or instance.
+#
+# Rather than add phantom `job=~"$job"` matchers that every query would
+# have to carry, we exclude the job/instance-specific rules and keep
+# filtering scoped to the labels the runtime actually emits. Rule
+# coverage is enforced separately by the `dashboards_coverage_test.go`
+# (rule-existence + required-variable checks — spec §10.3, §11.2).
+
+exclusions:
+  template-job-rule:
+    reason: "runtime-adapters is a single-service runtime. Metrics are scoped by capability/adapter, not job. Spec §6.3."
+  template-instance-rule:
+    reason: "Single-service runtime — no per-instance multiplexing. Spec §6.3."
+  target-job-rule:
+    reason: "See template-job-rule — metrics do not carry a job label."
+  target-instance-rule:
+    reason: "See template-instance-rule — metrics do not carry an instance label."
