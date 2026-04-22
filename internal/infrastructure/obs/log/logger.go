@@ -47,6 +47,16 @@ func NewNop() *Logger {
 	return &Logger{inner: slog.New(slog.NewTextHandler(io.Discard, nil))}
 }
 
+// NewWithHandler builds a Logger from an explicit slog.Handler. Primarily
+// useful in tests that need to inspect emitted records; production code
+// should use New(Config). A nil handler yields a Nop logger.
+func NewWithHandler(h slog.Handler) *Logger {
+	if h == nil {
+		return NewNop()
+	}
+	return &Logger{inner: slog.New(h)}
+}
+
 // With returns a derived Logger with additional attributes.
 func (l *Logger) With(attrs ...slog.Attr) *Logger {
 	args := make([]any, 0, len(attrs))

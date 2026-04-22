@@ -4,16 +4,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 
 	"github.com/sophia-ecosystem/runtime-adapters/internal/application/services"
 	"github.com/sophia-ecosystem/runtime-adapters/internal/domain/execution/entities"
 	domainservices "github.com/sophia-ecosystem/runtime-adapters/internal/domain/execution/services"
 	"github.com/sophia-ecosystem/runtime-adapters/internal/domain/execution/valueobjects"
 	"github.com/sophia-ecosystem/runtime-adapters/internal/domain/shared"
+	logpkg "github.com/sophia-ecosystem/runtime-adapters/internal/infrastructure/obs/log"
 	"github.com/sophia-ecosystem/runtime-adapters/internal/ports/outbound"
 	"github.com/sophia-ecosystem/runtime-adapters/internal/ports/outbound/testdoubles"
 )
@@ -1041,4 +1045,92 @@ func TestExecuteService_AdapterPanics_StackTruncatedTo4KiB(t *testing.T) {
 	if !strings.Contains(stack, "goroutine") {
 		t.Errorf("panic.stack does not look like a Go stack trace (missing 'goroutine'): %q", stack)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// T18 — Logger enrichment along the 11-step UC1 flow.
+//
+// Verifies the contract fields of spec §5.3 are all present on the
+// final-emission "execution complete" record, with the level chosen by
+// LevelFor (§5.4).
+// ---------------------------------------------------------------------------
+
+// collectingHandler is a slog.Handler that accumulates records and carries
+// With-attrs forward so assertions can inspect both inline and derived
+// logger attributes.
+type collectingHandler struct {
+	mu      *sync.Mutex
+	records *[]slog.Record
+	attrs   []slog.Attr
+}
+
+func (h *collectingHandler) Enabled(context.Context, slog.Level) bool { return true }
+func (h *collectingHandler) Handle(_ context.Context, r slog.Record) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if len(h.attrs) > 0 {
+		r.AddAttrs(h.attrs...)
+	}
+	*h.records = append(*h.records, r)
+	return nil
+}
+func (h *collectingHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	merged := make([]slog.Attr, 0, len(h.attrs)+len(attrs))
+	merged = append(merged, h.attrs...)
+	merged = append(merged, attrs...)
+	return &collectingHandler{mu: h.mu, records: h.records, attrs: merged}
+}
+func (h *collectingHandler) WithGroup(string) slog.Handler { return h }
+
+// collectAttrs drains a slog.Record's attrs into a map.
+func collectAttrs(r slog.Record) map[string]any {
+	m := map[string]any{}
+	r.Attrs(func(a slog.Attr) bool {
+		m[a.Key] = a.Value.Any()
+		return true
+	})
+	return m
+}
+
+func TestExecuteService_LoggerEnrichedAtEachStep(t *testing.T) {
+	svc, deps := newTestService(t)
+	deps.adapter.Program(deps.cap.Canonical(), testdoubles.StubProgram{
+		Raw: &successRaw{dur: 10 * time.Millisecond},
+	})
+	req := buildRequest(t, deps, deps.clock)
+
+	var mu sync.Mutex
+	records := make([]slog.Record, 0)
+	h := &collectingHandler{mu: &mu, records: &records}
+	rootLogger := logpkg.NewWithHandler(h)
+
+	ctx := logpkg.ContextWith(context.Background(), rootLogger)
+
+	receipt, err := svc.Execute(ctx, req)
+	require.NoError(t, err)
+	require.NotEmpty(t, receipt.ReceiptID().String())
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.NotEmpty(t, records, "at least one log record must be emitted")
+
+	// Find the final "execution complete" record.
+	var final *slog.Record
+	for i := range records {
+		if records[i].Message == "execution complete" {
+			final = &records[i]
+		}
+	}
+	require.NotNil(t, final, "final 'execution complete' record not emitted")
+
+	attrs := collectAttrs(*final)
+	require.Equal(t, "shell.exec@v1", attrs["capability"])
+	require.Equal(t, "shell", attrs["adapter"])
+	require.NotEmpty(t, attrs["handle_id"])
+	require.NotEmpty(t, attrs["receipt_id"])
+	require.NotEmpty(t, attrs["correlation_id"])
+	require.Equal(t, "success", attrs["status"])
+	require.GreaterOrEqual(t, attrs["duration_ms"].(int64), int64(0))
+
+	require.Equal(t, slog.LevelInfo, final.Level, "success must emit at INFO")
 }

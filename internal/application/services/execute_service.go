@@ -3,12 +3,14 @@ package services
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/sophia-ecosystem/runtime-adapters/internal/domain/execution/entities"
 	domainservices "github.com/sophia-ecosystem/runtime-adapters/internal/domain/execution/services"
 	"github.com/sophia-ecosystem/runtime-adapters/internal/domain/execution/valueobjects"
 	"github.com/sophia-ecosystem/runtime-adapters/internal/domain/shared"
+	obslog "github.com/sophia-ecosystem/runtime-adapters/internal/infrastructure/obs/log"
 	"github.com/sophia-ecosystem/runtime-adapters/internal/ports/inbound"
 	"github.com/sophia-ecosystem/runtime-adapters/internal/ports/outbound"
 )
@@ -112,6 +114,14 @@ func NewExecuteService(cfg ExecuteServiceConfig) (*ExecuteService, error) {
 // the receipt with a nil error. Receipt and error are mutually exclusive
 // (A4.3).
 func (s *ExecuteService) Execute(ctx context.Context, req entities.ExecutionRequest) (entities.ExecutionReceipt, error) {
+	// Enrich the request-scoped logger with correlation_id (§5.3). This
+	// field is carried forward through every subsequent enrichment and
+	// appears on the final "execution complete" emit at step 11.
+	logger := obslog.FromContext(ctx).With(
+		slog.String("correlation_id", req.CorrelationID().String()),
+	)
+	ctx = obslog.ContextWith(ctx, logger)
+
 	// Step 0: concurrency limiter (A9.1 fast-reject).
 	if err := s.limiter.TryAcquire(); err != nil {
 		return entities.ExecutionReceipt{}, err
@@ -132,6 +142,14 @@ func (s *ExecuteService) Execute(ctx context.Context, req entities.ExecutionRequ
 		return s.persistStructural(ctx, req, valueobjects.ErrCapabilityUnknown, err.Error())
 	}
 
+	// Enrich logger with capability + adapter (§5.3: always present from
+	// step 3 onward).
+	logger = logger.With(
+		slog.String("capability", cap.Canonical()),
+		slog.String("adapter", cap.AdapterID().String()),
+	)
+	ctx = obslog.ContextWith(ctx, logger)
+
 	// Step 4: timeout resolution.
 	effective := minDuration(req.TimeoutBudget().Duration(), cap.DefaultTimeout(), s.maxTimeout)
 	if effective <= 0 {
@@ -143,6 +161,10 @@ func (s *ExecuteService) Execute(ctx context.Context, req entities.ExecutionRequ
 	if err != nil {
 		return s.persistStructural(ctx, req, valueobjects.ErrAdapterInternalError, "handle generation: "+err.Error())
 	}
+
+	// Enrich logger with handle_id (§5.3: always present from step 5 onward).
+	logger = logger.With(slog.String("handle_id", handle.HandleID().String()))
+	ctx = obslog.ContextWith(ctx, logger)
 
 	// Step 6: ctx setup.
 	execCtx, cancel := context.WithTimeout(ctx, effective)
@@ -249,8 +271,38 @@ func (s *ExecuteService) Execute(ctx context.Context, req entities.ExecutionRequ
 		_ = s.idempotency.Record(persistCtx, key, saved.ReceiptID(), s.idempWindow)
 	}
 
-	// Step 11: return.
+	// Step 11: final emit — "execution complete" with all §5.3 contract
+	// fields. Level is chosen by LevelFor(status, errClass) per §5.4.
+	emitExecutionComplete(ctx, logger, saved)
+
 	return saved, nil
+}
+
+// emitExecutionComplete writes the single per-execution "execution complete"
+// log record with the contract fields of §5.3. The level is chosen by
+// LevelFor(status, errClass) per §5.4. error_class is emitted only when
+// status != success (§5.3 "when `status != success`").
+func emitExecutionComplete(ctx context.Context, logger *obslog.Logger, r entities.ExecutionReceipt) {
+	result := r.Result()
+	attrs := []slog.Attr{
+		slog.String("status", result.Status.String()),
+		slog.String("receipt_id", r.ReceiptID().String()),
+		slog.Int64("duration_ms", result.DurationMs),
+	}
+	if result.Status != valueobjects.StatusSuccess {
+		attrs = append(attrs, slog.String("error_class", result.ErrorClass.String()))
+	}
+	level := obslog.LevelFor(result.Status, result.ErrorClass)
+	switch level {
+	case slog.LevelInfo:
+		logger.Info(ctx, "execution complete", attrs...)
+	case slog.LevelWarn:
+		logger.Warn(ctx, "execution complete", attrs...)
+	case slog.LevelError:
+		logger.Error(ctx, "execution complete", attrs...)
+	default:
+		logger.Debug(ctx, "execution complete", attrs...)
+	}
 }
 
 // persistStructural builds a receipt for a pre-adapter failure (capability
@@ -293,5 +345,12 @@ func (s *ExecuteService) persistStructural(
 	if err != nil {
 		return entities.ExecutionReceipt{}, fmt.Errorf("persistence failed; side effect may have occurred: %w", err)
 	}
+
+	// Final emit for the pre-adapter structural-failure path. The logger
+	// is whatever was bound to ctx by the caller (Execute enriches with
+	// correlation_id before invoking persistStructural; capability/handle
+	// may or may not be bound depending on which step failed).
+	emitExecutionComplete(ctx, obslog.FromContext(ctx), saved)
+
 	return saved, nil
 }

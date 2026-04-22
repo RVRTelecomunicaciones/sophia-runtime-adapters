@@ -78,3 +78,20 @@ func TestNew_BadConfigReturnsError(t *testing.T) {
 	_, err := New(Config{Format: "xml", Level: "info"})
 	require.Error(t, err)
 }
+
+func TestNewWithHandler_RoundTrip(t *testing.T) {
+	recs := make([]slog.Record, 0)
+	h := &memHandler{records: &recs}
+	lg := NewWithHandler(h)
+	lg.Info(context.Background(), "via-with-handler")
+	require.Len(t, *h.records, 1)
+	require.Equal(t, "via-with-handler", (*h.records)[0].Message)
+}
+
+func TestNewWithHandler_NilYieldsNop(t *testing.T) {
+	lg := NewWithHandler(nil)
+	require.NotNil(t, lg)
+	// Does not panic; output discarded.
+	lg.Info(context.Background(), "silent")
+	lg.Error(context.Background(), "silent-err")
+}
