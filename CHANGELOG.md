@@ -26,7 +26,8 @@ Phase 2C.1 — observability depth + SLOs. Adds contract-bound `slog` logger, re
 - New: `partial.signal` (secondary degradation signal), `execution.active` (saturation), `receipt.persist.failures` (A4.3 signal), `otel.exporter.queue.size`, `migrate.failures`.
 - Removed: `bytes_read/written_total`, `idempotency_hit/miss_total`, `persist_duration_ms`, `adapter_execute_duration_ms`.
 - `NewRegistry(meter metric.Meter)` — cleaner signature decouples from `otel` global.
-- `(*Registry).RecordExecution(ctx, capability, status, durationSec)` emission helper.
+- `(*Registry).RecordExecution(ctx, capability, status, receiptID, durationSec)` emission helper.
+- **Exemplar emission on `execution.duration`** (§6.5): `trace_id` captured automatically via `sdkmetric.WithExemplarFilter(exemplar.AlwaysOnFilter)` when a span is active in ctx; `receipt_id` attached best-effort as an observation attribute, dropped from aggregation by a `WithView` filter so cardinality stays bounded (R16) while the attribute survives as an exemplar tag. Links Grafana latency-panel clicks → Tempo trace.
 
 #### Logger + metric integration in ExecuteService (Bundle 3)
 
