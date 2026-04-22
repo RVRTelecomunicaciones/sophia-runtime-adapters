@@ -16,10 +16,12 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/propagation"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/exemplar"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
@@ -91,11 +93,28 @@ func SetupOTel(ctx context.Context, cfg config.Config) (ShutdownFn, error) {
 		_ = tExp.Shutdown(ctx)
 		return noopShutdown, fmt.Errorf("otel metric exporter: %w", err)
 	}
+	// §6.5 + A2C1.10: exemplar wiring.
+	//
+	// A View strips receipt_id from the aggregation key on
+	// runtime_adapters.execution.duration so the attribute survives as
+	// an exemplar tag (FilteredAttributes) without inflating metric
+	// cardinality — R16 / I23.
+	dropReceiptIDView := sdkmetric.NewView(
+		sdkmetric.Instrument{Name: "runtime_adapters.execution.duration"},
+		sdkmetric.Stream{
+			AttributeFilter: attribute.NewDenyKeysFilter("receipt_id"),
+		},
+	)
+	// AlwaysOnFilter makes exemplar capture deterministic regardless of
+	// trace sampling: §6.5 requires trace_id on every observation when a
+	// span is active, even if that span would otherwise be sampled off.
 	mp := sdkmetric.NewMeterProvider(
 		sdkmetric.WithResource(res),
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(mExp,
 			sdkmetric.WithInterval(30*time.Second),
 		)),
+		sdkmetric.WithExemplarFilter(exemplar.AlwaysOnFilter),
+		sdkmetric.WithView(dropReceiptIDView),
 	)
 	otel.SetMeterProvider(mp)
 

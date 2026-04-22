@@ -26,8 +26,8 @@ Every execution gets three guarantees: a **contract** (caller knows exactly what
 ## Must-read files
 
 - `docs/superpowers/specs/2026-04-19-runtime-adapters-phase1-design.md` — the Phase 1 spec; self-contained with all closed decisions (Dn.m) and post-approval adjustments (An.m).
-- `docs/rules.md` — 15 hard rules R1..R15.
-- `docs/domain-invariants.md` — I1..I22.
+- `docs/rules.md` — 16 hard rules R1..R16.
+- `docs/domain-invariants.md` — I1..I23.
 - `docs/architecture.md` — dependency diagram and request flow.
 - `docs/adr/` — all accepted ADRs.
 

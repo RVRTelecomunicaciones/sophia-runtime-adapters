@@ -180,15 +180,36 @@ func NewRegistry(meter metric.Meter) (*Registry, error) {
 // execution.duration (success-only per §6.3), and partial.signal
 // (secondary simplified signal when status=partial). Used by
 // ExecuteService at Step 11 in Bundle 3.
-func (r *Registry) RecordExecution(ctx context.Context, capability, status string, durationSec float64) {
+//
+// §6.5 + A2C1.10: when a span is active on ctx, the SDK automatically
+// attaches {trace_id, span_id} as exemplars on the execution.duration
+// observation. receiptID is attached as an observation attribute; a View
+// in SetupOTel drops it from the aggregation key so the attribute
+// survives as an exemplar tag (FilteredAttributes) without inflating
+// metric cardinality (R16). receiptID is best-effort — when empty, no
+// attribute is attached and the observation still proceeds. Exemplar
+// attachment itself never fails: the SDK exposes no error path.
+func (r *Registry) RecordExecution(
+	ctx context.Context,
+	capability, status, receiptID string,
+	durationSec float64,
+) {
 	attrs := attribute.NewSet(
 		attribute.String("capability", capability),
 		attribute.String("status", status),
 	)
 	r.ExecutionTotal.Add(ctx, 1, metric.WithAttributeSet(attrs))
 	if status == "success" {
-		capAttr := attribute.NewSet(attribute.String("capability", capability))
-		r.ExecutionDuration.Record(ctx, durationSec, metric.WithAttributeSet(capAttr))
+		// Include receipt_id as an observation attribute so the SDK can
+		// carry it on exemplars (FilteredAttributes). The SetupOTel View
+		// strips it from the aggregation key to keep cardinality bounded.
+		durAttrs := []attribute.KeyValue{
+			attribute.String("capability", capability),
+		}
+		if receiptID != "" {
+			durAttrs = append(durAttrs, attribute.String("receipt_id", receiptID))
+		}
+		r.ExecutionDuration.Record(ctx, durationSec, metric.WithAttributes(durAttrs...))
 	}
 	if status == "partial" {
 		capAttr := attribute.NewSet(attribute.String("capability", capability))

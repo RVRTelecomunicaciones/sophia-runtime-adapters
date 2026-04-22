@@ -70,8 +70,18 @@ func TestRecordExecution_DoesNotPanicAcrossStatuses(t *testing.T) {
 	ctx := context.Background()
 	r := testMeter("test.record")
 	for _, status := range []string{"success", "failure", "timeout", "cancelled", "partial"} {
-		r.RecordExecution(ctx, "shell.exec@v1", status, 0.123)
+		r.RecordExecution(ctx, "shell.exec@v1", status, "01HZZZZZZZZZZZZZZZZZZZZZZZ", 0.123)
 	}
+}
+
+// TestRecordExecution_EmptyReceiptIDIsBestEffort verifies that passing an
+// empty receipt_id does not attach the attribute and does not panic
+// (best-effort per §6.5 / A2C1.10). The observation itself still happens.
+func TestRecordExecution_EmptyReceiptIDIsBestEffort(t *testing.T) {
+	ctx := context.Background()
+	r := testMeter("test.record.empty")
+	// Empty receiptID → attribute not attached; observation still proceeds.
+	r.RecordExecution(ctx, "shell.exec@v1", "success", "", 0.5)
 }
 
 // TestMetricContract_LabelBlacklist enforces R16: high-cardinality labels

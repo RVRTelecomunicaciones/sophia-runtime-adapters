@@ -313,9 +313,13 @@ func (s *ExecuteService) Execute(ctx context.Context, req entities.ExecutionRequ
 	// the final log (§6.3).
 	if s.metrics != nil {
 		dur := time.Duration(saved.Result().DurationMs) * time.Millisecond
+		// §6.5 + A2C1.10: pass receipt_id so the SDK can carry it as an
+		// exemplar tag; the SetupOTel View drops it from aggregation so
+		// cardinality stays bounded (R16).
 		s.metrics.RecordExecution(ctx,
 			cap.Canonical(),
 			saved.Result().Status.String(),
+			saved.ReceiptID().String(),
 			dur.Seconds(),
 		)
 	}
@@ -403,11 +407,16 @@ func (s *ExecuteService) persistStructural(
 	// failures (no adapter ran). RecordExecution still increments
 	// execution.total{capability, status=failure}; success-only histograms
 	// and partial.signal are no-ops here by design.
+	//
+	// §6.5 + A2C1.10: the saved receipt_id is still the right exemplar tag
+	// here even though the structural path doesn't record execution.duration
+	// (status=failure). Kept symmetric with the happy path for consistency.
 	if s.metrics != nil {
 		dur := time.Duration(saved.Result().DurationMs) * time.Millisecond
 		s.metrics.RecordExecution(ctx,
 			pseudoCap.Canonical(),
 			saved.Result().Status.String(),
+			saved.ReceiptID().String(),
 			dur.Seconds(),
 		)
 	}

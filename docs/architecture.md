@@ -63,8 +63,8 @@ Defined in spec §6.2. Each step maps to a distinct responsibility.
 | Application | I13 (persistence-before-return), I21 (no retry), I22 (`MaxConcurrentExecutions` semaphore) |
 | Adapters | R4 (no panics), R5 (raw outcome never leaves adapter package), never emit `unknown` status |
 
-Full invariant definitions: `docs/domain-invariants.md` (I1..I22).
-Full rules: `docs/rules.md` (R1..R15).
+Full invariant definitions: `docs/domain-invariants.md` (I1..I23).
+Full rules: `docs/rules.md` (R1..R16).
 
 ---
 
