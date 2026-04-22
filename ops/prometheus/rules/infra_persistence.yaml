@@ -1,0 +1,49 @@
+# Receipt persistence health + idempotency behavior signal.
+# Metric contract (§6.3):
+# - runtime_adapters.receipt.persist.failures (counter, —)
+# - runtime_adapters.idempotency.replays      (counter, labels: capability)
+#
+# Persistence failures violate A4.3 — receipts may have been lost even
+# though the side effect succeeded. Two tiers:
+#   - spike:  short burst > 0.1/s for 2m → critical (oncall page)
+#   - anomaly: any sustained non-zero for 10m → warning (ticket)
+#
+# Idempotency replay surge is a behavioral signal (info tier, silenced).
+# A client retrying hard with the same key is not a runtime fault but
+# worth watching on dashboards.
+#
+# Spec §8 (infra alerts, hand-written).
+
+groups:
+  - name: runtime-adapters-persistence
+    interval: 30s
+    rules:
+      - alert: ReceiptPersistFailureSpike
+        expr: |
+          rate(runtime_adapters_receipt_persist_failures[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Receipt persist failure rate > 0.1/s durante 2m"
+          description: "A4.3 violado. Receipts perdiéndose — ir a DB y revisar errores de insert."
+
+      - alert: ReceiptPersistAnomaly
+        expr: |
+          rate(runtime_adapters_receipt_persist_failures[5m]) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Receipt persist failures sostenidas durante 10m"
+          description: "Rate bajo pero sostenida. Escalará a critical si empeora."
+
+      - alert: IdempotencyReplaySurge
+        expr: |
+          sum by (capability) (rate(runtime_adapters_idempotency_replays[5m])) > 10
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: "Idempotency replay surge para {{ $labels.capability }}"
+          description: "Cliente reintenta fuertemente con mismo idempotency key. Sin receiver activo (info silenciado)."

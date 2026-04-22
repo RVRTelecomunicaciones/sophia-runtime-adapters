@@ -1,0 +1,53 @@
+rule_files:
+  - infra_persistence.yaml
+
+evaluation_interval: 30s
+
+tests:
+  - name: persist_spike_fires_critical
+    interval: 30s
+    input_series:
+      # 10 failures per 30s = 0.33/s sustained → above 0.1/s threshold.
+      - series: 'runtime_adapters_receipt_persist_failures'
+        values: '0+10x20'
+    alert_rule_test:
+      - eval_time: 7m30s
+        alertname: ReceiptPersistFailureSpike
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "Receipt persist failure rate > 0.1/s durante 2m"
+              description: "A4.3 violado. Receipts perdiéndose — ir a DB y revisar errores de insert."
+
+  - name: persist_quiet_no_alerts
+    interval: 30s
+    input_series:
+      - series: 'runtime_adapters_receipt_persist_failures'
+        values: '0x30'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: ReceiptPersistFailureSpike
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: ReceiptPersistAnomaly
+        exp_alerts: []
+
+  - name: idempotency_replay_surge_info
+    interval: 30s
+    input_series:
+      # 100 replays per 30s = 3.3/s on shell capability — well above 10/s
+      # actually wait, threshold is 10 replays/s. Seed 1000/30s = 33/s
+      # to be clearly above.
+      - series: 'runtime_adapters_idempotency_replays{capability="shell.exec@v1"}'
+        values: '0+1000x40'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: IdempotencyReplaySurge
+        exp_alerts:
+          - exp_labels:
+              severity: info
+              capability: shell.exec@v1
+            exp_annotations:
+              summary: "Idempotency replay surge para shell.exec@v1"
+              description: "Cliente reintenta fuertemente con mismo idempotency key. Sin receiver activo (info silenciado)."
