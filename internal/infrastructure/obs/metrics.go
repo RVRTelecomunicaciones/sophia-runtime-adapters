@@ -1,128 +1,197 @@
+// Package obs holds the observability primitives for runtime-adapters.
+// The metric contract — instrument names, types, units, label sets —
+// is defined exclusively in this file (invariant I23). Operational
+// components (collector, scraper) MUST NOT rename or drop these.
+//
+// See docs/metrics.md for the public catalog and
+// docs/superpowers/specs/2026-04-21-phase-2c-observability-slos-design.md
+// §6.3 for authoritative naming and semantics.
 package obs
 
 import (
+	"context"
 	"fmt"
 
-	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 )
 
-// Registry holds the named instruments per spec §9.7. Construct via
-// NewRegistry; pass to application + adapter code that needs to emit
-// metrics. Thread-safe (underlying OTel instruments are safe for
-// concurrent use).
-//
-// Counters:
-//
-//	execute_attempted_total{capability}
-//	execute_timeout_total{capability}
-//	execute_cancelled_total{capability}
-//	execute_panics_recovered_total{adapter}
-//	idempotency_hit_total
-//	idempotency_miss_total
-//
-// Histograms:
-//
-//	execute_duration_ms{capability}
-//	persist_duration_ms
-//	adapter_execute_duration_ms{adapter}
-//
-// Gauges (observable counters):
-//
-//	bytes_read_total{capability}
-//	bytes_written_total{capability}
-type Registry struct {
-	ExecuteAttempted         metric.Int64Counter
-	ExecuteTimeout           metric.Int64Counter
-	ExecuteCancelled         metric.Int64Counter
-	ExecutePanicsRecovered   metric.Int64Counter
-	IdempotencyHit           metric.Int64Counter
-	IdempotencyMiss          metric.Int64Counter
-	ExecuteDurationMs        metric.Int64Histogram
-	PersistDurationMs        metric.Int64Histogram
-	AdapterExecuteDurationMs metric.Int64Histogram
-	BytesRead                metric.Int64Counter
-	BytesWritten             metric.Int64Counter
+// Instrument is the declarative entry for the metric contract. Used by
+// TestMetricContract_* to enforce label blacklist (R16) and per-instrument
+// cardinality budget.
+type Instrument struct {
+	Name    string
+	Type    string // "counter" | "histogram" | "gauge" | "updowncounter"
+	Unit    string
+	Labels  []string
+	Bounded map[string]int // optional — for cardinality budget test
 }
 
-// NewRegistry builds a Registry using the global MeterProvider. Call
-// AFTER SetupOTel — otherwise the no-op provider is used and all
-// instruments are silent (safe for local/test runs).
-func NewRegistry(instrumentationName string) (*Registry, error) {
-	meter := otel.Meter(instrumentationName)
+// InstrumentCatalog returns the authoritative set of declared instruments.
+// Must match the instruments constructed in NewRegistry exactly.
+// See §6.3 for semantics, R16 for label discipline, I23 for contract.
+func InstrumentCatalog() []Instrument {
+	return []Instrument{
+		{Name: "runtime_adapters.execution.total", Type: "counter", Unit: "{executions}",
+			Labels:  []string{"capability", "status"},
+			Bounded: map[string]int{"capability": 8, "status": 5}},
+		{Name: "runtime_adapters.execution.duration", Type: "histogram", Unit: "s",
+			Labels:  []string{"capability"},
+			Bounded: map[string]int{"capability": 8}},
+		{Name: "runtime_adapters.execution.active", Type: "updowncounter", Unit: "{executions}",
+			Labels:  []string{"capability"},
+			Bounded: map[string]int{"capability": 8}},
+		{Name: "runtime_adapters.concurrency.rejects", Type: "counter", Unit: "{rejects}",
+			Labels: nil},
+		{Name: "runtime_adapters.adapter.panics", Type: "counter", Unit: "{panics}",
+			Labels:  []string{"adapter"},
+			Bounded: map[string]int{"adapter": 4}},
+		{Name: "runtime_adapters.receipt.persist.failures", Type: "counter", Unit: "{failures}",
+			Labels: nil},
+		{Name: "runtime_adapters.idempotency.replays", Type: "counter", Unit: "{replays}",
+			Labels:  []string{"capability"},
+			Bounded: map[string]int{"capability": 8}},
+		{Name: "runtime_adapters.pool.connections.acquired.duration", Type: "histogram", Unit: "s",
+			Labels: nil},
+		{Name: "runtime_adapters.otel.exporter.queue.size", Type: "gauge", Unit: "{items}",
+			Labels: []string{"signal"}},
+		{Name: "runtime_adapters.migrate.failures", Type: "counter", Unit: "{failures}",
+			Labels: nil},
+		{Name: "runtime_adapters.partial.signal", Type: "counter", Unit: "{partials}",
+			Labels:  []string{"capability"},
+			Bounded: map[string]int{"capability": 8}},
+	}
+}
 
-	attempted, err := meter.Int64Counter("execute_attempted_total",
-		metric.WithDescription("Count of Execute calls attempted (per capability)."))
-	if err != nil {
-		return nil, fmt.Errorf("execute_attempted_total: %w", err)
+// DurationBuckets is the pinned bucket boundary set for
+// runtime_adapters.execution.duration. MUST include every threshold
+// referenced in ops/slo/*.yaml (§7.3 provisional targets: 0.5, 1, 2, 3,
+// 5, 10, 30). Extras round out the distribution for dashboards.
+// TestDurationBuckets_CoverSlothThresholds (Bundle 4) enforces the
+// Sloth ↔ bucket cross-check.
+var DurationBuckets = []float64{0.1, 0.25, 0.5, 1, 2, 3, 5, 10, 30, 60}
+
+// Registry holds the 11 Phase 2C.1 instruments. Construct via NewRegistry;
+// pass to ExecuteService and adapters that need to emit metrics.
+type Registry struct {
+	ExecutionTotal        metric.Int64Counter
+	ExecutionDuration     metric.Float64Histogram
+	ExecutionActive       metric.Int64UpDownCounter
+	ConcurrencyRejects    metric.Int64Counter
+	AdapterPanics         metric.Int64Counter
+	ReceiptPersistFails   metric.Int64Counter
+	IdempotencyReplays    metric.Int64Counter
+	PoolAcquireDuration   metric.Float64Histogram
+	OtelExporterQueueSize metric.Int64Gauge
+	MigrateFailures       metric.Int64Counter
+	PartialSignal         metric.Int64Counter
+}
+
+// NewRegistry constructs the 11 §6.3 instruments bound to the provided
+// meter. Callers typically pass otel.Meter("runtime-adapters") from
+// bootstrap, after SetupOTel. Safe with the no-op provider for tests.
+func NewRegistry(meter metric.Meter) (*Registry, error) {
+	var r Registry
+	var err error
+
+	if r.ExecutionTotal, err = meter.Int64Counter(
+		"runtime_adapters.execution.total",
+		metric.WithUnit("{executions}"),
+		metric.WithDescription("Total executions by capability and status."),
+	); err != nil {
+		return nil, fmt.Errorf("execution.total: %w", err)
 	}
-	timeout, err := meter.Int64Counter("execute_timeout_total",
-		metric.WithDescription("Count of Execute calls that ended in timeout."))
-	if err != nil {
-		return nil, fmt.Errorf("execute_timeout_total: %w", err)
+	if r.ExecutionDuration, err = meter.Float64Histogram(
+		"runtime_adapters.execution.duration",
+		metric.WithUnit("s"),
+		metric.WithDescription("Success-only execution duration per capability."),
+		metric.WithExplicitBucketBoundaries(DurationBuckets...),
+	); err != nil {
+		return nil, fmt.Errorf("execution.duration: %w", err)
 	}
-	cancelled, err := meter.Int64Counter("execute_cancelled_total",
-		metric.WithDescription("Count of Execute calls that ended in cancellation."))
-	if err != nil {
-		return nil, fmt.Errorf("execute_cancelled_total: %w", err)
+	if r.ExecutionActive, err = meter.Int64UpDownCounter(
+		"runtime_adapters.execution.active",
+		metric.WithUnit("{executions}"),
+		metric.WithDescription("In-flight executions per capability."),
+	); err != nil {
+		return nil, fmt.Errorf("execution.active: %w", err)
 	}
-	panics, err := meter.Int64Counter("execute_panics_recovered_total",
-		metric.WithDescription("Count of adapter panics recovered by the runtime."))
-	if err != nil {
-		return nil, fmt.Errorf("execute_panics_recovered_total: %w", err)
+	if r.ConcurrencyRejects, err = meter.Int64Counter(
+		"runtime_adapters.concurrency.rejects",
+		metric.WithUnit("{rejects}"),
+		metric.WithDescription("Fast-reject count (A9.1)."),
+	); err != nil {
+		return nil, fmt.Errorf("concurrency.rejects: %w", err)
 	}
-	idemHit, err := meter.Int64Counter("idempotency_hit_total",
-		metric.WithDescription("Idempotency cache hits."))
-	if err != nil {
-		return nil, fmt.Errorf("idempotency_hit_total: %w", err)
+	if r.AdapterPanics, err = meter.Int64Counter(
+		"runtime_adapters.adapter.panics",
+		metric.WithUnit("{panics}"),
+		metric.WithDescription("Recovered adapter panics per adapter (R4)."),
+	); err != nil {
+		return nil, fmt.Errorf("adapter.panics: %w", err)
 	}
-	idemMiss, err := meter.Int64Counter("idempotency_miss_total",
-		metric.WithDescription("Idempotency cache misses."))
-	if err != nil {
-		return nil, fmt.Errorf("idempotency_miss_total: %w", err)
+	if r.ReceiptPersistFails, err = meter.Int64Counter(
+		"runtime_adapters.receipt.persist.failures",
+		metric.WithUnit("{failures}"),
+		metric.WithDescription("Receipt persistence failures (A4.3)."),
+	); err != nil {
+		return nil, fmt.Errorf("receipt.persist.failures: %w", err)
 	}
-	execDur, err := meter.Int64Histogram("execute_duration_ms",
-		metric.WithDescription("End-to-end Execute duration in ms (per capability)."),
-		metric.WithUnit("ms"))
-	if err != nil {
-		return nil, fmt.Errorf("execute_duration_ms: %w", err)
+	if r.IdempotencyReplays, err = meter.Int64Counter(
+		"runtime_adapters.idempotency.replays",
+		metric.WithUnit("{replays}"),
+		metric.WithDescription("Idempotency replay hits per capability (D6.4)."),
+	); err != nil {
+		return nil, fmt.Errorf("idempotency.replays: %w", err)
 	}
-	persistDur, err := meter.Int64Histogram("persist_duration_ms",
-		metric.WithDescription("Receipt persistence duration in ms."),
-		metric.WithUnit("ms"))
-	if err != nil {
-		return nil, fmt.Errorf("persist_duration_ms: %w", err)
+	if r.PoolAcquireDuration, err = meter.Float64Histogram(
+		"runtime_adapters.pool.connections.acquired.duration",
+		metric.WithUnit("s"),
+		metric.WithDescription("pgx pool acquire latency."),
+	); err != nil {
+		return nil, fmt.Errorf("pool.connections.acquired.duration: %w", err)
 	}
-	adapterDur, err := meter.Int64Histogram("adapter_execute_duration_ms",
-		metric.WithDescription("Per-adapter Execute call duration in ms."),
-		metric.WithUnit("ms"))
-	if err != nil {
-		return nil, fmt.Errorf("adapter_execute_duration_ms: %w", err)
+	if r.OtelExporterQueueSize, err = meter.Int64Gauge(
+		"runtime_adapters.otel.exporter.queue.size",
+		metric.WithUnit("{items}"),
+		metric.WithDescription("OTel exporter queue depth per signal."),
+	); err != nil {
+		return nil, fmt.Errorf("otel.exporter.queue.size: %w", err)
 	}
-	bytesRead, err := meter.Int64Counter("bytes_read_total",
-		metric.WithDescription("Total bytes read by capabilities."),
-		metric.WithUnit("By"))
-	if err != nil {
-		return nil, fmt.Errorf("bytes_read_total: %w", err)
+	if r.MigrateFailures, err = meter.Int64Counter(
+		"runtime_adapters.migrate.failures",
+		metric.WithUnit("{failures}"),
+		metric.WithDescription("Bootstrap migration failures."),
+	); err != nil {
+		return nil, fmt.Errorf("migrate.failures: %w", err)
 	}
-	bytesWritten, err := meter.Int64Counter("bytes_written_total",
-		metric.WithDescription("Total bytes written by capabilities."),
-		metric.WithUnit("By"))
-	if err != nil {
-		return nil, fmt.Errorf("bytes_written_total: %w", err)
+	if r.PartialSignal, err = meter.Int64Counter(
+		"runtime_adapters.partial.signal",
+		metric.WithUnit("{partials}"),
+		metric.WithDescription("Secondary simplified partial-outcome signal."),
+	); err != nil {
+		return nil, fmt.Errorf("partial.signal: %w", err)
 	}
 
-	return &Registry{
-		ExecuteAttempted:         attempted,
-		ExecuteTimeout:           timeout,
-		ExecuteCancelled:         cancelled,
-		ExecutePanicsRecovered:   panics,
-		IdempotencyHit:           idemHit,
-		IdempotencyMiss:          idemMiss,
-		ExecuteDurationMs:        execDur,
-		PersistDurationMs:        persistDur,
-		AdapterExecuteDurationMs: adapterDur,
-		BytesRead:                bytesRead,
-		BytesWritten:             bytesWritten,
-	}, nil
+	return &r, nil
+}
+
+// RecordExecution is the sole emission helper for execution.total,
+// execution.duration (success-only per §6.3), and partial.signal
+// (secondary simplified signal when status=partial). Used by
+// ExecuteService at Step 11 in Bundle 3.
+func (r *Registry) RecordExecution(ctx context.Context, capability, status string, durationSec float64) {
+	attrs := attribute.NewSet(
+		attribute.String("capability", capability),
+		attribute.String("status", status),
+	)
+	r.ExecutionTotal.Add(ctx, 1, metric.WithAttributeSet(attrs))
+	if status == "success" {
+		capAttr := attribute.NewSet(attribute.String("capability", capability))
+		r.ExecutionDuration.Record(ctx, durationSec, metric.WithAttributeSet(capAttr))
+	}
+	if status == "partial" {
+		capAttr := attribute.NewSet(attribute.String("capability", capability))
+		r.PartialSignal.Add(ctx, 1, metric.WithAttributeSet(capAttr))
+	}
 }

@@ -4,93 +4,144 @@ import (
 	"context"
 	"testing"
 
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
+	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
 
 	"github.com/sophia-ecosystem/runtime-adapters/internal/infrastructure/obs"
 )
 
-// TestNewRegistry_AllInstrumentsNonNil verifies that NewRegistry
-// returns a non-nil *Registry with all 11 instruments populated.
-// Uses the global no-op provider (OTelEnabled=false, so SetupOTel was
-// never called in this test — the SDK default no-op provider is active).
-func TestNewRegistry_AllInstrumentsNonNil(t *testing.T) {
-	t.Parallel()
-
-	reg, err := obs.NewRegistry("test.instrumentation")
+// Meter used across tests. No-op provider is active because SetupOTel
+// is never called here — safe for all assertions.
+func testMeter(name string) (r *obs.Registry) {
+	meter := otel.Meter(name)
+	reg, err := obs.NewRegistry(meter)
 	if err != nil {
-		t.Fatalf("NewRegistry returned error: %v", err)
+		panic(err)
 	}
-	if reg == nil {
-		t.Fatal("NewRegistry returned nil registry")
-	}
+	return reg
+}
 
-	// Counters
-	if reg.ExecuteAttempted == nil {
-		t.Error("ExecuteAttempted is nil")
-	}
-	if reg.ExecuteTimeout == nil {
-		t.Error("ExecuteTimeout is nil")
-	}
-	if reg.ExecuteCancelled == nil {
-		t.Error("ExecuteCancelled is nil")
-	}
-	if reg.ExecutePanicsRecovered == nil {
-		t.Error("ExecutePanicsRecovered is nil")
-	}
-	if reg.IdempotencyHit == nil {
-		t.Error("IdempotencyHit is nil")
-	}
-	if reg.IdempotencyMiss == nil {
-		t.Error("IdempotencyMiss is nil")
-	}
+// TestNewRegistry_BuildsAllInstruments verifies NewRegistry populates
+// every field of Registry.
+func TestNewRegistry_BuildsAllInstruments(t *testing.T) {
+	r := testMeter("test.builds")
+	require.NotNil(t, r.ExecutionTotal)
+	require.NotNil(t, r.ExecutionDuration)
+	require.NotNil(t, r.ExecutionActive)
+	require.NotNil(t, r.ConcurrencyRejects)
+	require.NotNil(t, r.AdapterPanics)
+	require.NotNil(t, r.ReceiptPersistFails)
+	require.NotNil(t, r.IdempotencyReplays)
+	require.NotNil(t, r.PoolAcquireDuration)
+	require.NotNil(t, r.OtelExporterQueueSize)
+	require.NotNil(t, r.MigrateFailures)
+	require.NotNil(t, r.PartialSignal)
+}
 
-	// Histograms
-	if reg.ExecuteDurationMs == nil {
-		t.Error("ExecuteDurationMs is nil")
-	}
-	if reg.PersistDurationMs == nil {
-		t.Error("PersistDurationMs is nil")
-	}
-	if reg.AdapterExecuteDurationMs == nil {
-		t.Error("AdapterExecuteDurationMs is nil")
-	}
+// TestNewRegistry_InstrumentsCallable verifies each instrument accepts
+// emission calls without panicking (no-op path).
+func TestNewRegistry_InstrumentsCallable(t *testing.T) {
+	ctx := context.Background()
+	r := testMeter("test.callable")
 
-	// Byte counters
-	if reg.BytesRead == nil {
-		t.Error("BytesRead is nil")
-	}
-	if reg.BytesWritten == nil {
-		t.Error("BytesWritten is nil")
+	r.ExecutionTotal.Add(ctx, 1)
+	r.ExecutionDuration.Record(ctx, 0.42)
+	r.ExecutionActive.Add(ctx, 1)
+	r.ConcurrencyRejects.Add(ctx, 1)
+	r.AdapterPanics.Add(ctx, 1)
+	r.ReceiptPersistFails.Add(ctx, 1)
+	r.IdempotencyReplays.Add(ctx, 1)
+	r.PoolAcquireDuration.Record(ctx, 0.07)
+	r.OtelExporterQueueSize.Record(ctx, 42)
+	r.MigrateFailures.Add(ctx, 0)
+	r.PartialSignal.Add(ctx, 1)
+}
+
+// TestRecordExecution_SuccessOnlyDuration verifies execution.duration
+// observations only happen when status=success (§6.3 invariant). With the
+// no-op provider we can't assert on recorded values directly — but we CAN
+// verify the helper doesn't panic for any status. A stronger assertion
+// against a manual metric reader lands in Bundle 3 integration tests.
+func TestRecordExecution_DoesNotPanicAcrossStatuses(t *testing.T) {
+	ctx := context.Background()
+	r := testMeter("test.record")
+	for _, status := range []string{"success", "failure", "timeout", "cancelled", "partial"} {
+		r.RecordExecution(ctx, "shell.exec@v1", status, 0.123)
 	}
 }
 
-// TestNewRegistry_InstrumentsCallable verifies each instrument can be
-// called without panicking (no-op path; no values are actually exported).
-func TestNewRegistry_InstrumentsCallable(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-
-	reg, err := obs.NewRegistry("test.callable")
-	if err != nil {
-		t.Fatalf("NewRegistry: %v", err)
+// TestMetricContract_LabelBlacklist enforces R16: high-cardinality labels
+// may not appear on any declared instrument.
+func TestMetricContract_LabelBlacklist(t *testing.T) {
+	blacklist := map[string]bool{
+		"error_class":    true,
+		"receipt_id":     true,
+		"handle_id":      true,
+		"correlation_id": true,
+		"trace_id":       true,
+		"retry_hint":     true,
 	}
+	for _, inst := range obs.InstrumentCatalog() {
+		for _, lbl := range inst.Labels {
+			require.False(t, blacklist[lbl],
+				"instrument %q has blacklisted label %q (R16 violation)",
+				inst.Name, lbl)
+		}
+	}
+}
 
-	capAttr := metric.WithAttributes(attribute.String("capability", "filesystem.read"))
-	adapterAttr := metric.WithAttributes(attribute.String("adapter", "filesystem"))
+// TestMetricContract_LabelWhitelist is the converse: labels on declared
+// instruments must come from the allowed whitelist. Additive safety net
+// — if someone adds a new label type, this trips.
+func TestMetricContract_LabelWhitelist(t *testing.T) {
+	whitelist := map[string]bool{
+		"capability": true,
+		"adapter":    true,
+		"status":     true,
+		"signal":     true,
+	}
+	for _, inst := range obs.InstrumentCatalog() {
+		for _, lbl := range inst.Labels {
+			require.True(t, whitelist[lbl],
+				"instrument %q has label %q not in whitelist (R16)",
+				inst.Name, lbl)
+		}
+	}
+}
 
-	// Counters — Add must not panic.
-	reg.ExecuteAttempted.Add(ctx, 1, capAttr)
-	reg.ExecuteTimeout.Add(ctx, 1, capAttr)
-	reg.ExecuteCancelled.Add(ctx, 1, capAttr)
-	reg.ExecutePanicsRecovered.Add(ctx, 1, adapterAttr)
-	reg.IdempotencyHit.Add(ctx, 1)
-	reg.IdempotencyMiss.Add(ctx, 1)
-	reg.BytesRead.Add(ctx, 512, capAttr)
-	reg.BytesWritten.Add(ctx, 128, capAttr)
+// TestMetricContract_CardinalityBudget — per-instrument product of
+// Bounded label-value counts must stay within Phase 1 budget.
+func TestMetricContract_CardinalityBudget(t *testing.T) {
+	const phase1MaxSeriesPerInstrument = 200
 
-	// Histograms — Record must not panic.
-	reg.ExecuteDurationMs.Record(ctx, 42, capAttr)
-	reg.PersistDurationMs.Record(ctx, 7)
-	reg.AdapterExecuteDurationMs.Record(ctx, 15, adapterAttr)
+	for _, inst := range obs.InstrumentCatalog() {
+		if inst.Bounded == nil {
+			continue
+		}
+		product := 1
+		for _, n := range inst.Bounded {
+			product *= n
+		}
+		require.LessOrEqual(t, product, phase1MaxSeriesPerInstrument,
+			"instrument %q cardinality %d exceeds Phase1 budget %d",
+			inst.Name, product, phase1MaxSeriesPerInstrument)
+	}
+}
+
+// TestMetricContract_UniqueNames asserts the catalog has no duplicate
+// instrument names.
+func TestMetricContract_UniqueNames(t *testing.T) {
+	seen := map[string]bool{}
+	for _, inst := range obs.InstrumentCatalog() {
+		require.False(t, seen[inst.Name], "duplicate instrument name %q", inst.Name)
+		seen[inst.Name] = true
+	}
+	require.Len(t, seen, 11, "expected exactly 11 instruments in §6.3 catalog")
+}
+
+// TestDurationBuckets_CoverSlothThresholds — skipped; re-enabled in
+// Bundle 4 T31 once ops/slo/*.yaml exists. See spec §7.3 provisional
+// targets: 0.5, 1, 2, 3, 5, 10, 30 must all map to a bucket boundary.
+func TestDurationBuckets_CoverSlothThresholds(t *testing.T) {
+	t.Skip("re-enabled in Bundle 4 T31 once ops/slo/*.yaml exists")
 }
