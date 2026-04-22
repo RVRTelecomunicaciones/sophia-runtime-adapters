@@ -199,3 +199,18 @@ Every `NewExecutionReceipt` stamps `"v1"`. Bumping requires ADR + migration plan
 
 **Enforced at:** `internal/application/services/concurrency.go`.
 **Source:** A9.1, D9.5.
+
+---
+
+### I23 — Metric contract is code-defined
+
+Instrument names, types, units, and label sets live in
+`internal/infrastructure/obs/metrics.go` (`InstrumentCatalog`).
+Operational components (collector, scraper, relabeling rules) MUST
+NOT rename, filter, or drop instruments declared there. Any
+rename or drop in the code contract requires an ADR and a
+`runtime_adapters_metrics_schema_version` bump.
+
+**Enforced at:** `internal/infrastructure/obs/metrics.go` + CI
+contract tests (`TestMetricContract_*`).
+**Source:** §4.3 + §12.2 (spec). Added in Phase 2C.1.
