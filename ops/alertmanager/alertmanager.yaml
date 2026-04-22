@@ -1,0 +1,57 @@
+# Alertmanager three-tier routing for runtime-adapters (Phase 2C.1).
+#
+# Severity taxonomy (§9):
+#   critical → paged oncall (2C.4 swaps to real pager receiver)
+#   warning  → ticket queue  (2C.4 swaps to real tickets receiver)
+#   info     → dashboard-only, silenced at root via null-receiver
+#
+# Inhibition: when a fast-burn (critical) alert fires for a given
+# {sloth_slo, capability} pair, the slow-burn (warning) alert for the
+# same pair is suppressed. Hand-written infra alerts (which do not
+# carry sloth_slo) are NOT inhibited across tiers — they are
+# independent signals per §9.3.
+#
+# Grouping includes `capability` so per-capability SLO alerts do not
+# get merged into a single notification across capabilities of the
+# same adapter (D2C1.16).
+#
+# All unwired tiers currently route to null-receiver. The tree shape,
+# grouping, inhibit rules, and timing are fully exercised by
+# amtool check-config + the Go routing coverage test
+# (ops/alertmanager/alertmanager_routing_test.go). Track 2C.4 will
+# swap receivers for real integrations without changing the tree.
+
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: null-receiver
+  group_by: ['alertname', 'adapter', 'capability']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers: [ 'severity="critical"' ]
+      receiver: null-receiver    # 2C.4 swaps to oncall-pager
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 30m
+      continue: false
+    - matchers: [ 'severity="warning"' ]
+      receiver: null-receiver    # 2C.4 swaps to ops-tickets
+      group_wait: 1m
+      group_interval: 15m
+      repeat_interval: 4h
+      continue: false
+    # severity=info falls through to root receiver (null-receiver) —
+    # silenced by design.
+
+receivers:
+  - name: null-receiver
+    # Intentionally empty. Real receivers (oncall-pager, ops-tickets)
+    # land in Phase 2C.4.
+
+inhibit_rules:
+  - source_matchers: [ 'severity="critical"' ]
+    target_matchers: [ 'severity="warning"' ]
+    equal: ['sloth_slo', 'capability']
