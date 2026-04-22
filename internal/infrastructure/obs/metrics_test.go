@@ -2,6 +2,10 @@ package obs_test
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -139,9 +143,63 @@ func TestMetricContract_UniqueNames(t *testing.T) {
 	require.Len(t, seen, 11, "expected exactly 11 instruments in §6.3 catalog")
 }
 
-// TestDurationBuckets_CoverSlothThresholds — skipped; re-enabled in
-// Bundle 4 T31 once ops/slo/*.yaml exists. See spec §7.3 provisional
-// targets: 0.5, 1, 2, 3, 5, 10, 30 must all map to a bucket boundary.
+// TestDurationBuckets_CoverSlothThresholds asserts every `le="<value>"`
+// referenced in ops/slo/*.yaml latency SLIs maps to a boundary in
+// obs.DurationBuckets. Prevents silent drift between the SLI SLO
+// thresholds and the histogram bucket shape — if someone adds a 45s
+// latency threshold in a Sloth spec, DurationBuckets must grow or the
+// quantile computation becomes imprecise.
+//
+// Re-enabled in Bundle 4 T31 (previously skipped in Bundle 2 T13).
+// Spec §6.3 "Histogram bucket configuration" + §7.3.
 func TestDurationBuckets_CoverSlothThresholds(t *testing.T) {
-	t.Skip("re-enabled in Bundle 4 T31 once ops/slo/*.yaml exists")
+	seen := map[float64]bool{}
+	for _, b := range obs.DurationBuckets {
+		seen[b] = true
+	}
+
+	// Walk up from this package to the repo root, then descend into ops/slo.
+	repoRoot := findRepoRoot(t)
+	matches, err := filepath.Glob(filepath.Join(repoRoot, "ops", "slo", "*.yaml"))
+	require.NoError(t, err)
+	require.NotEmpty(t, matches,
+		"no ops/slo/*.yaml specs found — Bundle 4 authored them; this test should not have been re-enabled without them")
+
+	reLE := regexp.MustCompile(`le="([0-9.]+)"`)
+
+	for _, f := range matches {
+		data, err := os.ReadFile(f)
+		require.NoError(t, err, "read %s", f)
+
+		for _, match := range reLE.FindAllStringSubmatch(string(data), -1) {
+			val, err := strconv.ParseFloat(match[1], 64)
+			require.NoError(t, err, "parse %q in %s", match[1], f)
+
+			require.True(t, seen[val],
+				"bucket %v referenced via le=%q in %s is not in obs.DurationBuckets %v — add it or change the spec threshold",
+				val, match[1], f, obs.DurationBuckets)
+		}
+	}
+}
+
+// findRepoRoot walks up the filesystem until it finds a directory that
+// contains go.mod, returning that path. Fails the test if not found
+// within 10 levels.
+func findRepoRoot(t *testing.T) string {
+	t.Helper()
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+	dir := cwd
+	for i := 0; i < 10; i++ {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	t.Fatalf("could not find repo root (go.mod) starting from %s", cwd)
+	return ""
 }
