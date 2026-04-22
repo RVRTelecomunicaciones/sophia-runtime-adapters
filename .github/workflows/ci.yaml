@@ -147,9 +147,11 @@ jobs:
       - name: dashboard-linter lint
         run: |
           set -euo pipefail
-          dashboard-linter lint \
-            -c ops/grafana/dashboards/.lint \
-            ops/grafana/dashboards/*.json
+          # dashboard-linter accepts a single dashboard file; iterate.
+          for f in ops/grafana/dashboards/*.json; do
+            echo "linting $f"
+            dashboard-linter lint -c ops/grafana/dashboards/.lint "$f"
+          done
 
       - name: go test — obs (race)
         run: go test -race -count=1 ./internal/infrastructure/obs/...
