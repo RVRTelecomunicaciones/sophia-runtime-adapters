@@ -1,0 +1,104 @@
+# PROVISIONAL — initial operational hypotheses.
+# Quantitative calibration deferred to track 2C.2 (load baseline).
+# Changing these targets before 2C.2 closes requires explicit justification in PR.
+
+version: "prometheus/v1"
+service: "runtime-adapters"
+labels:
+  team: "platform"
+  adapter: "filesystem"
+
+slos:
+  # ---- filesystem.read_file@v1 ------------------------------------------
+  - name: "filesystem-read-file-availability"
+    objective: 99.9
+    description: "filesystem.read_file@v1 non-error execution rate"
+    labels:
+      capability: "filesystem.read_file@v1"
+    sli:
+      events:
+        error_query: |
+          sum(rate(runtime_adapters_execution_total{capability="filesystem.read_file@v1",status=~"failure|timeout"}[{{.window}}]))
+        total_query: |
+          sum(rate(runtime_adapters_execution_total{capability="filesystem.read_file@v1",status=~"success|failure|timeout"}[{{.window}}]))
+    alerting:
+      name: FilesystemReadFileAvailabilityBurn
+      labels:
+        capability: "filesystem.read_file@v1"
+      page_alert:
+        labels:
+          severity: critical
+      ticket_alert:
+        labels:
+          severity: warning
+
+  - name: "filesystem-read-file-latency"
+    objective: 99.0
+    description: "99% of filesystem.read_file@v1 successful executions complete under 500ms"
+    labels:
+      capability: "filesystem.read_file@v1"
+    sli:
+      events:
+        error_query: |
+          sum(rate(runtime_adapters_execution_duration_seconds_count{capability="filesystem.read_file@v1"}[{{.window}}]))
+          -
+          sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="filesystem.read_file@v1",le="0.5"}[{{.window}}]))
+        total_query: |
+          sum(rate(runtime_adapters_execution_duration_seconds_count{capability="filesystem.read_file@v1"}[{{.window}}]))
+    alerting:
+      name: FilesystemReadFileLatencyBurn
+      labels:
+        capability: "filesystem.read_file@v1"
+      page_alert:
+        labels:
+          severity: critical
+      ticket_alert:
+        labels:
+          severity: warning
+
+  # ---- filesystem.write_file@v1 -----------------------------------------
+  - name: "filesystem-write-file-availability"
+    objective: 99.9
+    description: "filesystem.write_file@v1 non-error execution rate"
+    labels:
+      capability: "filesystem.write_file@v1"
+    sli:
+      events:
+        error_query: |
+          sum(rate(runtime_adapters_execution_total{capability="filesystem.write_file@v1",status=~"failure|timeout"}[{{.window}}]))
+        total_query: |
+          sum(rate(runtime_adapters_execution_total{capability="filesystem.write_file@v1",status=~"success|failure|timeout"}[{{.window}}]))
+    alerting:
+      name: FilesystemWriteFileAvailabilityBurn
+      labels:
+        capability: "filesystem.write_file@v1"
+      page_alert:
+        labels:
+          severity: critical
+      ticket_alert:
+        labels:
+          severity: warning
+
+  - name: "filesystem-write-file-latency"
+    objective: 99.0
+    description: "99% of filesystem.write_file@v1 successful executions complete under 1s"
+    labels:
+      capability: "filesystem.write_file@v1"
+    sli:
+      events:
+        error_query: |
+          sum(rate(runtime_adapters_execution_duration_seconds_count{capability="filesystem.write_file@v1"}[{{.window}}]))
+          -
+          sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="filesystem.write_file@v1",le="1"}[{{.window}}]))
+        total_query: |
+          sum(rate(runtime_adapters_execution_duration_seconds_count{capability="filesystem.write_file@v1"}[{{.window}}]))
+    alerting:
+      name: FilesystemWriteFileLatencyBurn
+      labels:
+        capability: "filesystem.write_file@v1"
+      page_alert:
+        labels:
+          severity: critical
+      ticket_alert:
+        labels:
+          severity: warning

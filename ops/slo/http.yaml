@@ -1,0 +1,56 @@
+# PROVISIONAL — initial operational hypotheses.
+# Quantitative calibration deferred to track 2C.2 (load baseline).
+# Changing these targets before 2C.2 closes requires explicit justification in PR.
+
+version: "prometheus/v1"
+service: "runtime-adapters"
+labels:
+  team: "platform"
+  adapter: "http"
+
+slos:
+  - name: "http-request-availability"
+    objective: 99.0
+    description: "http.request@v1 non-error execution rate"
+    labels:
+      capability: "http.request@v1"
+    sli:
+      events:
+        error_query: |
+          sum(rate(runtime_adapters_execution_total{capability="http.request@v1",status=~"failure|timeout"}[{{.window}}]))
+        total_query: |
+          sum(rate(runtime_adapters_execution_total{capability="http.request@v1",status=~"success|failure|timeout"}[{{.window}}]))
+    alerting:
+      name: HttpRequestAvailabilityBurn
+      labels:
+        capability: "http.request@v1"
+      page_alert:
+        labels:
+          severity: critical
+      ticket_alert:
+        labels:
+          severity: warning
+
+  - name: "http-request-latency"
+    objective: 99.0
+    description: "99% of http.request@v1 successful executions complete under 10s"
+    labels:
+      capability: "http.request@v1"
+    sli:
+      events:
+        error_query: |
+          sum(rate(runtime_adapters_execution_duration_seconds_count{capability="http.request@v1"}[{{.window}}]))
+          -
+          sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="http.request@v1",le="10"}[{{.window}}]))
+        total_query: |
+          sum(rate(runtime_adapters_execution_duration_seconds_count{capability="http.request@v1"}[{{.window}}]))
+    alerting:
+      name: HttpRequestLatencyBurn
+      labels:
+        capability: "http.request@v1"
+      page_alert:
+        labels:
+          severity: critical
+      ticket_alert:
+        labels:
+          severity: warning

@@ -1,0 +1,56 @@
+# PROVISIONAL — initial operational hypotheses.
+# Quantitative calibration deferred to track 2C.2 (load baseline).
+# Changing these targets before 2C.2 closes requires explicit justification in PR.
+
+version: "prometheus/v1"
+service: "runtime-adapters"
+labels:
+  team: "platform"
+  adapter: "shell"
+
+slos:
+  - name: "shell-exec-availability"
+    objective: 99.5
+    description: "shell.exec@v1 non-error execution rate (failure+timeout burn budget; cancelled+partial neutral)"
+    labels:
+      capability: "shell.exec@v1"
+    sli:
+      events:
+        error_query: |
+          sum(rate(runtime_adapters_execution_total{capability="shell.exec@v1",status=~"failure|timeout"}[{{.window}}]))
+        total_query: |
+          sum(rate(runtime_adapters_execution_total{capability="shell.exec@v1",status=~"success|failure|timeout"}[{{.window}}]))
+    alerting:
+      name: ShellExecAvailabilityBurn
+      labels:
+        capability: "shell.exec@v1"
+      page_alert:
+        labels:
+          severity: critical
+      ticket_alert:
+        labels:
+          severity: warning
+
+  - name: "shell-exec-latency"
+    objective: 99.0
+    description: "99% of shell.exec@v1 successful executions complete under 5s"
+    labels:
+      capability: "shell.exec@v1"
+    sli:
+      events:
+        error_query: |
+          sum(rate(runtime_adapters_execution_duration_seconds_count{capability="shell.exec@v1"}[{{.window}}]))
+          -
+          sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="shell.exec@v1",le="5"}[{{.window}}]))
+        total_query: |
+          sum(rate(runtime_adapters_execution_duration_seconds_count{capability="shell.exec@v1"}[{{.window}}]))
+    alerting:
+      name: ShellExecLatencyBurn
+      labels:
+        capability: "shell.exec@v1"
+      page_alert:
+        labels:
+          severity: critical
+      ticket_alert:
+        labels:
+          severity: warning
