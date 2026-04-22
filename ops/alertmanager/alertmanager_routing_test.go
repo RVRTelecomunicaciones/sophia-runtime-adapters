@@ -34,6 +34,7 @@ type amConfig struct {
 		Routes   []struct {
 			Matchers []string `yaml:"matchers"`
 			Receiver string   `yaml:"receiver"`
+			Continue bool     `yaml:"continue"`
 		} `yaml:"routes"`
 	} `yaml:"route"`
 	Receivers []struct {
@@ -81,6 +82,21 @@ func TestAlertmanager_GroupByIncludesCapability(t *testing.T) {
 	}
 	require.True(t, has,
 		"group_by must include 'capability' (D2C1.16) — got %v", cfg.Route.GroupBy)
+}
+
+// TestAlertmanager_SubRoutesDoNotContinue verifies that every declared
+// sub-route has `continue: false` (the YAML zero value). If a future
+// edit accidentally sets `continue: true` on the critical sub-route, a
+// critical alert would also traverse the warning route — breaking the
+// severity-tier isolation promised by §9.1.
+func TestAlertmanager_SubRoutesDoNotContinue(t *testing.T) {
+	cfg := loadAM(t)
+	require.NotEmpty(t, cfg.Route.Routes, "at least one sub-route expected")
+	for i, r := range cfg.Route.Routes {
+		require.False(t, r.Continue,
+			"sub-route %d (matchers=%v, receiver=%q) must have continue=false — "+
+				"severity tiers must not cascade", i, r.Matchers, r.Receiver)
+	}
 }
 
 func TestAlertmanager_InhibitUsesSlothSloNotAlertname(t *testing.T) {
