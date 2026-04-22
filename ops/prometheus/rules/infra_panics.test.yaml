@@ -1,0 +1,34 @@
+rule_files:
+  - infra_panics.yaml
+
+evaluation_interval: 30s
+
+tests:
+  - name: panic_spike_fires_critical
+    interval: 30s
+    input_series:
+      # 1 panic per 30s step on the shell adapter sustained > 5m →
+      # rate ≈ 0.033/s over 5m, well above 0.01/s threshold.
+      - series: 'runtime_adapters_adapter_panics{adapter="shell"}'
+        values: '0+1x30'
+    alert_rule_test:
+      - eval_time: 10m30s
+        alertname: AdapterPanicSpike
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              adapter: shell
+            exp_annotations:
+              summary: "Panic rate > 0.01/s durante 5m en adapter shell"
+              description: "R4 violación sostenida. Bug en adapter o crash nativo."
+
+  - name: panics_quiet_no_alert
+    interval: 30s
+    input_series:
+      # Zero panics — healthy.
+      - series: 'runtime_adapters_adapter_panics{adapter="shell"}'
+        values: '0x20'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: AdapterPanicSpike
+        exp_alerts: []

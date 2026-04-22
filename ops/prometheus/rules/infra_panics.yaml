@@ -1,0 +1,24 @@
+# Adapter panic rate — R4 violation signal.
+# Metric contract (§6.3): runtime_adapters.adapter.panics
+#   (counter, {panics}, labels: adapter).
+#
+# R4: "Adapters do not panic." Panics are recovered to
+# AdapterInternalError but the runtime must stay up. A sustained panic
+# rate above 0.01/s indicates a real bug in an adapter binary or a
+# native crash pattern.
+#
+# Spec §8 (infra alerts, hand-written).
+
+groups:
+  - name: runtime-adapters-panics
+    interval: 30s
+    rules:
+      - alert: AdapterPanicSpike
+        expr: |
+          sum by (adapter) (rate(runtime_adapters_adapter_panics[5m])) > 0.01
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Panic rate > 0.01/s durante 5m en adapter {{ $labels.adapter }}"
+          description: "R4 violación sostenida. Bug en adapter o crash nativo."
