@@ -263,6 +263,14 @@ func (s *ExecuteService) Execute(ctx context.Context, req entities.ExecutionRequ
 	// the audit write — per A4.3 the receipt is the central artifact).
 	saved, perr := s.receipts.Save(persistCtx, receipt)
 	if perr != nil {
+		// §5.4 orthogonal ERROR-always: persistence failure MUST emit even
+		// when the underlying execution succeeded — the persist error masks
+		// the side effect and the receipt is unrecoverable. The enriched
+		// logger on ctx already carries correlation_id / capability /
+		// adapter / handle_id from steps 0/3/5.
+		obslog.FromContext(ctx).Error(ctx, "persist receipt",
+			slog.String("error", perr.Error()),
+		)
 		return entities.ExecutionReceipt{}, fmt.Errorf("persistence failed; side effect may have occurred: %w", perr)
 	}
 
@@ -343,6 +351,13 @@ func (s *ExecuteService) persistStructural(
 	}
 	saved, err := s.receipts.Save(ctx, receipt)
 	if err != nil {
+		// §5.4 orthogonal ERROR-always (persistStructural path). The caller
+		// enriched the logger with correlation_id before entering
+		// persistStructural; capability / adapter / handle_id may or may
+		// not be bound depending on which step failed upstream.
+		obslog.FromContext(ctx).Error(ctx, "persist receipt",
+			slog.String("error", err.Error()),
+		)
 		return entities.ExecutionReceipt{}, fmt.Errorf("persistence failed; side effect may have occurred: %w", err)
 	}
 

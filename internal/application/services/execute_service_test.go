@@ -1134,3 +1134,148 @@ func TestExecuteService_LoggerEnrichedAtEachStep(t *testing.T) {
 
 	require.Equal(t, slog.LevelInfo, final.Level, "success must emit at INFO")
 }
+
+// ---------------------------------------------------------------------------
+// T19 — Persistence failure emits ERROR log.
+//
+// Spec §5.4: persistence failure is one of the orthogonal ERROR-always
+// emissions; it MUST emit even when the execution itself succeeded (the
+// persist error masks the side effect). The function still returns the
+// wrapped error per A4.3 — this test confirms the log IS emitted before
+// the return.
+// ---------------------------------------------------------------------------
+
+// TestExecuteService_PersistFailureEmitsError verifies that A4.3 violations
+// (receipt persistence failure) produce an ERROR-level log even though the
+// function returns an error.
+func TestExecuteService_PersistFailureEmitsError(t *testing.T) {
+	clk := &shared.FakeClock{T: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
+	aid, _ := valueobjects.NewAdapterID("shell")
+	cap, _ := valueobjects.NewCapability(aid, "exec", "v1", false, 5*time.Second)
+	registry, _ := valueobjects.NewCapabilityRegistry(cap)
+	normalizer := domainservices.NewResultNormalizer(4096)
+	_ = normalizer.Register(cap.Canonical(), func(_ valueobjects.Capability, _ domainservices.AdapterRawOutcome, clk shared.Clock) (entities.ExecutionResult, error) {
+		result, err := entities.NewExecutionResult(
+			valueobjects.StatusSuccess, valueobjects.HintRetryable,
+			"", "", nil, nil, nil, nil, nil, 0, 0, 0, clk.Now(),
+		)
+		return result, err
+	})
+	stub := testdoubles.NewStubAdapter(aid, cap)
+	stub.Program(cap.Canonical(), testdoubles.StubProgram{Raw: &successRaw{}})
+	brokenRepo := &alwaysFailRepo{}
+	idemp := testdoubles.NewInMemoryIdempotencyStore(clk)
+	prov, _ := entities.NewProvenance(entities.ProvTest, "v0.0.1", "test-host", "runtime-v0.0.1", "")
+	idGen := &entities.FakeIDGen{IDs: []string{ulid01, ulid02, ulid03, ulid04, ulid05}}
+
+	svc, err := services.NewExecuteService(services.ExecuteServiceConfig{
+		Adapters:    map[string]outbound.Adapter{"shell": stub},
+		Registry:    registry,
+		Normalizer:  normalizer,
+		Receipts:    brokenRepo,
+		Idempotency: idemp,
+		Limiter:     services.NewConcurrencyLimiter(10),
+		Clock:       clk,
+		IDGen:       idGen,
+		MaxTimeout:  30 * time.Second,
+		IdempWindow: 24 * time.Hour,
+		Provenance:  prov,
+	})
+	require.NoError(t, err)
+
+	cid, _ := shared.NewCorrelationID(ulid13)
+	pl, _ := valueobjects.NewPayload(valueobjects.ContentTypeJSON, []byte(`{}`), 0)
+	tb, _ := valueobjects.NewTimeoutBudget(5000, 0)
+	req, _ := entities.NewExecutionRequest(entities.ExecutionRequestInput{
+		CorrelationID: cid, AdapterID: aid,
+		CapabilityName: "exec", CapabilityVersion: "v1",
+		Payload: pl, TimeoutBudget: tb,
+	}, clk)
+
+	var mu sync.Mutex
+	records := make([]slog.Record, 0)
+	h := &collectingHandler{mu: &mu, records: &records}
+	rootLogger := logpkg.NewWithHandler(h)
+	ctx := logpkg.ContextWith(context.Background(), rootLogger)
+
+	_, execErr := svc.Execute(ctx, req)
+	require.Error(t, execErr, "persistence error must propagate")
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	found := false
+	for _, r := range records {
+		if r.Level == slog.LevelError && r.Message == "persist receipt" {
+			found = true
+			break
+		}
+	}
+	require.True(t, found, "expected ERROR log with message 'persist receipt'")
+}
+
+// TestExecuteService_PersistStructuralFailureEmitsError covers the
+// persistStructural path: a pre-adapter structural error (capability
+// unknown) whose own receipt also fails to persist. Both code paths
+// must emit the ERROR log.
+func TestExecuteService_PersistStructuralFailureEmitsError(t *testing.T) {
+	clk := &shared.FakeClock{T: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
+	aid, _ := valueobjects.NewAdapterID("shell")
+	cap, _ := valueobjects.NewCapability(aid, "exec", "v1", false, 5*time.Second)
+	registry, _ := valueobjects.NewCapabilityRegistry(cap)
+	normalizer := domainservices.NewResultNormalizer(4096)
+	_ = normalizer.Register(cap.Canonical(), func(_ valueobjects.Capability, _ domainservices.AdapterRawOutcome, _ shared.Clock) (entities.ExecutionResult, error) {
+		return entities.ExecutionResult{}, nil
+	})
+	stub := testdoubles.NewStubAdapter(aid, cap)
+	brokenRepo := &alwaysFailRepo{}
+	idemp := testdoubles.NewInMemoryIdempotencyStore(clk)
+	prov, _ := entities.NewProvenance(entities.ProvTest, "v0.0.1", "test-host", "runtime-v0.0.1", "")
+	idGen := &entities.FakeIDGen{IDs: []string{ulid01, ulid02, ulid03, ulid04, ulid05}}
+
+	svc, err := services.NewExecuteService(services.ExecuteServiceConfig{
+		Adapters:    map[string]outbound.Adapter{"shell": stub},
+		Registry:    registry,
+		Normalizer:  normalizer,
+		Receipts:    brokenRepo,
+		Idempotency: idemp,
+		Limiter:     services.NewConcurrencyLimiter(10),
+		Clock:       clk,
+		IDGen:       idGen,
+		MaxTimeout:  30 * time.Second,
+		IdempWindow: 24 * time.Hour,
+		Provenance:  prov,
+	})
+	require.NoError(t, err)
+
+	// Request targets a capability NOT in the registry → persistStructural path.
+	cid, _ := shared.NewCorrelationID(ulid13)
+	pl, _ := valueobjects.NewPayload(valueobjects.ContentTypeJSON, []byte(`{}`), 0)
+	tb, _ := valueobjects.NewTimeoutBudget(5000, 0)
+	req, _ := entities.NewExecutionRequest(entities.ExecutionRequestInput{
+		CorrelationID: cid, AdapterID: aid,
+		CapabilityName: "unknown.op", CapabilityVersion: "v1",
+		Payload: pl, TimeoutBudget: tb,
+	}, clk)
+
+	var mu sync.Mutex
+	records := make([]slog.Record, 0)
+	h := &collectingHandler{mu: &mu, records: &records}
+	rootLogger := logpkg.NewWithHandler(h)
+	ctx := logpkg.ContextWith(context.Background(), rootLogger)
+
+	_, execErr := svc.Execute(ctx, req)
+	require.Error(t, execErr, "persistStructural persistence error must propagate")
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	found := false
+	for _, r := range records {
+		if r.Level == slog.LevelError && r.Message == "persist receipt" {
+			found = true
+			break
+		}
+	}
+	require.True(t, found, "expected ERROR log with message 'persist receipt' from persistStructural")
+}
