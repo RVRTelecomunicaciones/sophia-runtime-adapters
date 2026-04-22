@@ -1,0 +1,79 @@
+# promtool test rules fixture for Sloth-generated SLO recording + alert rules.
+#
+# Sloth 0.16 emits per-adapter files under this directory; this fixture
+# loads the representative shell.yaml to exercise both burn tiers and a
+# healthy-traffic baseline. Goal: smoke validation that recording rules
+# and alert expressions wire correctly — NOT exhaustive alert coverage.
+# Real-load calibration happens in 2C.2.
+#
+# Scenarios:
+#   1. sustained_burn_fires_both_tiers   — 100% failure sustained >1h
+#                                          → both critical (page) and
+#                                          warning (ticket) alerts fire
+#                                          simultaneously.
+#   2. healthy_shell_no_alert            — 100% success → no alert.
+#
+# Under prolonged error-only traffic, both fast-burn and slow-burn
+# conditions evaluate true at eval_time > 1h. This is the expected
+# steady-state shape of a sustained SLO breach; Alertmanager's inhibition
+# rule (Bundle 6) will suppress the warning when critical is active for
+# the same {sloth_slo, capability} pair.
+
+rule_files:
+  - shell.yaml
+
+evaluation_interval: 30s
+
+tests:
+  - name: sustained_burn_shell_availability_fires_both_tiers
+    interval: 30s
+    input_series:
+      # 100% failure, 2 failures/min sustained beyond the fast+slow burn windows.
+      - series: 'runtime_adapters_execution_total{capability="shell.exec@v1",status="failure"}'
+        values: '0+1x200'
+      - series: 'runtime_adapters_execution_total{capability="shell.exec@v1",status="success"}'
+        values: '0+0x200'
+    alert_rule_test:
+      - eval_time: 1h5m
+        alertname: ShellExecAvailabilityBurn
+        exp_alerts:
+          # Fast-burn (page) — critical tier.
+          - exp_labels:
+              adapter: shell
+              capability: shell.exec@v1
+              severity: critical
+              sloth_id: runtime-adapters-shell-exec-availability
+              sloth_service: runtime-adapters
+              sloth_severity: page
+              sloth_slo: shell-exec-availability
+              team: platform
+            exp_annotations:
+              summary: "runtime-adapters shell-exec-availability SLO error budget burn rate is over expected."
+              title: "(page) runtime-adapters shell-exec-availability SLO error budget burn rate is too fast."
+          # Slow-burn (ticket) — warning tier. Fires concurrently under
+          # sustained breach; Alertmanager inhibition suppresses in prod.
+          - exp_labels:
+              adapter: shell
+              capability: shell.exec@v1
+              severity: warning
+              sloth_id: runtime-adapters-shell-exec-availability
+              sloth_service: runtime-adapters
+              sloth_severity: ticket
+              sloth_slo: shell-exec-availability
+              team: platform
+            exp_annotations:
+              summary: "runtime-adapters shell-exec-availability SLO error budget burn rate is over expected."
+              title: "(ticket) runtime-adapters shell-exec-availability SLO error budget burn rate is too fast."
+
+  - name: healthy_shell_availability_no_alert
+    interval: 30s
+    input_series:
+      # 100% success — no error ratio to burn budget.
+      - series: 'runtime_adapters_execution_total{capability="shell.exec@v1",status="success"}'
+        values: '0+100x200'
+      - series: 'runtime_adapters_execution_total{capability="shell.exec@v1",status="failure"}'
+        values: '0+0x200'
+    alert_rule_test:
+      - eval_time: 1h5m
+        alertname: ShellExecAvailabilityBurn
+        exp_alerts: []
