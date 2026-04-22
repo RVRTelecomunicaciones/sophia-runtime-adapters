@@ -83,3 +83,4 @@ Conventional commits (`feat(scope)`, `fix(scope)`, `chore(scope)`, `docs(scope)`
 13. **R13** — Receipts always. Every completed or aborted execution produces an `ExecutionReceipt`, no exceptions.
 14. **R14** — `MaxConcurrentExecutions` required. A semaphore cap must be configured and enforced at runtime startup.
 15. **R15** — Only 5 statuses. `success`, `failure`, `timeout`, `cancelled`, `partial` are the only valid values; adding a new status requires an ADR and a `schema_version` bump.
+16. **R16** — Metric cardinality bounded. Label whitelist: `capability`, `adapter`, `status`, `signal`. High-cardinality identifiers (error_class, receipt_id, handle_id, correlation_id, trace_id, retry_hint) go to logs / exemplars, not metrics.

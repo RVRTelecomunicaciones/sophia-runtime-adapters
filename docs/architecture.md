@@ -65,3 +65,33 @@ Defined in spec §6.2. Each step maps to a distinct responsibility.
 
 Full invariant definitions: `docs/domain-invariants.md` (I1..I22).
 Full rules: `docs/rules.md` (R1..R15).
+
+---
+
+## Observability layer (Phase 2C.1)
+
+- **Logger:** `internal/infrastructure/obs/log/` — contract-bound
+  `slog` wrapper. See `docs/logging.md`.
+- **Metrics:** `internal/infrastructure/obs/metrics.go` —
+  11-instrument Registry (§6.3 catalog). See `docs/metrics.md`.
+- **SLOs:** `ops/slo/*.yaml` (Sloth v1 specs, one per adapter) →
+  `ops/prometheus/generated/*.yaml` (generated). See `docs/slo.md`.
+- **Infra alerts:** `ops/prometheus/rules/infra_*.yaml` (hand-written,
+  one file per concern).
+- **Alert routing:** `ops/alertmanager/alertmanager.yaml` — three-tier
+  with `null-receiver` for unwired paths (2C.4 swaps).
+- **Dashboards:** `ops/grafana/dashboards/` — 1 overview
+  (`runtime-overview`) + 4 per-adapter (`runtime-shell/git/fs/http`).
+
+Each layer is independently testable:
+
+| Layer | Gate |
+|---|---|
+| Logger + metrics (Go) | Per-package coverage ≥85% |
+| SLO specs | `sloth validate` + `ops/slo/slo_coverage_test.go` (-tags sloth) |
+| Generated rules | `promtool check rules` + `.test.yaml` fixtures |
+| Infra alerts | Same as generated rules |
+| Alertmanager | `amtool check-config` + `ops/alertmanager/alertmanager_routing_test.go` (-tags alertmanager) |
+| Dashboards | `dashboard-linter lint -c .lint` + `ops/grafana/dashboards_coverage_test.go` (-tags dashboards) |
+
+All gates run in the `observability` CI job.
