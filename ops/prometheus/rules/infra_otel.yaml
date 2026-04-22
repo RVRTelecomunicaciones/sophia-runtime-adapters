@@ -23,6 +23,11 @@ groups:
           summary: "OTel exporter queue > 90% durante 5m"
           description: "El collector no está aceptando telemetría. Riesgo de pérdida de datos."
 
+      # The [10m] lookback already implies 10m of sampled stability; a
+      # further `for: 10m` would double the effective time-to-fire to
+      # ~20m. We omit `for:` so the alert fires once the 10m window has
+      # enough data to satisfy the condition — matching the spec §8.1
+      # "10m" intent.
       - alert: OTelExporterDown
         expr: |
           (
@@ -32,7 +37,6 @@ groups:
           ) == 0
           and
           runtime_adapters_otel_exporter_queue_size > 0
-        for: 10m
         labels:
           severity: warning
         annotations:

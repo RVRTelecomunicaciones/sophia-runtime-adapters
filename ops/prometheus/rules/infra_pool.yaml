@@ -37,6 +37,13 @@ groups:
           summary: "pgx pool saturada (p95 acquire > 5s durante 2m)"
           description: "El pool pgx está al límite. Puede ser carga legítima o DB degradada."
 
+      # DORMANT IN PRODUCTION (2C.1): the metric `pgx_pool_idle_conns` is
+      # NOT emitted by the current runtime — pgx/v5 exposes pool stats via
+      # pgxpool.Stat() but no Prometheus collector is registered in
+      # bootstrap. Track 2C.4 (operational readiness) will wire a
+      # pgxpoolprometheus collector or equivalent. Until then this rule
+      # evaluates to no-data and never fires. Keeping the rule shape
+      # stable so the Alertmanager routing contract (§9) is authored once.
       - alert: PoolIdleZero
         expr: |
           min_over_time(pgx_pool_idle_conns[1m]) == 0
@@ -45,4 +52,4 @@ groups:
           severity: warning
         annotations:
           summary: "pgx pool sin conexiones idle durante 1m"
-          description: "Saturación completa transitoria — si persiste escalar a critical."
+          description: "Saturación completa transitoria — si persiste escalar a critical. NOTE: dormant hasta wiring de pgxpool collector en 2C.4."

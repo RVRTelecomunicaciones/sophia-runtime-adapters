@@ -29,6 +29,35 @@ tests:
               summary: "pgx pool saturada (p95 acquire > 5s durante 2m)"
               description: "El pool pgx está al límite. Puede ser carga legítima o DB degradada."
 
+  - name: pool_acquire_latency_high_fires_warning_only
+    interval: 30s
+    input_series:
+      # Observations all land in the 1-5s bucket: p95 interpolates to
+      # ~4.8s — above PoolAcquireLatencyHigh threshold (1s) but below
+      # PoolConnectionsExhausted threshold (5s). Only the warning fires.
+      - series: 'runtime_adapters_pool_connections_acquired_duration_seconds_bucket{le="0.5"}'
+        values: '0+0x20'
+      - series: 'runtime_adapters_pool_connections_acquired_duration_seconds_bucket{le="1"}'
+        values: '0+0x20'
+      - series: 'runtime_adapters_pool_connections_acquired_duration_seconds_bucket{le="5"}'
+        values: '0+10x20'
+      - series: 'runtime_adapters_pool_connections_acquired_duration_seconds_bucket{le="10"}'
+        values: '0+10x20'
+      - series: 'runtime_adapters_pool_connections_acquired_duration_seconds_bucket{le="+Inf"}'
+        values: '0+10x20'
+    alert_rule_test:
+      - eval_time: 7m
+        alertname: PoolAcquireLatencyHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "pgx pool acquire p95 > 1s durante 5m"
+              description: "Acquire latency sostenida. Revisar concurrencia upstream o salud de DB."
+      - eval_time: 7m
+        alertname: PoolConnectionsExhausted
+        exp_alerts: []
+
   - name: pool_healthy_no_critical
     interval: 30s
     input_series:

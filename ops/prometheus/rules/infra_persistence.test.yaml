@@ -33,6 +33,27 @@ tests:
         alertname: ReceiptPersistAnomaly
         exp_alerts: []
 
+  - name: persist_anomaly_fires_warning_below_spike_threshold
+    interval: 30s
+    input_series:
+      # 1 failure per 30s sustained >10m → rate ≈ 0.033/s over 5m,
+      # above the anomaly threshold (rate > 0) but below the spike
+      # threshold (0.1/s). Only the warning fires.
+      - series: 'runtime_adapters_receipt_persist_failures'
+        values: '0+1x40'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: ReceiptPersistAnomaly
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "Receipt persist failures sostenidas durante 10m"
+              description: "Rate bajo pero sostenida. Escalará a critical si empeora."
+      - eval_time: 15m
+        alertname: ReceiptPersistFailureSpike
+        exp_alerts: []
+
   - name: idempotency_replay_surge_info
     interval: 30s
     input_series:

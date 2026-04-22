@@ -32,6 +32,37 @@ tests:
         alertname: OTelExporterQueueFull
         exp_alerts: []
 
+  - name: otel_exporter_down_fires_warning
+    interval: 30s
+    input_series:
+      # Queue frozen at 50 items for > 10m — exporter isn't draining.
+      # max_over_time - min_over_time == 0 AND queue > 0 → warning fires
+      # once the 10m window is saturated.
+      - series: 'runtime_adapters_otel_exporter_queue_size{signal="traces"}'
+        values: '50x30'
+    alert_rule_test:
+      - eval_time: 11m
+        alertname: OTelExporterDown
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              signal: traces
+            exp_annotations:
+              summary: "OTel exporter no drena queue hace 10m"
+              description: "Exporter potencialmente caído — telemetría acumulándose localmente sin flush."
+
+  - name: otel_exporter_draining_no_warning
+    interval: 30s
+    input_series:
+      # Queue oscillates — exporter is actively draining. max-min > 0,
+      # alert does not fire even though queue is non-zero.
+      - series: 'runtime_adapters_otel_exporter_queue_size{signal="traces"}'
+        values: '50 100 20 80 30 70 40 60 50 90 20 100 50 80 30 70 40 60 50 90 20 100 50 80 30'
+    alert_rule_test:
+      - eval_time: 11m
+        alertname: OTelExporterDown
+        exp_alerts: []
+
   - name: concurrency_rejects_elevated_info
     interval: 30s
     input_series:
