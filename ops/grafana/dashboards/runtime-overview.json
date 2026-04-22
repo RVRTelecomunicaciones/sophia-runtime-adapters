@@ -1,0 +1,551 @@
+{
+  "uid": "runtime-overview",
+  "title": "Runtime Adapters — Overview",
+  "tags": ["runtime-adapters", "2c.1"],
+  "schemaVersion": 39,
+  "editable": false,
+  "timezone": "",
+  "time": {"from": "now-24h", "to": "now"},
+  "refresh": "30s",
+  "description": "Oncall entry point. Consolidated view across shell / git / filesystem / http adapters. No $capability dropdown — drill into a per-adapter dashboard to filter.",
+  "links": [
+    {
+      "title": "runtime-shell",
+      "type": "dashboards",
+      "tags": ["runtime-adapters", "2c.1"],
+      "asDropdown": false,
+      "includeVars": false,
+      "keepTime": true,
+      "targetBlank": false
+    },
+    {
+      "title": "Shell drill-down",
+      "type": "link",
+      "url": "/d/runtime-shell?${__url_time_range}",
+      "asDropdown": false,
+      "keepTime": true,
+      "targetBlank": false,
+      "icon": "external link"
+    },
+    {
+      "title": "Git drill-down",
+      "type": "link",
+      "url": "/d/runtime-git?${__url_time_range}",
+      "asDropdown": false,
+      "keepTime": true,
+      "targetBlank": false,
+      "icon": "external link"
+    },
+    {
+      "title": "Filesystem drill-down",
+      "type": "link",
+      "url": "/d/runtime-fs?${__url_time_range}",
+      "asDropdown": false,
+      "keepTime": true,
+      "targetBlank": false,
+      "icon": "external link"
+    },
+    {
+      "title": "HTTP drill-down",
+      "type": "link",
+      "url": "/d/runtime-http?${__url_time_range}",
+      "asDropdown": false,
+      "keepTime": true,
+      "targetBlank": false,
+      "icon": "external link"
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Data source",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {"selected": false, "text": "Prometheus", "value": "prom"},
+        "hide": 0,
+        "refresh": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "shell.exec@v1 — budget 30d",
+      "description": "Sloth period_error_budget_remaining for shell-exec-availability. Click the title to drill into runtime-shell with capability preselected.",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"h": 4, "w": 3, "x": 0, "y": 0},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0, "max": 1,
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "red", "value": null},
+            {"color": "orange", "value": 0.1},
+            {"color": "green", "value": 0.5}
+          ]},
+          "links": [
+            {"title": "runtime-shell", "url": "/d/runtime-shell?var-capability=shell.exec%40v1&${__url_time_range}", "targetBlank": false}
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "targets": [
+        {"refId": "A", "datasource": {"type": "prometheus", "uid": "${datasource}"},
+         "expr": "slo:period_error_budget_remaining:ratio{sloth_slo=\"shell-exec-availability\"}",
+         "legendFormat": "shell.exec@v1"}
+      ]
+    },
+    {
+      "id": 11,
+      "type": "stat",
+      "title": "git.status@v1 — budget 30d",
+      "description": "Sloth period_error_budget_remaining for git-status-availability.",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"h": 4, "w": 3, "x": 3, "y": 0},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0, "max": 1,
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "red", "value": null},
+            {"color": "orange", "value": 0.1},
+            {"color": "green", "value": 0.5}
+          ]},
+          "links": [
+            {"title": "runtime-git", "url": "/d/runtime-git?var-capability=git.status%40v1&${__url_time_range}", "targetBlank": false}
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "targets": [
+        {"refId": "A", "datasource": {"type": "prometheus", "uid": "${datasource}"},
+         "expr": "slo:period_error_budget_remaining:ratio{sloth_slo=\"git-status-availability\"}",
+         "legendFormat": "git.status@v1"}
+      ]
+    },
+    {
+      "id": 12,
+      "type": "stat",
+      "title": "git.clone@v1 — budget 30d",
+      "description": "Sloth period_error_budget_remaining for git-clone-availability.",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"h": 4, "w": 3, "x": 6, "y": 0},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0, "max": 1,
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "red", "value": null},
+            {"color": "orange", "value": 0.1},
+            {"color": "green", "value": 0.5}
+          ]},
+          "links": [
+            {"title": "runtime-git", "url": "/d/runtime-git?var-capability=git.clone%40v1&${__url_time_range}", "targetBlank": false}
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "targets": [
+        {"refId": "A", "datasource": {"type": "prometheus", "uid": "${datasource}"},
+         "expr": "slo:period_error_budget_remaining:ratio{sloth_slo=\"git-clone-availability\"}",
+         "legendFormat": "git.clone@v1"}
+      ]
+    },
+    {
+      "id": 13,
+      "type": "stat",
+      "title": "git.diff@v1 — budget 30d",
+      "description": "Sloth period_error_budget_remaining for git-diff-availability.",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"h": 4, "w": 3, "x": 9, "y": 0},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0, "max": 1,
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "red", "value": null},
+            {"color": "orange", "value": 0.1},
+            {"color": "green", "value": 0.5}
+          ]},
+          "links": [
+            {"title": "runtime-git", "url": "/d/runtime-git?var-capability=git.diff%40v1&${__url_time_range}", "targetBlank": false}
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "targets": [
+        {"refId": "A", "datasource": {"type": "prometheus", "uid": "${datasource}"},
+         "expr": "slo:period_error_budget_remaining:ratio{sloth_slo=\"git-diff-availability\"}",
+         "legendFormat": "git.diff@v1"}
+      ]
+    },
+    {
+      "id": 14,
+      "type": "stat",
+      "title": "git.commit@v1 — budget 30d",
+      "description": "Sloth period_error_budget_remaining for git-commit-availability.",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"h": 4, "w": 3, "x": 12, "y": 0},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0, "max": 1,
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "red", "value": null},
+            {"color": "orange", "value": 0.1},
+            {"color": "green", "value": 0.5}
+          ]},
+          "links": [
+            {"title": "runtime-git", "url": "/d/runtime-git?var-capability=git.commit%40v1&${__url_time_range}", "targetBlank": false}
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "targets": [
+        {"refId": "A", "datasource": {"type": "prometheus", "uid": "${datasource}"},
+         "expr": "slo:period_error_budget_remaining:ratio{sloth_slo=\"git-commit-availability\"}",
+         "legendFormat": "git.commit@v1"}
+      ]
+    },
+    {
+      "id": 15,
+      "type": "stat",
+      "title": "filesystem.read_file@v1 — budget 30d",
+      "description": "Sloth period_error_budget_remaining for filesystem-read-file-availability.",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"h": 4, "w": 3, "x": 15, "y": 0},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0, "max": 1,
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "red", "value": null},
+            {"color": "orange", "value": 0.1},
+            {"color": "green", "value": 0.5}
+          ]},
+          "links": [
+            {"title": "runtime-fs", "url": "/d/runtime-fs?var-capability=filesystem.read_file%40v1&${__url_time_range}", "targetBlank": false}
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "targets": [
+        {"refId": "A", "datasource": {"type": "prometheus", "uid": "${datasource}"},
+         "expr": "slo:period_error_budget_remaining:ratio{sloth_slo=\"filesystem-read-file-availability\"}",
+         "legendFormat": "filesystem.read_file@v1"}
+      ]
+    },
+    {
+      "id": 16,
+      "type": "stat",
+      "title": "filesystem.write_file@v1 — budget 30d",
+      "description": "Sloth period_error_budget_remaining for filesystem-write-file-availability.",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"h": 4, "w": 3, "x": 18, "y": 0},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0, "max": 1,
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "red", "value": null},
+            {"color": "orange", "value": 0.1},
+            {"color": "green", "value": 0.5}
+          ]},
+          "links": [
+            {"title": "runtime-fs", "url": "/d/runtime-fs?var-capability=filesystem.write_file%40v1&${__url_time_range}", "targetBlank": false}
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "targets": [
+        {"refId": "A", "datasource": {"type": "prometheus", "uid": "${datasource}"},
+         "expr": "slo:period_error_budget_remaining:ratio{sloth_slo=\"filesystem-write-file-availability\"}",
+         "legendFormat": "filesystem.write_file@v1"}
+      ]
+    },
+    {
+      "id": 17,
+      "type": "stat",
+      "title": "http.request@v1 — budget 30d",
+      "description": "Sloth period_error_budget_remaining for http-request-availability.",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"h": 4, "w": 3, "x": 21, "y": 0},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0, "max": 1,
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "red", "value": null},
+            {"color": "orange", "value": 0.1},
+            {"color": "green", "value": 0.5}
+          ]},
+          "links": [
+            {"title": "runtime-http", "url": "/d/runtime-http?var-capability=http.request%40v1&${__url_time_range}", "targetBlank": false}
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "targets": [
+        {"refId": "A", "datasource": {"type": "prometheus", "uid": "${datasource}"},
+         "expr": "slo:period_error_budget_remaining:ratio{sloth_slo=\"http-request-availability\"}",
+         "legendFormat": "http.request@v1"}
+      ]
+    },
+    {
+      "id": 20,
+      "type": "table",
+      "title": "Burn rate matrix (1h / 6h, availability SLOs)",
+      "description": "Per-capability current burn rate across 1h and 6h windows. >1 means the budget for the window is exhausted. Row click → data link into the adapter dashboard.",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 4},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "green", "value": null},
+            {"color": "orange", "value": 1},
+            {"color": "red", "value": 6}
+          ]},
+          "custom": {"align": "auto", "cellOptions": {"type": "auto"}}
+        },
+        "overrides": []
+      },
+      "options": {"showHeader": true, "cellHeight": "sm"},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "expr": "max by (sloth_slo, capability) (slo:sli_error:ratio_rate1h / on(sloth_id, sloth_slo, sloth_service) group_left slo:error_budget:ratio)",
+          "legendFormat": "{{sloth_slo}}",
+          "format": "table",
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "expr": "max by (sloth_slo, capability) (slo:sli_error:ratio_rate6h / on(sloth_id, sloth_slo, sloth_service) group_left slo:error_budget:ratio)",
+          "legendFormat": "{{sloth_slo}}",
+          "format": "table",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "type": "timeseries",
+      "title": "Traffic by adapter",
+      "description": "rate(execution_total) per adapter, stacked area (1h window refresh).",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 4},
+      "fieldConfig": {
+        "defaults": {"unit": "reqps", "custom": {"stacking": {"mode": "normal"}}},
+        "overrides": []
+      },
+      "options": {
+        "legend": {"displayMode": "table", "placement": "right", "calcs": ["mean", "lastNotNull"]},
+        "tooltip": {"mode": "multi", "sort": "desc"}
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "expr": "sum by (adapter) (rate(runtime_adapters_execution_total[$__rate_interval]))",
+          "legendFormat": "{{adapter}}"
+        }
+      ]
+    },
+    {
+      "id": 30,
+      "type": "stat",
+      "title": "Pool acquire p95",
+      "description": "pgx pool acquire latency p95 (5m). Saturation indicator.",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 13},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "green", "value": null},
+            {"color": "orange", "value": 1},
+            {"color": "red", "value": 5}
+          ]}
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "targets": [
+        {"refId": "A", "datasource": {"type": "prometheus", "uid": "${datasource}"},
+         "expr": "histogram_quantile(0.95, sum by (le) (rate(runtime_adapters_pool_connections_acquired_duration_seconds_bucket[$__rate_interval])))",
+         "legendFormat": "pool p95"}
+      ]
+    },
+    {
+      "id": 31,
+      "type": "stat",
+      "title": "OTel queue %",
+      "description": "otel.exporter.queue.size divided by the 10000-item default queue (§8 infra_otel).",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 13},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit", "min": 0, "max": 1,
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "green", "value": null},
+            {"color": "orange", "value": 0.5},
+            {"color": "red", "value": 0.9}
+          ]}
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "targets": [
+        {"refId": "A", "datasource": {"type": "prometheus", "uid": "${datasource}"},
+         "expr": "max(runtime_adapters_otel_exporter_queue_size) / 10000",
+         "legendFormat": "queue %"}
+      ]
+    },
+    {
+      "id": 32,
+      "type": "stat",
+      "title": "Receipt persist fails (rate 5m)",
+      "description": "rate(receipt.persist.failures). A4.3 — persistence-before-return means failures here are real caller-visible failures.",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 13},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cps",
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "green", "value": null},
+            {"color": "orange", "value": 0.01},
+            {"color": "red", "value": 0.1}
+          ]}
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "targets": [
+        {"refId": "A", "datasource": {"type": "prometheus", "uid": "${datasource}"},
+         "expr": "sum(rate(runtime_adapters_receipt_persist_failures[$__rate_interval]))",
+         "legendFormat": "persist fails/s"}
+      ]
+    },
+    {
+      "id": 33,
+      "type": "stat",
+      "title": "Adapter panics (rate 5m)",
+      "description": "rate(adapter.panics) — R4 guarantee, recovered panics still surface here.",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 13},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cps",
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "green", "value": null},
+            {"color": "orange", "value": 0.001},
+            {"color": "red", "value": 0.01}
+          ]}
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "targets": [
+        {"refId": "A", "datasource": {"type": "prometheus", "uid": "${datasource}"},
+         "expr": "sum by (adapter) (rate(runtime_adapters_adapter_panics[$__rate_interval]))",
+         "legendFormat": "{{adapter}}"}
+      ]
+    },
+    {
+      "id": 40,
+      "type": "alertlist",
+      "title": "Firing alerts (critical + warning)",
+      "description": "Alertmanager-backed list. Filtered by severity = critical | warning so info-tier alerts (concurrency rejects) are excluded.",
+      "datasource": {"type": "alertmanager", "uid": "alertmanager"},
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 17},
+      "fieldConfig": {
+        "defaults": {"unit": "none"},
+        "overrides": []
+      },
+      "options": {
+        "viewMode": "list",
+        "groupMode": "default",
+        "maxItems": 50,
+        "sortOrder": 3,
+        "dashboardAlerts": false,
+        "alertName": "",
+        "dashboardTitle": "",
+        "alertInstanceLabelFilter": "severity=~\"critical|warning\"",
+        "datasource": "alertmanager"
+      }
+    }
+  ]
+}
