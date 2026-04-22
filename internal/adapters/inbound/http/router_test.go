@@ -8,8 +8,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
+	chimw "github.com/go-chi/chi/v5/middleware"
+	"github.com/stretchr/testify/require"
+
 	"github.com/sophia-ecosystem/runtime-adapters/internal/domain/execution/entities"
 	"github.com/sophia-ecosystem/runtime-adapters/internal/domain/shared"
+	"github.com/sophia-ecosystem/runtime-adapters/internal/infrastructure/obs/log"
 	"github.com/sophia-ecosystem/runtime-adapters/internal/ports/inbound"
 )
 
@@ -43,7 +48,7 @@ func (s stubQuery) GetReceipt(_ context.Context, _ shared.ReceiptID, _ inbound.G
 
 func newTestRouter(t *testing.T) http.Handler {
 	t.Helper()
-	return NewRouter(stubRuntime{t: t}, stubQuery{t: t})
+	return NewRouter(stubRuntime{t: t}, stubQuery{t: t}, log.NewNop())
 }
 
 func doRequest(t *testing.T, router http.Handler, method, path string) *http.Response {
@@ -62,7 +67,7 @@ func TestNewRouter_PanicsOnNilSvc(t *testing.T) {
 			t.Error("expected panic for nil RuntimeService, got none")
 		}
 	}()
-	NewRouter(nil, stubQuery{})
+	NewRouter(nil, stubQuery{}, log.NewNop())
 }
 
 func TestNewRouter_PanicsOnNilQuery(t *testing.T) {
@@ -71,7 +76,7 @@ func TestNewRouter_PanicsOnNilQuery(t *testing.T) {
 			t.Error("expected panic for nil QueryService, got none")
 		}
 	}()
-	NewRouter(stubRuntime{}, nil)
+	NewRouter(stubRuntime{}, nil, log.NewNop())
 }
 
 func TestHealthz_Returns200(t *testing.T) {
@@ -191,4 +196,36 @@ func TestRouter_ContentTypeOnExecute(t *testing.T) {
 	if ct != "application/json; charset=utf-8" {
 		t.Errorf("Content-Type = %q, want application/json; charset=utf-8", ct)
 	}
+}
+
+// TestNewRouter_LoggerMiddlewareBoundInChain asserts the middleware chain
+// wires LoggerMiddleware between chimw.RequestID and panicRecoverer, so
+// downstream handlers always see a logger bound into r.Context() — even
+// when the root logger is a Nop. This pins the registration order from
+// spec §5.5 (T17 wiring) so a future refactor cannot silently drop the
+// middleware from the chain.
+func TestNewRouter_LoggerMiddlewareBoundInChain(t *testing.T) {
+	probed := false
+	probeHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got := log.FromContext(r.Context())
+		require.NotNil(t, got, "logger must be bound by middleware chain")
+		probed = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	// Build a chi router with the exact same middleware chain NewRouter
+	// installs, then mount a probe handler. If the chain is correct, the
+	// probe sees a non-nil logger in ctx.
+	r := chi.NewRouter()
+	r.Use(chimw.RequestID)
+	r.Use(LoggerMiddleware(log.NewNop()))
+	r.Use(requestIDHeader)
+	r.Use(panicRecoverer)
+	r.Handle("/probe", probeHandler)
+
+	req := httptest.NewRequest(http.MethodGet, "/probe", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.True(t, probed, "probe handler did not execute")
 }

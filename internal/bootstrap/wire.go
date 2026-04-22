@@ -30,6 +30,7 @@ import (
 	"github.com/sophia-ecosystem/runtime-adapters/internal/domain/shared"
 	"github.com/sophia-ecosystem/runtime-adapters/internal/infrastructure/config"
 	"github.com/sophia-ecosystem/runtime-adapters/internal/infrastructure/obs"
+	"github.com/sophia-ecosystem/runtime-adapters/internal/infrastructure/obs/log"
 	"github.com/sophia-ecosystem/runtime-adapters/internal/ports/outbound"
 )
 
@@ -46,13 +47,27 @@ type Runtime struct {
 // HTTP server (not yet started), the pgx pool, and a shutdown function.
 // On error, already-opened resources are released before return.
 func BuildRuntime(ctx context.Context, cfg config.Config) (*Runtime, error) {
-	// 1. OTel (must be first — adapters use otel.Tracer/Meter).
+	// 1. Root logger. Constructed BEFORE OTel so obs setup (and any later
+	//    step) has a concrete logger available if it needs to emit. A
+	//    logger build failure aborts startup (fail fast — invalid
+	//    RUNTIME_LOG_* env, R10 strict-config stance).
+	logCfg, err := log.LoadConfig()
+	if err != nil {
+		return nil, fmt.Errorf("log config: %w", err)
+	}
+	rootLogger, err := log.New(logCfg)
+	if err != nil {
+		return nil, fmt.Errorf("log.New: %w", err)
+	}
+
+	// 2. OTel (adapters use otel.Tracer/Meter; must be initialized before
+	//    any adapter construction).
 	otelShutdown, err := obs.SetupOTel(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("setup otel: %w", err)
 	}
 
-	// 2. Pool + migrations.
+	// 3. Pool + migrations.
 	pool, err := pgxpool.New(ctx, cfg.PostgresDSN)
 	if err != nil {
 		_ = otelShutdown(ctx)
@@ -64,7 +79,7 @@ func BuildRuntime(ctx context.Context, cfg config.Config) (*Runtime, error) {
 		return nil, fmt.Errorf("apply migrations: %w", err)
 	}
 
-	// 3. Outbound repos (T48 / T49).
+	// 4. Outbound repos (T48 / T49).
 	// NewReceiptRepositoryPG and NewIdempotencyStorePG only take a pool.
 	receiptRepo, err := pg.NewReceiptRepositoryPG(pool)
 	if err != nil {
@@ -79,7 +94,7 @@ func BuildRuntime(ctx context.Context, cfg config.Config) (*Runtime, error) {
 		return nil, fmt.Errorf("idempotency store: %w", err)
 	}
 
-	// 4. Domain registry + normalizer.
+	// 5. Domain registry + normalizer.
 	caps, err := valueobjects.NewPhase1Capabilities()
 	if err != nil {
 		pool.Close()
@@ -94,7 +109,7 @@ func BuildRuntime(ctx context.Context, cfg config.Config) (*Runtime, error) {
 	}
 	normalizer := domainservices.NewResultNormalizer(cfg.InlineStreamLimit)
 
-	// 5. Concrete adapters + register normalizers.
+	// 6. Concrete adapters + register normalizers.
 	clk := shared.RealClock{}
 	adapters, err := registration.RegisterAllPhase1(normalizer, adapterConfig(cfg), clk)
 	if err != nil {
@@ -108,7 +123,7 @@ func BuildRuntime(ctx context.Context, cfg config.Config) (*Runtime, error) {
 		return nil, fmt.Errorf("verify catalog: %w", err)
 	}
 
-	// 6. Concurrency limiter + provenance baseline.
+	// 7. Concurrency limiter + provenance baseline.
 	limiter := services.NewConcurrencyLimiter(cfg.MaxConcurrentExecutions)
 	prov, err := entities.NewProvenance(
 		entities.ProvenanceSource(cfg.ProvenanceSource),
@@ -123,7 +138,7 @@ func BuildRuntime(ctx context.Context, cfg config.Config) (*Runtime, error) {
 		return nil, fmt.Errorf("provenance baseline: %w", err)
 	}
 
-	// 7. ExecuteService + QueryService.
+	// 8. ExecuteService + QueryService.
 	// Adapter map keyed by AdapterID.String() for ExecuteService consumption.
 	adaptersByString := make(map[string]outbound.Adapter, len(adapters))
 	for aid, a := range adapters {
@@ -159,8 +174,9 @@ func BuildRuntime(ctx context.Context, cfg config.Config) (*Runtime, error) {
 		return nil, fmt.Errorf("query service: %w", err)
 	}
 
-	// 8. HTTP router (inbound).
-	router := inboundhttp.NewRouter(execSvc, querySvc)
+	// 9. HTTP router (inbound). rootLogger is threaded into the chain so
+	//    LoggerMiddleware binds a request-scoped logger into ctx (§5.5).
+	router := inboundhttp.NewRouter(execSvc, querySvc, rootLogger)
 	server := &nethttp.Server{
 		Addr:    cfg.HTTPAddr,
 		Handler: router,
