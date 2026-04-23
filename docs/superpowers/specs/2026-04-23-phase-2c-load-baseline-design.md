@@ -353,7 +353,7 @@ Distroless base for minimal attack surface + production-realistic shape. Scaffol
 
 `ops/local/compose.ci-smoke.yaml` is a **separate file**. Includes only `runtime-adapters`, `postgres`, `http-upstream-mock`, `k6`. No Prometheus, no Grafana, no OTel Collector — CI smoke uses k6's `summary.json` only, no PromQL cross-check.
 
-Limits are tuned for GHA `ubuntu-latest` (private repo: **2 CPU / 8 GiB**):
+Limits are **deliberately conservative** — sized for the tighter private-repo class (2 CPU / 8 GiB) even though this repo is actually public (`ubuntu-latest` public runners: 4 CPU / 16 GiB). Keeping the conservative sizing means the smoke is robust to runner class changes and noisy co-tenants, and leaves ample headroom on 4/16 runners.
 
 | Service | `cpus` | `mem_limit` |
 |---|---|---|
@@ -362,9 +362,9 @@ Limits are tuned for GHA `ubuntu-latest` (private repo: **2 CPU / 8 GiB**):
 | `http-upstream-mock` | `0.3` | `128m` |
 | `k6` | `0.4` | `256m` |
 
-Total nominal ~1.85 CPU / ~1.4 GiB — leaves air for Docker engine + runner overhead within 2 CPU / 8 GiB. Runtime runs with `OTEL_ENABLED=false` (no collector to export to).
+Total nominal ~1.85 CPU / ~1.4 GiB — fits within the private-repo floor (2 CPU / 8 GiB) and has generous headroom on the actual public-repo class (4 CPU / 16 GiB). Runtime runs with `OTEL_ENABLED=false` (no collector to export to).
 
-If 2C.2 is ever run on a **public** repo clone (4 CPU / 16 GiB runner), limits are conservative enough to still fit. The smoke is **not** designed to produce calibration-grade numbers — only to flag gross regressions.
+The smoke is **not** designed to produce calibration-grade numbers — only to flag gross regressions. Runner class is documented in `latest-baseline.json` via `runner_class_smoke_expected` so readers can't confuse smoke numbers for baseline numbers.
 
 > **Operational note for implementers (gotcha #6, not a design change):** if the smoke on `ubuntu-latest` shows excessive jitter or erratic p99 variance between consecutive PRs, lower the `runtime-adapters` and/or `k6` `cpus:` slightly (e.g., 0.75 → 0.6, 0.4 → 0.3) to prioritize smoke stability over aggressive runner utilization. Treat as tuning, not a spec revision.
 
@@ -526,9 +526,9 @@ Used by CI smoke for delta comparison. Committed with each calibration report:
   "generated_at": "2026-04-23T14:22:00Z",
   "from_report": "ops/slo/calibration-reports/2026-04-23-baseline-v1.md",
   "envelope_manifest": "ops/slo/calibration-reports/evidence/2026-04-23-baseline-v1/manifest.json",
-  "comparison_context": "This snapshot captures distributions measured under the 2C.2 local pinned compose envelope (2 CPU / 2 GiB, full stack with OTel collector, pgx postgres, http-upstream-mock). CI smoke runs under a different, more restrictive envelope (GHA ubuntu-latest private-repo class, reduced limits, stripped compose without OTel collector). Absolute comparison is NOT apples-to-apples; delta thresholds in ci-smoke-comment.sh are calibrated to flag GROSS regressions only (>50% p99 drift).",
+  "comparison_context": "This snapshot captures distributions measured under the 2C.2 local pinned compose envelope (2 CPU / 2 GiB, full stack with OTel collector, pgx postgres, http-upstream-mock). CI smoke runs under a different, more restrictive envelope (GHA ubuntu-latest public runner at 4 CPU / 16 GiB, but compose.ci-smoke.yaml pins limits conservatively for the private-repo floor, stripped compose without OTel collector). Absolute comparison is NOT apples-to-apples; delta thresholds in ci-smoke-comment.sh are calibrated to flag GROSS regressions only (>50% p99 drift).",
   "runner_class_baseline": "local-pinned-compose-2cpu-2gib",
-  "runner_class_smoke_expected": "github-actions-ubuntu-latest-private-2cpu-8gib",
+  "runner_class_smoke_expected": "github-actions-ubuntu-latest-public-4cpu-16gib",
   "core": {
     "shell.exec@v1":            { "p50_ms": 42,  "p95_ms": 180, "p99_ms": 340 },
     "filesystem.read_file@v1":  { "p50_ms": 10,  "p95_ms": 40,  "p99_ms": 75  },
@@ -640,10 +640,10 @@ GitHub Actions `ubuntu-latest` specs depend on repo visibility:
 
 | Repo class | CPU | Memory |
 |---|---|---|
-| **Private** | 2 | 8 GiB |
-| Public | 4 | 16 GiB |
+| Private | 2 | 8 GiB |
+| **Public** | 4 | 16 GiB |
 
-The `RVRTelecomunicaciones/sophia-runtime-adapters` repo is treated as **private** — CI smoke is designed against the 2 CPU / 8 GiB profile. Public-repo clones (if any) will have headroom; private-repo is the binding constraint.
+The `RVRTelecomunicaciones/sophia-runtime-adapters` repo is **public** — the runner class is 4 CPU / 16 GiB. CI smoke limits are nonetheless sized for the private-repo floor (2 CPU / 8 GiB) so the stack is robust to a future visibility change or migration; total nominal ~1.85 CPU / ~1.4 GiB leaves large headroom on 4/16 runners.
 
 ### 10.2 Job shape
 
@@ -866,7 +866,7 @@ Approximate bundles (final decomposition is the writing-plans skill's job):
 | **D2C2.10** | Fixture source immutable during runs; mutating scenarios operate on tmpfs copies | Section 5 adjustment 2 |
 | **D2C2.11** | `.git/` dirs NOT committed; fixture generator Makefile is single source of truth | Section 5 adjustment 3 |
 | **D2C2.12** | `git.status@v1` smoke evidence documents clean vs dirty segmented metrics (50/50 split via `exec.scenario.iterationInTest % 2`, `tree=` tag) | Section 5 adjustment 4 |
-| **D2C2.13** | CI smoke runner constraint = GHA `ubuntu-latest` private-repo class (2 CPU / 8 GiB); public-repo variant has headroom | Section 6 adjustment 1 |
+| **D2C2.13** | GHA `ubuntu-latest` runner class: repo is public (4 CPU / 16 GiB actual), but CI smoke limits are sized conservatively for the private-repo floor (2 CPU / 8 GiB) to survive a visibility change and to tolerate noisy co-tenants | Section 6 adjustment 1 |
 | **D2C2.14** | Pre-first-calibration tolerance: `load-report-schema` skips structural checks before first calibration artifacts exist; mandatory thereafter | Section 7 adjustment 1 |
 | **D2C2.15** | Collector validate uses the same pinned container tag as compose (no drift between validation + runtime) | Section 7 adjustment 2 |
 | **D2C2.16** | Single source of truth for calibration artifacts at `ops/slo/calibration-reports/`; `docs/load-baseline.md` references the path (no symlink) | Section 7 adjustment 3 |
@@ -898,7 +898,7 @@ Recorded in order during brainstorming:
 | **A2C2.15** | Fixture mount read-only during run; mutations use tmpfs copies | §5 |
 | **A2C2.16** | `.git/` dirs not committed; Makefile is single source of truth | §5 |
 | **A2C2.17** | `git.status` clean/dirty split documented in separate evidence file | §5 |
-| **A2C2.18** | GHA runner class documented (private = 2 CPU / 8 GiB) | §6 |
+| **A2C2.18** | GHA runner class documented: public (4 CPU / 16 GiB); limits sized conservatively for private-repo floor for robustness | §6 |
 | **A2C2.19** | CI smoke limits reduced to leave Docker/postgres/mock real headroom (runtime 0.75 CPU / 768m; k6 0.4 CPU / 256m) | §6 |
 | **A2C2.20** | k6 compose service YAML fixed (single `volumes:` block) | §6 |
 | **A2C2.21** | PR comment posted even when k6 fails (advisory contract: never fails silently) | §6 |
