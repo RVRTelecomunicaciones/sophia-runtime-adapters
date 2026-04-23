@@ -1,0 +1,39 @@
+# Version control
+.git
+.gitignore
+.gitattributes
+
+# CI + tooling state
+.github
+.golangci.yaml
+.editorconfig
+
+# Build artifacts
+/bin
+/dist
+coverage.out
+coverage.html
+
+# Editor state
+.vscode
+.idea
+
+# Docs + non-build content (kept out of the image to shrink context + build time)
+docs
+CHANGELOG.md
+CLAUDE.md
+AGENTS.md
+LICENSE
+README.md
+
+# Tests + fixtures (runtime image doesn't need them)
+test
+
+# Ops configs (mounted at runtime, not baked in)
+ops
+
+# Local artifacts
+*.test
+*.out
+.env
+.env.local
