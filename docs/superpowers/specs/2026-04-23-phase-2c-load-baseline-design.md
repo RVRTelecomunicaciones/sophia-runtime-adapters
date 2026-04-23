@@ -204,10 +204,10 @@ Per-capability baseline RPS + saturation envelope:
 | Capability | Baseline RPS | Saturation ramp stages (1m each) | Notes |
 |---|---|---|---|
 | `shell.exec@v1` | 10 | 50 → 100 → 200 → 400 | allowlist-pinned to `echo` / `true` / `date` |
-| `filesystem.read_file@v1` | 50 | 100 → 200 → 400 → 800 | two payload sizes (1 KiB, 10 KiB) via `__ITER % 2` |
+| `filesystem.read_file@v1` | 50 | 100 → 200 → 400 → 800 | two payload sizes (1 KiB, 10 KiB) via `exec.scenario.iterationInTest % 2` (D2C2.19) |
 | `filesystem.write_file@v1` | 20 | 50 → 100 → 200 → 300 | writes to `/tmp/bench-<uuid>` — compose tmpfs volume, cleaned on teardown |
 | `http.request@v1` | 30 | 100 → 200 → 400 → 500 | target = `http-upstream-mock:8080` inside bridge network (runtime's SSRF guards reject public/loopback; mock lives in the same compose network with a DNS name) |
-| `git.status@v1` | 5 (smoke, 90s) | 20 → 40 → 80 (lite, 3 × 1m) | `__ITER % 2` switches between `/bench/git/small-repo` and `/bench/git/dirty-tree` |
+| `git.status@v1` | 5 (smoke, 90s) | 20 → 40 → 80 (lite, 3 × 1m) | `exec.scenario.iterationInTest % 2` switches between `/bench/git/small-repo` and `/bench/git/dirty-tree` (D2C2.19) |
 
 ### 5.4 Smoke tier (`git.status@v1`)
 
@@ -230,13 +230,21 @@ The fixture source (`/bench/git/small-repo`) is mounted **read-only** during the
 
 ### 5.6 `suite.js` — baseline entrypoint
 
-Imports all six scenario files and composes them into a single ordered run. Total duration ~28–30 min across:
+Imports all six scenario files and composes them into a single ordered run. Total duration **~42–45 min** (core ~30 min + git ~12–13 min), sequential to avoid cross-capability contention in measurements:
 
-- 4 core × (3m baseline + 4m saturation + 30s gap) ≈ 30 min (actually runs sequentially; can optionally run concurrently with care)
-- git.status smoke + saturation_lite ≈ 4 min
-- git_rough composite ≈ 7 min
+| Segment | Duration breakdown | Subtotal |
+|---|---|---|
+| `shell.exec@v1` | 3m baseline + 30s gap + 4m saturation + 30s graceful | ~8 min |
+| `filesystem.read_file@v1` | same shape | ~8 min |
+| `filesystem.write_file@v1` | same shape | ~8 min |
+| `http.request@v1` | same shape | ~8 min |
+| **Core subtotal** | | **~32 min** |
+| `git.status@v1` | 90s smoke + 5s gap + 3m saturation_lite + 30s graceful | ~4.5 min |
+| `git_rough` composite | clone (maxDuration 5m) + 10s gap + diff (1m) + 15s gap + commit (~3–4m for 10 iters) | ~8–9 min |
+| **Git subtotal** | | **~12.5–13.5 min** |
+| **Full baseline total** | | **~42–45 min** |
 
-For the first calibration, run sequentially (simplest; deterministic; no contention between capabilities' measurements). Concurrent runs can be evaluated if the 30-min total becomes a constraint.
+For the first calibration, run sequentially (simplest; deterministic; no contention between capabilities' measurements). Concurrent runs can be evaluated later if the 45-min total becomes a constraint, but cross-capability CPU contention would pollute distributions — not recommended for calibration-grade runs.
 
 `handleSummary(data)` is the single source of the machine-readable summary. It exports to `/summaries/summary.json` (mounted volume consumed by `generate-report.sh`). Human-facing stdout summary is also emitted for operator feedback during the run.
 
@@ -263,7 +271,7 @@ Threshold: single coarse guard `http_req_failed < 10%` for gross-failure detecti
 |---|---|---|---|---|
 | `runtime-adapters` | built from `./Dockerfile` | system under test | **2.0 CPU, 2 GiB mem_limit, 1 GiB mem_reservation** | `:8080` |
 | `postgres` | `postgres:15-alpine` | persist `ExecutionReceipt` (A4.3) | 1.0 CPU, 512 MiB | — |
-| `http-upstream-mock` | `kennethreitz/httpbin` (or equivalent lightweight mock) | upstream for `http.request@v1` scenarios | 0.5 CPU, 256 MiB | — |
+| `http-upstream-mock` | `nginx:1.27-alpine` serving a **fixed static response** (see §6.8) | upstream for `http.request@v1` scenarios | 0.5 CPU, 256 MiB | — |
 | `otel-collector` | `otel/opentelemetry-collector-contrib:0.106.1` | OTLP gRPC receiver → Prometheus exporter at `:8889/metrics` | 0.5 CPU, 256 MiB | — |
 | `prometheus` | `prom/prometheus:v3.11.2` (2C.1 pin) | scrape runtime + collector + Sloth rules eval | 1.0 CPU, 1 GiB | `:9090` |
 | `grafana` | `grafana/grafana:11.3.0` | sanity visual during baseline; **not source of truth** | 0.5 CPU, 512 MiB | `:3000` |
@@ -357,6 +365,33 @@ Limits are tuned for GHA `ubuntu-latest` (private repo: **2 CPU / 8 GiB**):
 Total nominal ~1.85 CPU / ~1.4 GiB — leaves air for Docker engine + runner overhead within 2 CPU / 8 GiB. Runtime runs with `OTEL_ENABLED=false` (no collector to export to).
 
 If 2C.2 is ever run on a **public** repo clone (4 CPU / 16 GiB runner), limits are conservative enough to still fit. The smoke is **not** designed to produce calibration-grade numbers — only to flag gross regressions.
+
+> **Operational note for implementers (gotcha #6, not a design change):** if the smoke on `ubuntu-latest` shows excessive jitter or erratic p99 variance between consecutive PRs, lower the `runtime-adapters` and/or `k6` `cpus:` slightly (e.g., 0.75 → 0.6, 0.4 → 0.3) to prioritize smoke stability over aggressive runner utilization. Treat as tuning, not a spec revision.
+
+### 6.8 `http-upstream-mock` determinism (D2C2.20 / A2C2.28)
+
+The mock exists to measure `http.request@v1` latency — **not to test the mock itself**. Requirements:
+
+- Image: `nginx:1.27-alpine` with a fixed static response configuration.
+- Response: **`200 OK`**, static body of approximately **1 KiB** (fixed content, no dynamic generation).
+- **No payload reflection** (no `/anything`, `/post`, `/put` style echo endpoints).
+- **No dump endpoints** that log or return request headers/body.
+- **No delay / slowloris / wait endpoints** (e.g., `/delay/{N}`) — latency comes from the runtime, not the mock.
+- **No randomized content or timestamps** — the response is byte-identical across requests to isolate variance to the runtime path.
+
+Concretely, `ops/local/mock/default.conf` ships an nginx config with a single location block:
+
+```nginx
+server {
+    listen 8080;
+    location / {
+        default_type application/json;
+        return 200 '{"status":"ok","body":"<~1KiB of fixed content>"}';
+    }
+}
+```
+
+Rationale: `httpbin` and similar general-purpose mocks introduce Python interpreter startup, route resolution, request logging, and header reflection — all of which contribute measurable variance at the RPS rates used for saturation. nginx serving a literal `return 200` is O(1) in CPU and deterministic in latency.
 
 ## 7. Metrics pipeline
 
@@ -558,7 +593,7 @@ Generation is deterministic (fixed commit authors, fixed timestamps via env, fix
 
 ### 9.3 `git.status@v1` clean vs dirty
 
-The smoke scenario alternates 50/50 between `/bench/git/small-repo` (clean working tree) and `/bench/git/dirty-tree` (modified + untracked files) via `__ITER % 2`. k6 tags emit `tree=small-repo|dirty-tree` so the evidence file `git-status-smoke-split.json` carries segmented metrics.
+The smoke scenario alternates 50/50 between `/bench/git/small-repo` (clean working tree) and `/bench/git/dirty-tree` (modified + untracked files) via **`exec.scenario.iterationInTest % 2`** (from `import exec from 'k6/execution'` — the modern API; `__ITER`/`__VU` globals are deprecated). k6 tags emit `tree=small-repo|dirty-tree` so the evidence file `git-status-smoke-split.json` carries segmented metrics.
 
 The report displays:
 
@@ -634,13 +669,21 @@ load-smoke:
       run: |
         docker compose -f ops/local/compose.ci-smoke.yaml up -d --wait
 
-    - name: Wait for runtime readiness
+    - name: Wait for runtime readiness (inside compose network)
       run: |
-        for i in {1..30}; do
-          if curl -sf http://localhost:8080/healthz; then exit 0; fi
-          sleep 1
-        done
-        echo "runtime-adapters never became ready"; exit 1
+        # Readiness probe runs INSIDE the compose network (no host port
+        # dependency). D2C2.18 / A2C2.27: CI smoke compose does not publish
+        # runtime:8080 to the host to avoid coupling the readiness check
+        # to host port exposure. The k6 image (alpine-based) ships `sh` +
+        # `wget`, so we use it as the probe driver.
+        docker compose -f ops/local/compose.ci-smoke.yaml run --rm \
+          --entrypoint sh k6 -c '
+            for i in $(seq 1 30); do
+              wget -q -O- http://runtime-adapters:8080/healthz && exit 0
+              sleep 1
+            done
+            echo "runtime-adapters never became ready"; exit 1
+          '
 
     - name: Run k6 smoke
       id: k6
@@ -648,8 +691,12 @@ load-smoke:
       run: |
         mkdir -p /tmp/smoke
         docker compose -f ops/local/compose.ci-smoke.yaml run --rm \
-          -v /tmp/smoke:/summaries k6 run /scripts/smoke.js \
-          --summary-export /summaries/smoke-summary.json
+          -v /tmp/smoke:/summaries k6 run /scripts/smoke.js
+        # Note: smoke-summary.json is written by the script's handleSummary(data)
+        # into /summaries/smoke-summary.json — that is the SOLE source of the
+        # machine-readable summary. We deliberately avoid --summary-export to
+        # prevent two parallel mechanisms producing the same artifact with drift
+        # risk (D2C2.17 / A2C2.26).
 
     - name: Process summary + post PR comment
       if: always()
@@ -818,11 +865,15 @@ Approximate bundles (final decomposition is the writing-plans skill's job):
 | **D2C2.9** | `git.clone@v1` rough scenario uses `file://` only; local path forbidden (hardlink optimization); `SKIPPED_IN_2C2` if adapter rejects `file://` | Section 5 adjustment 1 |
 | **D2C2.10** | Fixture source immutable during runs; mutating scenarios operate on tmpfs copies | Section 5 adjustment 2 |
 | **D2C2.11** | `.git/` dirs NOT committed; fixture generator Makefile is single source of truth | Section 5 adjustment 3 |
-| **D2C2.12** | `git.status@v1` smoke evidence documents clean vs dirty segmented metrics (50/50 split via `__ITER % 2`, `tree=` tag) | Section 5 adjustment 4 |
+| **D2C2.12** | `git.status@v1` smoke evidence documents clean vs dirty segmented metrics (50/50 split via `exec.scenario.iterationInTest % 2`, `tree=` tag) | Section 5 adjustment 4 |
 | **D2C2.13** | CI smoke runner constraint = GHA `ubuntu-latest` private-repo class (2 CPU / 8 GiB); public-repo variant has headroom | Section 6 adjustment 1 |
 | **D2C2.14** | Pre-first-calibration tolerance: `load-report-schema` skips structural checks before first calibration artifacts exist; mandatory thereafter | Section 7 adjustment 1 |
 | **D2C2.15** | Collector validate uses the same pinned container tag as compose (no drift between validation + runtime) | Section 7 adjustment 2 |
 | **D2C2.16** | Single source of truth for calibration artifacts at `ops/slo/calibration-reports/`; `docs/load-baseline.md` references the path (no symlink) | Section 7 adjustment 3 |
+| **D2C2.17** | `handleSummary(data)` is the SOLE source of the machine-readable summary. `--summary-export` is NOT used — avoids dual mechanisms producing drift-risk artifacts | Post-spec review 1 |
+| **D2C2.18** | CI smoke readiness probe runs INSIDE the compose network via k6 container's `sh` + `wget`; `runtime-adapters:8080` is NOT published to the host in `compose.ci-smoke.yaml` | Post-spec review 2 |
+| **D2C2.19** | k6 scripts use the modern `k6/execution` API (`exec.scenario.iterationInTest`, `exec.vu.idInTest`, `exec.vu.iterationInScenario`); `__ITER` / `__VU` globals are NOT used | Post-spec review 4 |
+| **D2C2.20** | `http-upstream-mock` is `nginx:1.27-alpine` with a fixed static `return 200` response (~1 KiB, no reflection, no dump endpoints, no delay, no randomization) — measures the runtime, not the mock | Post-spec review 5 |
 
 ## Appendix B — Post-approval adjustments
 
@@ -855,3 +906,8 @@ Recorded in order during brainstorming:
 | **A2C2.23** | `load-report-schema` tolerates pre-first-calibration state | §7 |
 | **A2C2.24** | Collector validate pinned to same version as compose container | §7 |
 | **A2C2.25** | No symlinks in docs; `docs/load-baseline.md` references `ops/slo/calibration-reports/` by path | §7 |
+| **A2C2.26** | `handleSummary()` is sole source; `--summary-export` removed from CI workflow | §10 |
+| **A2C2.27** | CI smoke readiness inside compose network (no host port dep) via k6 container's `sh`+`wget` | §10 |
+| **A2C2.28** | `suite.js` total duration corrected to ~42–45 min (core ~32m + git ~12.5–13.5m) with breakdown table; no cross-capability concurrent runs for calibration | §5 |
+| **A2C2.29** | k6 scripts adopt `k6/execution` modern API; `__ITER`/`__VU` forbidden. Mock is nginx-static with explicit determinism requirements (§6.8) | §5 + §6 |
+| **A2C2.30** | Implementer gotcha note in §6.7: if CI smoke jitter is excessive, reduce `runtime-adapters` + `k6` cpus slightly. Operational tuning, not spec revision | §6 |
