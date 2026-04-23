@@ -43,15 +43,16 @@ extensions:
 
 service:
   extensions: [health_check]
-  telemetry:
-    metrics:
-      # Self-metrics exposed on :8888 for prometheus scrape.
-      readers:
-        - pull:
-            exporter:
-              prometheus:
-                host: 0.0.0.0
-                port: 8888
+  # NOTE: service.telemetry.metrics is intentionally NOT set here.
+  # In OTel Collector Contrib 0.106 the default telemetry config
+  # already exposes the collector's own metrics on :8888/metrics
+  # (bound to 0.0.0.0 inside the container). An explicit `readers:`
+  # block targeting the same port would DUPLICATE that default and
+  # cause a "bind: address already in use" crash on startup (the
+  # runtime would see two 'Serving metrics {"address":"0.0.0.0:8888"}'
+  # lines followed by a fatal bind error). Leaving defaults keeps
+  # prometheus.yaml's scrape target otel-collector:8888 working
+  # without any collision risk.
   pipelines:
     metrics:
       receivers: [otlp]

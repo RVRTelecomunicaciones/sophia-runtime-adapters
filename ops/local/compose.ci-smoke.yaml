@@ -44,7 +44,8 @@ services:
     volumes:
       - ./mock/default.conf:/etc/nginx/conf.d/default.conf:ro
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O- http://localhost:8080/ > /dev/null || exit 1"]
+      # 127.0.0.1 (not localhost): avoids alpine IPv6 ::1 vs IPv4 bind mismatch.
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:8080/ > /dev/null || exit 1"]
       interval: 2s
       timeout: 3s
       retries: 15

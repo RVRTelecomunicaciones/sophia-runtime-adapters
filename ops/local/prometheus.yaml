@@ -35,6 +35,21 @@ scrape_configs:
     static_configs:
       - targets: ['otel-collector:8888']
 
+# Enumerate rule files explicitly — we cannot glob `*.yaml` here because
+# the 2C.1 convention placed promtool test fixtures (`*.test.yaml`) in
+# the same directories as real rule files. Go's filepath.Match has no
+# negation, and Prometheus refuses to start (exit 2) when it parses a
+# test fixture as a RuleGroups file ("field rule_files not found in
+# type rulefmt.RuleGroups" — test fixtures have their own schema with
+# rule_files/tests/evaluation_interval at the top level).
+# Adding a new rule requires updating this list.
 rule_files:
-  - /etc/prometheus/rules/*.yaml
-  - /etc/prometheus/generated/*.yaml
+  - /etc/prometheus/rules/infra_pool.yaml
+  - /etc/prometheus/rules/infra_otel.yaml
+  - /etc/prometheus/rules/infra_migrate.yaml
+  - /etc/prometheus/rules/infra_panics.yaml
+  - /etc/prometheus/rules/infra_persistence.yaml
+  - /etc/prometheus/generated/shell.yaml
+  - /etc/prometheus/generated/git.yaml
+  - /etc/prometheus/generated/filesystem.yaml
+  - /etc/prometheus/generated/http.yaml

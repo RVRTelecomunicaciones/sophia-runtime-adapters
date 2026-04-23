@@ -52,7 +52,10 @@ services:
     volumes:
       - ./mock/default.conf:/etc/nginx/conf.d/default.conf:ro
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O- http://localhost:8080/ > /dev/null || exit 1"]
+      # Use 127.0.0.1 explicitly: inside alpine `localhost` can
+      # resolve to IPv6 ::1 while nginx binds only IPv4 0.0.0.0:8080
+      # by default, producing a spurious "Connection refused".
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:8080/ > /dev/null || exit 1"]
       interval: 2s
       timeout: 3s
       retries: 15
@@ -61,6 +64,16 @@ services:
       - runtime-load
 
   # ---- otel-collector: OTLP gRPC receiver → prometheus exporter ---------
+  # NOTE: image is distroless-style — NO shell, NO wget, NO curl inside
+  # the container. A self-healthcheck probe via `docker exec wget ...`
+  # fails with "exec: wget: executable file not found in $PATH".
+  # Consequence: no `healthcheck:` block here. runtime-adapters depends
+  # on this service via `service_started` (not `service_healthy`) —
+  # startup ordering is still guaranteed by depends_on; readiness is
+  # the runtime's own retry at the OTLP client layer (it tolerates a
+  # brief "collector not ready" window). The collector DOES serve a
+  # real health endpoint at :13133/ — external services (including
+  # prometheus scrape of its own :8889/metrics) can probe it if needed.
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.106.1
     cpus: "0.5"
@@ -68,13 +81,6 @@ services:
     command: ["--config=/etc/otel-collector/config.yaml"]
     volumes:
       - ../otel-collector/config.yaml:/etc/otel-collector/config.yaml:ro
-    healthcheck:
-      # The collector ships a health_check extension at :13133/ when enabled.
-      test: ["CMD", "wget", "-q", "-O-", "http://localhost:13133/"]
-      interval: 2s
-      timeout: 3s
-      retries: 15
-      start_period: 3s
     networks:
       - runtime-load
 
@@ -110,14 +116,20 @@ services:
       - "8080:8080"
     depends_on:
       postgres: { condition: service_healthy }
-      otel-collector: { condition: service_healthy }
+      otel-collector: { condition: service_started }     # distroless image — no self-healthcheck possible
       http-upstream-mock: { condition: service_healthy }
     networks:
       - runtime-load
 
   # ---- prometheus: scrape runtime metrics (via collector) + self + SLO rules
+  # Image pin is v3.11.1 (NOT v3.11.2): the v3.11.2 arm64 image on Docker
+  # Hub has a known SIGSEGV on startup with zero log output — reproducible
+  # on Mac arm64 with any config (even `global: {}`). v3.11.1 and v3.11.0
+  # both work. The host's promtool CLI from brew remains at 3.11.2 and
+  # works for rule validation — the CLI is independent of the server
+  # image. ops/prometheus/.prometheus-version tracks the CLI version.
   prometheus:
-    image: prom/prometheus:v3.11.2
+    image: prom/prometheus:v3.11.1
     cpus: "1.0"
     mem_limit: 1g
     command:
@@ -138,7 +150,7 @@ services:
       retries: 15
       start_period: 5s
     depends_on:
-      otel-collector: { condition: service_healthy }
+      otel-collector: { condition: service_started }   # collector is distroless — no self-healthcheck (see collector block)
     networks:
       - runtime-load
 
