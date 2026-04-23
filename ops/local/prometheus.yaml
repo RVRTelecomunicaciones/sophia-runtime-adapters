@@ -1,0 +1,40 @@
+# ops/local/prometheus.yaml
+#
+# Scrape config for the 2C.2 measurement environment. The runtime
+# metrics are scraped from the otel-collector's Prometheus exporter
+# endpoint (port 8889), NOT from the runtime directly — the runtime
+# only speaks OTLP. See ADR 0007.
+#
+# Rule files reuse the 2C.1 outputs: hand-written infra rules +
+# Sloth-generated SLO rules.
+
+global:
+  scrape_interval:     5s
+  evaluation_interval: 5s
+  external_labels:
+    environment: local-calibration
+    envelope:    "2cpu-2gib-pinned"
+
+scrape_configs:
+  # Runtime metrics via the collector's prometheus exporter.
+  # See ops/otel-collector/config.yaml — exporter listens on :8889.
+  - job_name: runtime-adapters
+    static_configs:
+      - targets: ['otel-collector:8889']
+        labels:
+          service: runtime-adapters
+
+  # Self-monitoring.
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Collector's own internal metrics (zpages / healthcheck_extension
+  # surface a /metrics on the default port when enabled in config).
+  - job_name: otel-collector-self
+    static_configs:
+      - targets: ['otel-collector:8888']
+
+rule_files:
+  - /etc/prometheus/rules/*.yaml
+  - /etc/prometheus/generated/*.yaml
