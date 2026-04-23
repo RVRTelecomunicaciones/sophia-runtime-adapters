@@ -1,0 +1,59 @@
+# ops/otel-collector/config.yaml
+#
+# OpenTelemetry Collector Contrib configuration for the 2C.2
+# measurement environment. Pipeline:
+#   otlp (grpc) → batch → prometheus exporter (:8889)
+#
+# The `prometheus` exporter is PULL-based: Prometheus scrapes this
+# collector via ops/local/prometheus.yaml. We deliberately avoid
+# `prometheusremotewrite` (ADR 0007 / D2C2.8) — its OTel histogram
+# translation has known issues with buckets + exemplars + timestamp
+# alignment, and calibration cannot tolerate that drift.
+#
+# resource_to_telemetry_conversion ensures OTel resource attributes
+# (service.name, etc) propagate to Prometheus labels for filtering.
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  batch:
+    # Small timeout keeps the pull-scrape fresh; collector-side
+    # batching is more about syscall amortization than latency.
+    timeout: 2s
+    send_batch_size: 1024
+
+exporters:
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    send_timestamps: true
+    resource_to_telemetry_conversion:
+      enabled: true
+    # Enable exemplars on histograms so execution.duration exemplars
+    # carry trace_id (+ receipt_id as FilteredAttributes).
+    enable_open_metrics: true
+
+extensions:
+  # Health check at :13133/ for compose healthcheck (wget probe).
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  telemetry:
+    metrics:
+      # Self-metrics exposed on :8888 for prometheus scrape.
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 0.0.0.0
+                port: 8888
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [prometheus]
