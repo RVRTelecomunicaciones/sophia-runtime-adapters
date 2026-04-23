@@ -1,0 +1,187 @@
+# ops/local/compose.yaml
+#
+# PURPOSE — MEASUREMENT / CALIBRATION ENVIRONMENT for Phase 2C.2 load baseline.
+#
+# This compose is the pinned envelope under which SLO targets in
+# ops/slo/*.yaml are calibrated. It is NOT the operational local stack
+# — that closure is Phase 2C.4, which will add Alertmanager + Tempo +
+# real receivers + runbooks. Keep this file focused on what the
+# measurement run needs; resist adding services that don't contribute
+# to calibration evidence.
+#
+# Resource limits use docker compose v2 non-swarm syntax
+# (`cpus:` + `mem_limit:` at the service level). The `deploy.resources`
+# block is swarm-only and would be silently ignored here — we use the
+# form compose honors. Verification of the effective limits runs
+# before each k6 scenario via ops/load/lib/verify-limits.sh.
+#
+# Metrics pipeline (§7):
+#   runtime-adapters → OTLP gRPC → otel-collector (Prom exporter :8889)
+#   ← scrape every 5s ← prometheus
+# We deliberately do NOT use `prometheusremotewrite` (D2C2.8 / ADR 0007)
+# because its histogram handling is not reliable enough for calibration.
+
+name: runtime-load
+
+services:
+
+  # ---- postgres: receipt persistence dependency (A4.3) ------------------
+  postgres:
+    image: postgres:15-alpine
+    cpus: "1.0"
+    mem_limit: 512m
+    environment:
+      POSTGRES_DB: runtime_adapters
+      POSTGRES_USER: runtime
+      POSTGRES_PASSWORD: runtime
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U runtime -d runtime_adapters"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+    networks:
+      - runtime-load
+
+  # ---- http-upstream-mock: deterministic nginx for http.request@v1 ------
+  # §6.8: fixed 200 OK, ~1 KiB static body, no reflection / dump / delay.
+  http-upstream-mock:
+    image: nginx:1.27-alpine
+    cpus: "0.5"
+    mem_limit: 256m
+    volumes:
+      - ./mock/default.conf:/etc/nginx/conf.d/default.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:8080/ > /dev/null || exit 1"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+      start_period: 2s
+    networks:
+      - runtime-load
+
+  # ---- otel-collector: OTLP gRPC receiver → prometheus exporter ---------
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.106.1
+    cpus: "0.5"
+    mem_limit: 256m
+    command: ["--config=/etc/otel-collector/config.yaml"]
+    volumes:
+      - ../otel-collector/config.yaml:/etc/otel-collector/config.yaml:ro
+    healthcheck:
+      # The collector ships a health_check extension at :13133/ when enabled.
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:13133/"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+      start_period: 3s
+    networks:
+      - runtime-load
+
+  # ---- runtime-adapters: system under test ------------------------------
+  runtime-adapters:
+    build:
+      context: ../..             # repo root, so Dockerfile at ./Dockerfile is found
+      dockerfile: Dockerfile
+    cpus: "2.0"
+    mem_limit: 2g
+    mem_reservation: 1g
+    environment:
+      # Wire postgres receipt store
+      RUNTIME_POSTGRES_DSN: "postgres://runtime:runtime@postgres:5432/runtime_adapters?sslmode=disable"
+      # Enable OTLP export to the in-network collector
+      OTEL_ENABLED: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "otel-collector:4317"
+      OTEL_EXPORTER_OTLP_INSECURE: "true"
+      # Logger contract (2C.1 R10): force json + info for ops-realistic output
+      RUNTIME_LOG_FORMAT: "json"
+      RUNTIME_LOG_LEVEL:  "info"
+      RUNTIME_LOG_ADD_SOURCE: "false"
+      # Allowlists must include the fixtures we mount for bench scenarios
+      RUNTIME_SHELL_ALLOWED_COMMANDS: "/bin/echo,/bin/true,/bin/date"
+      RUNTIME_FS_ALLOWED_ROOTS: "/tmp/bench-fs"
+      RUNTIME_GIT_ALLOWED_ROOTS: "/bench/git,/tmp"
+      RUNTIME_HTTP_ALLOW_PRIVATE_NETWORKS: "true"   # bridge network is RFC1918
+      RUNTIME_HTTP_HOST_ALLOWLIST: "http-upstream-mock"
+    volumes:
+      - ../../test/fixtures/git-bench:/bench/git:ro     # Bundle 4 populates
+      - bench-fs:/tmp/bench-fs                          # tmpfs-like scratch for fs.write
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres: { condition: service_healthy }
+      otel-collector: { condition: service_healthy }
+      http-upstream-mock: { condition: service_healthy }
+    networks:
+      - runtime-load
+
+  # ---- prometheus: scrape runtime metrics (via collector) + self + SLO rules
+  prometheus:
+    image: prom/prometheus:v3.11.2
+    cpus: "1.0"
+    mem_limit: 1g
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=1h"
+      - "--web.enable-lifecycle"
+      - "--enable-feature=exemplar-storage"
+    volumes:
+      - ./prometheus.yaml:/etc/prometheus/prometheus.yml:ro
+      - ../prometheus/rules:/etc/prometheus/rules:ro
+      - ../prometheus/generated:/etc/prometheus/generated:ro
+    ports:
+      - "9090:9090"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:9090/-/ready"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+      start_period: 5s
+    depends_on:
+      otel-collector: { condition: service_healthy }
+    networks:
+      - runtime-load
+
+  # ---- grafana: sanity visual during runs, NOT source of truth ---------
+  grafana:
+    image: grafana/grafana:11.3.0
+    cpus: "0.5"
+    mem_limit: 512m
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
+      GF_SECURITY_ADMIN_PASSWORD: "admin"
+    volumes:
+      - ../grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      prometheus: { condition: service_healthy }
+    networks:
+      - runtime-load
+
+  # ---- k6: load driver — isolated from runtime to not contaminate -------
+  k6:
+    image: grafana/k6:0.58.0
+    cpus: "1.0"
+    mem_limit: 512m
+    volumes:
+      - ../load/scenarios:/scripts:ro
+      - summaries:/summaries
+    # No `command:` — scenarios are invoked via `docker compose run --rm k6 run ...`
+    # from ops/load/lib/generate-report.sh (Bundle 5).
+    networks:
+      - runtime-load
+    # k6 needs to reach runtime-adapters by DNS name; depends_on for
+    # ordering (healthz is polled by the k6 script anyway).
+    depends_on:
+      runtime-adapters: { condition: service_started }
+
+networks:
+  runtime-load:
+    driver: bridge
+
+volumes:
+  bench-fs:
+  summaries:
