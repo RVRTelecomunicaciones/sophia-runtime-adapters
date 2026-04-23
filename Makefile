@@ -1,5 +1,4 @@
-.PHONY: all build test test-unit test-contract test-integration test-e2e lint vet fmt cover clean run help \
-	sloth-generate test-obs test-rules test-alertmanager test-dashboards test-observability
+.PHONY: all build test test-unit test-contract test-integration test-e2e lint vet fmt cover clean run help sloth-generate test-obs test-rules test-alertmanager test-dashboards test-observability load-up load-down load-baseline load-smoke-local fixture-git-bench
 
 GO              ?= go
 GOLANGCI_LINT   ?= golangci-lint
@@ -82,3 +81,29 @@ test-dashboards:
 	$(GO) test -tags dashboards ./ops/grafana/...
 
 test-observability: test-obs test-rules test-alertmanager test-dashboards
+
+# ----- Phase 2C.2 load baseline (stubs — bodies filled in Bundle 5) -----
+
+COMPOSE_BASELINE := ops/local/compose.yaml
+COMPOSE_CI_SMOKE := ops/local/compose.ci-smoke.yaml
+
+load-up:
+	@echo "load-up: compose file $(COMPOSE_BASELINE) — body lands in Bundle 5"
+	@echo "(Bundle 1 stub — declared early so Makefile shape is visible)"
+	@exit 1
+
+load-down:
+	@echo "load-down stub — body lands in Bundle 5"
+	@exit 1
+
+load-baseline:
+	@echo "load-baseline stub — body lands in Bundle 5"
+	@exit 1
+
+load-smoke-local:
+	@echo "load-smoke-local stub — body lands in Bundle 5"
+	@exit 1
+
+fixture-git-bench:
+	@echo "fixture-git-bench stub — body lands in Bundle 4"
+	@exit 1
