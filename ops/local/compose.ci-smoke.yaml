@@ -1,0 +1,100 @@
+# ops/local/compose.ci-smoke.yaml
+#
+# CI smoke stack — advisory only, never the baseline source of truth.
+# 4 services vs the 7-service measurement compose: drops prometheus,
+# grafana, otel-collector. Runtime runs with OTEL_ENABLED=false
+# because there is no collector to export to; k6's handleSummary()
+# is the only source of timing data.
+#
+# Limits are sized for the private-repo floor (2 CPU / 8 GiB) even
+# though this repo is actually public (4 CPU / 16 GiB actual).
+# Conservative sizing means the stack is robust to visibility
+# changes + noisy co-tenants (D2C2.13). Total nominal ~1.85 CPU /
+# ~1.4 GiB — ample headroom on the 4/16 runner.
+#
+# IMPORTANT: runtime-adapters:8080 is NOT published to the host
+# (D2C2.18 / A2C2.27). Readiness probe runs inside the compose
+# network via the k6 container's sh+wget.
+
+name: runtime-load-smoke
+
+services:
+
+  postgres:
+    image: postgres:15-alpine
+    cpus: "0.4"
+    mem_limit: 256m
+    environment:
+      POSTGRES_DB: runtime_adapters
+      POSTGRES_USER: runtime
+      POSTGRES_PASSWORD: runtime
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U runtime -d runtime_adapters"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 3s
+    networks:
+      - runtime-load-smoke
+
+  http-upstream-mock:
+    image: nginx:1.27-alpine
+    cpus: "0.3"
+    mem_limit: 128m
+    volumes:
+      - ./mock/default.conf:/etc/nginx/conf.d/default.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:8080/ > /dev/null || exit 1"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+      start_period: 2s
+    networks:
+      - runtime-load-smoke
+
+  runtime-adapters:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    cpus: "0.75"
+    mem_limit: 768m
+    environment:
+      RUNTIME_POSTGRES_DSN: "postgres://runtime:runtime@postgres:5432/runtime_adapters?sslmode=disable"
+      # No collector in this stack → disable OTel export.
+      OTEL_ENABLED: "false"
+      RUNTIME_LOG_FORMAT: "json"
+      RUNTIME_LOG_LEVEL:  "info"
+      RUNTIME_LOG_ADD_SOURCE: "false"
+      RUNTIME_SHELL_ALLOWED_COMMANDS: "/bin/echo,/bin/true,/bin/date"
+      RUNTIME_FS_ALLOWED_ROOTS: "/tmp/bench-fs"
+      RUNTIME_HTTP_ALLOW_PRIVATE_NETWORKS: "true"
+      RUNTIME_HTTP_HOST_ALLOWLIST: "http-upstream-mock"
+    volumes:
+      - bench-fs:/tmp/bench-fs
+    # NOTE: ports: is DELIBERATELY absent. Readiness probe + k6 access
+    # both stay inside the bridge network.
+    depends_on:
+      postgres: { condition: service_healthy }
+      http-upstream-mock: { condition: service_healthy }
+    networks:
+      - runtime-load-smoke
+
+  k6:
+    image: grafana/k6:0.58.0
+    cpus: "0.4"
+    mem_limit: 256m
+    volumes:
+      - ../load/scenarios:/scripts:ro
+      - smoke-summaries:/summaries
+    networks:
+      - runtime-load-smoke
+    depends_on:
+      runtime-adapters: { condition: service_started }
+
+networks:
+  runtime-load-smoke:
+    driver: bridge
+
+volumes:
+  bench-fs:
+  smoke-summaries:
