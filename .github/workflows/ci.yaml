@@ -165,6 +165,19 @@ jobs:
       - name: go test — ops/grafana (dashboards tag)
         run: go test -tags dashboards ./ops/grafana/...
 
+      - name: Validate 2C.2 ops configs
+        run: |
+          set -euo pipefail
+          # Compose files (v2 schema).
+          docker compose -f ops/local/compose.yaml config -q
+          docker compose -f ops/local/compose.ci-smoke.yaml config -q
+          # OTel Collector config — uses pinned container tag matching compose.
+          ./ops/otel-collector/scripts/validate-config.sh
+          # Prometheus config (via promtool in a temp container).
+          docker run --rm -v "$(pwd)/ops/local/prometheus.yaml:/tmp/prometheus.yaml:ro" \
+            prom/prometheus:v3.11.2 promtool check config /tmp/prometheus.yaml
+          echo "✅ 2C.2 ops configs all valid"
+
   integration:
     name: integration (PR only)
     if: github.event_name == 'pull_request'
@@ -190,3 +203,138 @@ jobs:
           cache: true
       - name: e2e
         run: make test-e2e
+
+  # --------------------------------------------------------------------
+  # Phase 2C.2 — load ops lint
+  # --------------------------------------------------------------------
+  load-ops-lint:
+    name: load ops lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: shellcheck on ops/load + collector scripts
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          shellcheck \
+            ops/load/lib/*.sh \
+            ops/otel-collector/scripts/*.sh
+
+      - name: Install k6 (pinned)
+        run: |
+          set -euo pipefail
+          K6_VERSION="$(cat ops/load/.k6-version)"
+          curl -sL "https://github.com/grafana/k6/releases/download/v${K6_VERSION}/k6-v${K6_VERSION}-linux-amd64.tar.gz" \
+            | tar -xz -C /tmp
+          sudo mv "/tmp/k6-v${K6_VERSION}-linux-amd64/k6" /usr/local/bin/k6
+          k6 version
+
+      - name: Verify k6 version pin
+        run: |
+          K6_VERSION="$(cat ops/load/.k6-version)"
+          k6 version | grep -qF "v${K6_VERSION}"
+
+      - name: k6 inspect all scenarios
+        run: |
+          set -euo pipefail
+          for f in ops/load/scenarios/*.js; do
+            echo "=== $f ==="
+            k6 inspect "$f"
+          done
+
+  # --------------------------------------------------------------------
+  # Phase 2C.2 — load smoke (advisory, PR only, NEVER gates CI)
+  # --------------------------------------------------------------------
+  load-smoke:
+    name: load-smoke (advisory, PR only)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    continue-on-error: true            # NEVER fails the overall CI run
+    permissions:
+      pull-requests: write              # to post PR comment
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify Docker + Compose
+        run: |
+          docker version
+          docker compose version
+
+      - name: Start CI smoke stack
+        run: |
+          docker compose -f ops/local/compose.ci-smoke.yaml up -d --wait
+
+      - name: Wait for runtime readiness (inside compose network)
+        run: |
+          # Readiness probe runs INSIDE the compose network. D2C2.18 /
+          # A2C2.27: compose.ci-smoke.yaml does NOT publish runtime:8080
+          # to the host. k6 image (alpine-based) has sh + wget.
+          docker compose -f ops/local/compose.ci-smoke.yaml run --rm \
+            --entrypoint sh k6 -c '
+              for i in $(seq 1 30); do
+                wget -q -O- http://runtime-adapters:8080/healthz && exit 0
+                sleep 1
+              done
+              echo "runtime-adapters never became ready"
+              exit 1
+            '
+
+      - name: Run k6 smoke
+        id: k6
+        continue-on-error: true
+        run: |
+          mkdir -p /tmp/smoke
+          # handleSummary() in smoke.js writes /summaries/smoke-summary.json
+          # (D2C2.17 — sole source, no --summary-export).
+          docker compose -f ops/local/compose.ci-smoke.yaml run --rm \
+            -v /tmp/smoke:/summaries k6 run /scripts/smoke.js
+
+      - name: Copy smoke summary from compose volume
+        if: always()
+        run: |
+          # If k6 failed the summary may still exist (partial). Pull it.
+          docker run --rm \
+            -v "runtime-load-smoke_smoke-summaries:/in:ro" \
+            -v "/tmp/smoke:/out" \
+            alpine:3.19 \
+            sh -c 'cp /in/smoke-summary.json /out/smoke-summary.json 2>/dev/null || true'
+
+      - name: Process summary + post PR comment
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          K6_EXIT_CODE: ${{ steps.k6.outcome == 'success' && '0' || '1' }}
+          GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          ./ops/load/lib/ci-smoke-comment.sh \
+            /tmp/smoke/smoke-summary.json \
+            ops/slo/calibration-reports/latest-baseline.json \
+            "$K6_EXIT_CODE" \
+            > /tmp/smoke/comment.md
+          # Use --edit-last if we already posted on this PR to avoid comment spam.
+          gh pr comment ${{ github.event.pull_request.number }} \
+            --body-file /tmp/smoke/comment.md
+
+      - name: Teardown
+        if: always()
+        run: docker compose -f ops/local/compose.ci-smoke.yaml down -v
+
+  # --------------------------------------------------------------------
+  # Phase 2C.2 — load report schema (tolerates pre-first-calibration)
+  # --------------------------------------------------------------------
+  load-report-schema:
+    name: load report schema
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache: true
+
+      - name: Run calibration-reports schema tests
+        run: |
+          # Pre-first-calibration state (D2C2.14): TestLatestBaseline_Schema
+          # + TestCalibrationReport_Structure skip when artifacts absent.
+          # TestCalibrationReport_TemplateRenderable always runs.
+          go test -tags loadreport -v ./ops/slo/calibration-reports/...
