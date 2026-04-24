@@ -71,12 +71,14 @@ export function gitDiff() {
 }
 
 export function gitCommit() {
-    // Workdir provisioning for the commit scenario happens in a
-    // per-VU setup in git_rough.js when that file is imported;
-    // here suite.js simply invokes the same exec function and
-    // expects the compose fixture volumes to be in place.
-    // (The rough scenario uses 1 VU serially, so a shared workdir
-    // per-VU is fine.)
+    // STUB pending Bundle 4 (git fixtures + git_rough.js).
+    // git.commit@v1 needs a clone+edit workdir; that workdir is
+    // provisioned by git_rough.js's commitScenario which chains
+    // clone -> filesystem.write_file -> git.commit. Bundle 3
+    // ships only the wire skeleton — running suite.js today
+    // produces non-existent-path failures for git.commit
+    // iterations (no thresholds gate these, so the suite still
+    // completes; data is informational only until Bundle 4).
     const workdir = `/tmp/bench-git-commit-${exec.vu.idInTest}`;
     executeRequest('git.commit@v1', payloadForGitCommit(workdir),
         { capability: 'git.commit@v1' });
@@ -85,20 +87,25 @@ export function gitCommit() {
 // ---- timing budget (§5.6) -----------------------------------------------
 //
 // We chain scenarios via startTime. Each core capability occupies an
-// 8-minute slot (3m baseline + 30s gap + 4m saturation + 30s graceful).
+// 8m30s slot: 3m baseline + 30s gap + 4m saturation + 30s graceful + 30s
+// SAFETY buffer. Without the safety buffer, a saturation request still
+// in-flight at gracefulStop end (the runtime is 2-CPU; saturation ramps
+// to 400-800 rps) overlaps the next capability's baseline window and
+// contaminates its p99. The +30s buys a genuine quiet window between
+// any in-flight tail of the previous saturation and the next baseline.
 // Git gets a ~13-min block afterwards.
 
-const CORE_SLOT = '8m';     // nominal; see per-scenario offsets below
+const CORE_SLOT = '8m30s';     // nominal; see per-scenario offsets below
 // Cumulative offsets:
 const T_SHELL        = '0s';
-const T_FS_READ      = '8m';
-const T_FS_WRITE     = '16m';
-const T_HTTP         = '24m';
-const T_GIT_STATUS_SMOKE   = '32m';
-const T_GIT_STATUS_SAT     = '33m35s';    // 90s smoke + 5s gap
-const T_GIT_ROUGH_CLONE    = '36m35s';    // + 3m saturation_lite
-const T_GIT_ROUGH_DIFF     = '41m45s';    // + 5m clone maxDuration + 10s gap
-const T_GIT_ROUGH_COMMIT   = '43m';       // + 1m diff + 15s gap
+const T_FS_READ      = '8m30s';   // CORE_SLOT
+const T_FS_WRITE     = '17m';     // 2 * CORE_SLOT
+const T_HTTP         = '25m30s';  // 3 * CORE_SLOT
+const T_GIT_STATUS_SMOKE   = '34m';      // 4 * CORE_SLOT
+const T_GIT_STATUS_SAT     = '35m35s';   // 90s smoke + 5s gap (rough tier — small overlap with smoke graceful drain is tolerated)
+const T_GIT_ROUGH_CLONE    = '38m35s';   // + 3m saturation_lite
+const T_GIT_ROUGH_DIFF     = '43m45s';   // + 5m clone maxDuration + 10s gap
+const T_GIT_ROUGH_COMMIT   = '45m';      // + 1m diff + 15s gap
 
 // ---- options -------------------------------------------------------------
 
@@ -140,7 +147,7 @@ export const options = {
                 { target: 400, duration: '1m' }, { target: 800, duration: '1m' },
             ],
             gracefulStop: '30s',
-            exec: 'fsRead', startTime: '11m30s',   // 8m + 3m30s
+            exec: 'fsRead', startTime: '12m',      // T_FS_READ + 3m30s
             tags: { scenario: 'saturation', capability: 'filesystem.read_file@v1', tier: 'core' },
         },
         fs_write_baseline: {
@@ -159,7 +166,7 @@ export const options = {
                 { target: 200, duration: '1m' }, { target: 300, duration: '1m' },
             ],
             gracefulStop: '30s',
-            exec: 'fsWrite', startTime: '19m30s',
+            exec: 'fsWrite', startTime: '20m30s',  // T_FS_WRITE + 3m30s
             tags: { scenario: 'saturation', capability: 'filesystem.write_file@v1', tier: 'core' },
         },
         http_baseline: {
@@ -178,7 +185,7 @@ export const options = {
                 { target: 400, duration: '1m' }, { target: 500, duration: '1m' },
             ],
             gracefulStop: '30s',
-            exec: 'httpRequest', startTime: '27m30s',
+            exec: 'httpRequest', startTime: '29m',  // T_HTTP + 3m30s
             tags: { scenario: 'saturation', capability: 'http.request@v1', tier: 'core' },
         },
 

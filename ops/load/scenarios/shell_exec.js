@@ -51,5 +51,5 @@ export const options = {
 
 export default function () {
     executeRequest('shell.exec@v1', payloadForShellExec(),
-        { scenario: __ENV.K6_SCENARIO || 'unknown', capability: 'shell.exec@v1' });
+        { capability: 'shell.exec@v1' });
 }
