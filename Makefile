@@ -82,27 +82,32 @@ test-dashboards:
 
 test-observability: test-obs test-rules test-alertmanager test-dashboards
 
-# ----- Phase 2C.2 load baseline (stubs — bodies filled in Bundle 5) -----
+# ----- Phase 2C.2 load baseline -----
 
 COMPOSE_BASELINE := ops/local/compose.yaml
 COMPOSE_CI_SMOKE := ops/local/compose.ci-smoke.yaml
 
+# Pinned container for runtime build used by docker compose (image tag).
+RUNTIME_IMAGE_TAG := runtime-adapters:ci-test
+
 load-up:
-	@echo "load-up: compose file $(COMPOSE_BASELINE) — body lands in Bundle 5"
-	@echo "(Bundle 1 stub — declared early so Makefile shape is visible)"
-	@exit 1
+	docker build -t $(RUNTIME_IMAGE_TAG) .
+	docker compose -f $(COMPOSE_BASELINE) up -d --wait
 
 load-down:
-	@echo "load-down stub — body lands in Bundle 5"
-	@exit 1
+	docker compose -f $(COMPOSE_BASELINE) down -v
 
-load-baseline:
-	@echo "load-baseline stub — body lands in Bundle 5"
-	@exit 1
+load-baseline: load-up fixture-git-bench
+	./ops/load/lib/verify-limits.sh runtime-load-runtime-adapters-1
+	docker compose -f $(COMPOSE_BASELINE) run --rm k6 run /scripts/suite.js
+	./ops/load/lib/generate-report.sh
+	$(MAKE) load-down
 
 load-smoke-local:
-	@echo "load-smoke-local stub — body lands in Bundle 5"
-	@exit 1
+	docker build -t $(RUNTIME_IMAGE_TAG) .
+	docker compose -f $(COMPOSE_CI_SMOKE) up -d --wait
+	docker compose -f $(COMPOSE_CI_SMOKE) run --rm k6 run /scripts/smoke.js
+	docker compose -f $(COMPOSE_CI_SMOKE) down -v
 
 fixture-git-bench:
 	$(MAKE) -C test/fixtures/git-bench all
