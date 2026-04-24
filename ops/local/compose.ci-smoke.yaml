@@ -66,12 +66,16 @@ services:
       RUNTIME_LOG_FORMAT: "json"
       RUNTIME_LOG_LEVEL:  "info"
       RUNTIME_LOG_ADD_SOURCE: "false"
-      RUNTIME_SHELL_ALLOWED_COMMANDS: "/bin/echo,/bin/true,/bin/date"
-      RUNTIME_FS_ALLOWED_ROOTS: "/tmp/bench-fs"
+      # Keys match internal/infrastructure/config/load.go. Shell uses
+      # absolute paths → no *_COMMANDS_PATH needed.
+      RUNTIME_ALLOWED_FILESYSTEM_ROOTS: "/tmp/bench-fs"
       RUNTIME_HTTP_ALLOW_PRIVATE_NETWORKS: "true"
       RUNTIME_HTTP_HOST_ALLOWLIST: "http-upstream-mock"
-    volumes:
-      - bench-fs:/tmp/bench-fs
+    tmpfs:
+      # See compose.yaml — tmpfs avoids the root-owned-volume issue
+      # against the distroless nonroot runtime. 128m (vs 256m upstream)
+      # since smoke iterations are few and short.
+      - /tmp/bench-fs:uid=65532,gid=65532,mode=0700,size=128m
     # NOTE: ports: is DELIBERATELY absent. Readiness probe + k6 access
     # both stay inside the bridge network.
     depends_on:
@@ -97,5 +101,4 @@ networks:
     driver: bridge
 
 volumes:
-  bench-fs:
   smoke-summaries:
