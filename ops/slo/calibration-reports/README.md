@@ -39,14 +39,14 @@ run — it is the only file overwritten.
 ## Workflow
 
 ```bash
-make fixture-git-bench          # regenerate git fixtures
-make load-up                    # bring up pinned compose
-make load-baseline              # run suite.js + generate report
+# load-baseline has load-up + fixture-git-bench as prerequisites and
+# includes a trap that calls load-down on exit, so a single `make`
+# invocation covers the full build → run → teardown cycle.
+make load-baseline              # fixture + up + suite.js + report + down
 # Operator reviews evidence + hand-edits ops/slo/*.yaml with proposed
 # targets + justifications in the fresh report.
 git add ops/slo/calibration-reports/ ops/slo/*.yaml
 git commit -m "feat(slo): calibration v<N>"
-make load-down
 ```
 
 ## Pre-first-calibration state

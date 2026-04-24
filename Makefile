@@ -99,15 +99,21 @@ load-down:
 
 load-baseline: load-up fixture-git-bench
 	./ops/load/lib/verify-limits.sh runtime-load-runtime-adapters-1
-	docker compose -f $(COMPOSE_BASELINE) run --rm k6 run /scripts/suite.js
-	./ops/load/lib/generate-report.sh
-	$(MAKE) load-down
+	@# Trap teardown — without this, a mid-k6 failure leaves compose
+	@# containers running across subsequent runs (port conflicts, leaked
+	@# resources). Single-line shell so the trap survives make's per-line
+	@# fresh-shell semantics.
+	set -e; \
+	  trap '$(MAKE) load-down' EXIT INT TERM; \
+	  docker compose -f $(COMPOSE_BASELINE) run --rm k6 run /scripts/suite.js && \
+	  ./ops/load/lib/generate-report.sh
 
 load-smoke-local:
 	docker build -t $(RUNTIME_IMAGE_TAG) .
-	docker compose -f $(COMPOSE_CI_SMOKE) up -d --wait
-	docker compose -f $(COMPOSE_CI_SMOKE) run --rm k6 run /scripts/smoke.js
-	docker compose -f $(COMPOSE_CI_SMOKE) down -v
+	set -e; \
+	  trap 'docker compose -f $(COMPOSE_CI_SMOKE) down -v' EXIT INT TERM; \
+	  docker compose -f $(COMPOSE_CI_SMOKE) up -d --wait && \
+	  docker compose -f $(COMPOSE_CI_SMOKE) run --rm k6 run /scripts/smoke.js
 
 fixture-git-bench:
 	$(MAKE) -C test/fixtures/git-bench all

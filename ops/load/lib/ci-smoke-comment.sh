@@ -89,10 +89,13 @@ pct_delta() {
 
 flag() {
     local pct_raw="$1"
-    # Strip leading + and %, take absolute value.
+    # No-baseline sentinel — guard BEFORE sed/awk so the em-dash doesn't
+    # get stripped and silently converted to 0.0 (which would emit 🟢 and
+    # mislead reviewers into thinking "no baseline" == "no delta").
+    if [[ "$pct_raw" == "—" ]]; then echo "⚪"; return; fi
+    # Strip leading + and % (keep unary - so awk reads the signed number).
     local abs
-    abs="$(echo "$pct_raw" | sed 's/[+%-]//g' | awk '{printf "%.1f", $1+0}')"
-    if [[ "$abs" == "—" ]]; then echo "⚪"; return; fi
+    abs="$(echo "$pct_raw" | sed 's/[+%]//g' | tr -d '-' | awk '{printf "%.1f", $1+0}')"
     local f
     f="$(awk -v a="$abs" 'BEGIN {
         if (a <= 20)      print "🟢"
