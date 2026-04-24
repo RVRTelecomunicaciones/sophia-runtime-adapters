@@ -1,0 +1,2 @@
+line one of file10
+line two of file10
