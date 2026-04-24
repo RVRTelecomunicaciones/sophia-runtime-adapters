@@ -220,15 +220,18 @@ jobs:
             ops/load/lib/*.sh \
             ops/otel-collector/scripts/*.sh
 
-      # k6 is pre-installed on ubuntu-latest runners (currently
-      # v1.0.0-rc1). The version pin in ops/load/.k6-version governs the
-      # grafana/k6 container that compose runs for actual load tests —
-      # the host-level k6 here is only used for `k6 inspect`, which is
-      # a static parse that works across the 0.x → 1.x boundary. We log
-      # the host version for traceability but do NOT enforce the pin
-      # (the GitHub v0.58.0 release asset contents are stale — curl
-      # silently falls back to v1.x making strict-grep unreliable).
-      - name: Log host k6 version
+      # k6 is NOT pre-installed on ubuntu-latest — install via the
+      # Grafana-official setup action. The version pin in
+      # ops/load/.k6-version governs the grafana/k6 container that
+      # compose runs for actual load tests — the host-level k6 here
+      # is only used for `k6 inspect`, which is a static parse that
+      # works across k6 major versions. We don't re-enforce the pin
+      # at the host level because the published v0.58.0 GitHub release
+      # assets are stale and silently re-route to v1.x, making
+      # strict-grep unreliable.
+      - uses: grafana/setup-k6-action@v1
+
+      - name: Log k6 version
         run: |
           k6 version | head -1
           echo "Pinned compose k6 (authoritative): $(cat ops/load/.k6-version)"
