@@ -103,15 +103,27 @@ services:
       RUNTIME_LOG_FORMAT: "json"
       RUNTIME_LOG_LEVEL:  "info"
       RUNTIME_LOG_ADD_SOURCE: "false"
-      # Allowlists must include the fixtures we mount for bench scenarios
-      RUNTIME_SHELL_ALLOWED_COMMANDS: "/bin/echo,/bin/true,/bin/date"
-      RUNTIME_FS_ALLOWED_ROOTS: "/tmp/bench-fs"
-      RUNTIME_GIT_ALLOWED_ROOTS: "/bench/git,/tmp"
+      # Allowlists — keys MUST match internal/infrastructure/config/load.go.
+      # Bundle 2 shipped with RUNTIME_SHELL_ALLOWED_COMMANDS / *_FS_* / *_GIT_*
+      # which are NOT config keys; the loader silently fell back to the
+      # $HOME default (/home/nonroot), rejecting every bench path. Bundle 4
+      # T27 verification caught this. Correct names + colon separator below.
+      # RUNTIME_ALLOWED_COMMANDS_PATH is omitted — shell.exec scenarios use
+      # absolute paths which bypass the lookup (see shell/safety.go:18-22).
+      RUNTIME_ALLOWED_FILESYSTEM_ROOTS: "/tmp/bench-fs"
+      RUNTIME_ALLOWED_WORKING_DIRS:     "/bench/git:/tmp"
       RUNTIME_HTTP_ALLOW_PRIVATE_NETWORKS: "true"   # bridge network is RFC1918
       RUNTIME_HTTP_HOST_ALLOWLIST: "http-upstream-mock"
     volumes:
       - ../../test/fixtures/git-bench:/bench/git:ro     # Bundle 4 populates
-      - bench-fs:/tmp/bench-fs                          # tmpfs-like scratch for fs.write
+    tmpfs:
+      # Scratch space for filesystem.write_file@v1 scenarios. Using a
+      # tmpfs (vs a named volume) avoids root-owned-volume permission
+      # issues: the distroless runtime runs as UID 65532 and cannot
+      # write to a volume that Docker provisions with root ownership.
+      # tmpfs lets us set uid/gid + size at mount time. 256m is plenty
+      # — each iteration writes ~1 KiB and overwrite:true reuses names.
+      - /tmp/bench-fs:uid=65532,gid=65532,mode=0700,size=256m
     ports:
       - "8080:8080"
     depends_on:
@@ -195,5 +207,4 @@ networks:
     driver: bridge
 
 volumes:
-  bench-fs:
   summaries:
