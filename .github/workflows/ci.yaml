@@ -283,7 +283,12 @@ jobs:
         id: k6
         continue-on-error: true
         run: |
+          # Pre-create /tmp/smoke with wide perms BEFORE Docker touches
+          # it — if `docker run -v /tmp/smoke:/out` mounts a missing
+          # path, Docker creates it as root-owned and the runner user
+          # loses write access for subsequent comment.md redirect.
           mkdir -p /tmp/smoke
+          chmod 777 /tmp/smoke
           # handleSummary() in smoke.js writes /summaries/smoke-summary.json
           # (D2C2.17 — sole source, no --summary-export).
           docker compose -f ops/local/compose.ci-smoke.yaml run --rm \
@@ -298,6 +303,9 @@ jobs:
             -v "/tmp/smoke:/out" \
             alpine:3.19 \
             sh -c 'cp /in/smoke-summary.json /out/smoke-summary.json 2>/dev/null || true'
+          # Re-open perms — the docker run above may have rewritten the
+          # dir owner; the next step writes comment.md as the runner user.
+          sudo chmod -R 777 /tmp/smoke
 
       - name: Process summary + post PR comment
         if: always()
