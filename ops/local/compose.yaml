@@ -188,6 +188,13 @@ services:
   # ---- k6: load driver — isolated from runtime to not contaminate -------
   k6:
     image: grafana/k6:0.58.0
+    # k6 is invoked ONLY via `docker compose run --rm k6 run ...`, never
+    # as part of `compose up --wait`. The `manual` profile excludes it
+    # from the default startup set. Without this, k6's absent command
+    # lets the container exit(0) immediately — local Docker Desktop
+    # tolerates this under --wait, but ubuntu-latest's compose v2 does
+    # not and fails the up step. `compose run` ignores profiles.
+    profiles: ["manual"]
     # Run as root so k6 can write handleSummary output into the
     # root-owned named volume. Load-testing containers are throwaway;
     # the privilege elevation has no production surface.

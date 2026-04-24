@@ -25,7 +25,7 @@ if [[ ! -f "$CONFIG_FILE" ]]; then
     exit 1
 fi
 
-VERSION="$(cat "$VERSION_FILE" | tr -d '[:space:]')"
+VERSION="$(tr -d '[:space:]' < "$VERSION_FILE")"
 IMAGE="otel/opentelemetry-collector-contrib:$VERSION"
 
 echo "Validating $CONFIG_FILE against $IMAGE ..."
