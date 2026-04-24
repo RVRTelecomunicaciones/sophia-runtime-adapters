@@ -1,0 +1,6 @@
+--- a/file1.txt
++++ b/file1.txt
+@@ -1,2 +1,3 @@
+ line one of file1
+ line two of file1
++line three of file1 (dirty)

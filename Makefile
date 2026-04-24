@@ -105,5 +105,4 @@ load-smoke-local:
 	@exit 1
 
 fixture-git-bench:
-	@echo "fixture-git-bench stub — body lands in Bundle 4"
-	@exit 1
+	$(MAKE) -C test/fixtures/git-bench all

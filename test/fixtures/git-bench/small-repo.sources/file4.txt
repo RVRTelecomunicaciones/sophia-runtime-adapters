@@ -1,0 +1,2 @@
+line one of file4
+line two of file4
