@@ -86,10 +86,12 @@ services:
 
   k6:
     image: grafana/k6:0.58.0
+    user: "0:0"              # write access to the root-owned summaries volume
     cpus: "0.4"
     mem_limit: 256m
     volumes:
       - ../load/scenarios:/scripts:ro
+      - ../load/lib:/lib:ro    # scenarios import ../lib/common.js
       - smoke-summaries:/summaries
     networks:
       - runtime-load-smoke

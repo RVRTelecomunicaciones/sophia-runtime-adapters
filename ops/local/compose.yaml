@@ -188,10 +188,18 @@ services:
   # ---- k6: load driver — isolated from runtime to not contaminate -------
   k6:
     image: grafana/k6:0.58.0
+    # Run as root so k6 can write handleSummary output into the
+    # root-owned named volume. Load-testing containers are throwaway;
+    # the privilege elevation has no production surface.
+    user: "0:0"
     cpus: "1.0"
     mem_limit: 512m
     volumes:
       - ../load/scenarios:/scripts:ro
+      # /lib is mounted alongside /scripts because scenarios do
+      # `import { ... } from '../lib/common.js'` — k6 resolves
+      # /scripts/../lib which requires /lib to exist in the container.
+      - ../load/lib:/lib:ro
       - summaries:/summaries
     # No `command:` — scenarios are invoked via `docker compose run --rm k6 run ...`
     # from ops/load/lib/generate-report.sh (Bundle 5).

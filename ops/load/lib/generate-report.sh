@@ -104,7 +104,7 @@ PROMTOOL_VERSION="$(cat "$REPO_ROOT/ops/prometheus/.prometheus-version")"
 RUNTIME_IMAGE="$(docker inspect --format '{{.Id}}' runtime-adapters:ci-test 2>/dev/null | head -c 19 || echo 'runtime-adapters:local')"
 
 # cgroup verification — capture the raw output.
-CGROUP_JSON="$(./"$LOAD_DIR"/lib/verify-limits.sh "${COMPOSE_PROJECT}-runtime-adapters-1" 2>&1 | grep -v '^OK:' | grep -v '^===' || echo '{}')"
+CGROUP_JSON="$("$LOAD_DIR/lib/verify-limits.sh" "${COMPOSE_PROJECT}-runtime-adapters-1" 2>&1 | grep -v '^OK:' | grep -v '^===' || echo '{}')"
 # Strip to just the JSON body.
 CGROUP_JSON="$(echo "$CGROUP_JSON" | awk '/^{/,/^}/')"
 
@@ -287,12 +287,16 @@ sed \
     -e "s|{{EVIDENCE_DIR}}|$EVIDENCE_DIR|g" \
     "$TEMPLATE" > "$REPORT_FILE"
 
-# Replace multi-line placeholders via python-less dump (awk):
-awk -v tier="$CORE_TIER_OUT" -v status="$GIT_STATUS_OUT" -v rough="$GIT_ROUGH_OUT" -v cgroup="$CGROUP_JSON" '
-    /{{CORE_TIER_SECTIONS}}/ { print tier; next }
-    /{{GIT_STATUS_TABLES}}/  { print status; next }
-    /{{GIT_ROUGH_TABLES}}/   { print rough; next }
-    /{{CGROUP_VERIFICATION}}/ { print cgroup; next }
+# Replace multi-line placeholders via awk. Values pass through ENVIRON[]
+# rather than `-v` — awk's `-v` assignment does NOT support embedded
+# newlines (it emits "awk: newline in string" and exits 2). Tier tables,
+# git section tables, and the cgroup JSON block are all multi-line.
+export CORE_TIER_OUT GIT_STATUS_OUT GIT_ROUGH_OUT CGROUP_JSON
+awk '
+    /\{\{CORE_TIER_SECTIONS\}\}/  { print ENVIRON["CORE_TIER_OUT"]; next }
+    /\{\{GIT_STATUS_TABLES\}\}/   { print ENVIRON["GIT_STATUS_OUT"]; next }
+    /\{\{GIT_ROUGH_TABLES\}\}/    { print ENVIRON["GIT_ROUGH_OUT"]; next }
+    /\{\{CGROUP_VERIFICATION\}\}/ { print ENVIRON["CGROUP_JSON"]; next }
     { print }
 ' "$REPORT_FILE" > "${REPORT_FILE}.tmp" && mv "${REPORT_FILE}.tmp" "$REPORT_FILE"
 
