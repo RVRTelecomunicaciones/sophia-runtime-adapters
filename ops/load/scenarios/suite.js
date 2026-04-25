@@ -117,7 +117,7 @@ export const options = {
             rate: 10, timeUnit: '1s', duration: '3m',
             preAllocatedVUs: 20, maxVUs: 50, gracefulStop: '15s',
             exec: 'shellExec', startTime: T_SHELL,
-            tags: { scenario: 'baseline', capability: 'shell.exec@v1', tier: 'core' },
+            tags: { capability: 'shell.exec@v1', tier: 'core' },
         },
         shell_exec_saturation: {
             executor: 'ramping-arrival-rate',
@@ -129,14 +129,14 @@ export const options = {
             ],
             gracefulStop: '30s',
             exec: 'shellExec', startTime: '3m30s',
-            tags: { scenario: 'saturation', capability: 'shell.exec@v1', tier: 'core' },
+            tags: { capability: 'shell.exec@v1', tier: 'core' },
         },
         fs_read_baseline: {
             executor: 'constant-arrival-rate',
             rate: 50, timeUnit: '1s', duration: '3m',
             preAllocatedVUs: 30, maxVUs: 100, gracefulStop: '15s',
             exec: 'fsRead', startTime: T_FS_READ,
-            tags: { scenario: 'baseline', capability: 'filesystem.read_file@v1', tier: 'core' },
+            tags: { capability: 'filesystem.read_file@v1', tier: 'core' },
         },
         fs_read_saturation: {
             executor: 'ramping-arrival-rate',
@@ -148,14 +148,14 @@ export const options = {
             ],
             gracefulStop: '30s',
             exec: 'fsRead', startTime: '12m',      // T_FS_READ + 3m30s
-            tags: { scenario: 'saturation', capability: 'filesystem.read_file@v1', tier: 'core' },
+            tags: { capability: 'filesystem.read_file@v1', tier: 'core' },
         },
         fs_write_baseline: {
             executor: 'constant-arrival-rate',
             rate: 20, timeUnit: '1s', duration: '3m',
             preAllocatedVUs: 20, maxVUs: 60, gracefulStop: '15s',
             exec: 'fsWrite', startTime: T_FS_WRITE,
-            tags: { scenario: 'baseline', capability: 'filesystem.write_file@v1', tier: 'core' },
+            tags: { capability: 'filesystem.write_file@v1', tier: 'core' },
         },
         fs_write_saturation: {
             executor: 'ramping-arrival-rate',
@@ -167,14 +167,14 @@ export const options = {
             ],
             gracefulStop: '30s',
             exec: 'fsWrite', startTime: '20m30s',  // T_FS_WRITE + 3m30s
-            tags: { scenario: 'saturation', capability: 'filesystem.write_file@v1', tier: 'core' },
+            tags: { capability: 'filesystem.write_file@v1', tier: 'core' },
         },
         http_baseline: {
             executor: 'constant-arrival-rate',
             rate: 30, timeUnit: '1s', duration: '3m',
             preAllocatedVUs: 30, maxVUs: 80, gracefulStop: '15s',
             exec: 'httpRequest', startTime: T_HTTP,
-            tags: { scenario: 'baseline', capability: 'http.request@v1', tier: 'core' },
+            tags: { capability: 'http.request@v1', tier: 'core' },
         },
         http_saturation: {
             executor: 'ramping-arrival-rate',
@@ -186,7 +186,7 @@ export const options = {
             ],
             gracefulStop: '30s',
             exec: 'httpRequest', startTime: '29m',  // T_HTTP + 3m30s
-            tags: { scenario: 'saturation', capability: 'http.request@v1', tier: 'core' },
+            tags: { capability: 'http.request@v1', tier: 'core' },
         },
 
         // ---- git.status smoke tier ----
@@ -195,7 +195,7 @@ export const options = {
             rate: 5, timeUnit: '1s', duration: '90s',
             preAllocatedVUs: 10, maxVUs: 20, gracefulStop: '10s',
             exec: 'gitStatus', startTime: T_GIT_STATUS_SMOKE,
-            tags: { scenario: 'smoke', capability: 'git.status@v1', tier: 'smoke' },
+            tags: { capability: 'git.status@v1', tier: 'smoke' },
         },
         git_status_saturation_lite: {
             executor: 'ramping-arrival-rate',
@@ -206,7 +206,7 @@ export const options = {
             ],
             gracefulStop: '30s',
             exec: 'gitStatus', startTime: T_GIT_STATUS_SAT,
-            tags: { scenario: 'saturation_lite', capability: 'git.status@v1', tier: 'smoke' },
+            tags: { capability: 'git.status@v1', tier: 'smoke' },
         },
 
         // ---- git rough tier (observation only, no thresholds) ----
@@ -214,28 +214,28 @@ export const options = {
             executor: 'per-vu-iterations',
             vus: 1, iterations: 20, maxDuration: '5m',
             exec: 'gitClone', startTime: T_GIT_ROUGH_CLONE,
-            tags: { scenario: 'rough', capability: 'git.clone@v1', tier: 'rough' },
+            tags: { capability: 'git.clone@v1', tier: 'rough' },
         },
         git_diff_rough: {
             executor: 'constant-arrival-rate',
             rate: 5, timeUnit: '1s', duration: '1m',
             preAllocatedVUs: 10, maxVUs: 20, gracefulStop: '10s',
             exec: 'gitDiff', startTime: T_GIT_ROUGH_DIFF,
-            tags: { scenario: 'rough', capability: 'git.diff@v1', tier: 'rough' },
+            tags: { capability: 'git.diff@v1', tier: 'rough' },
         },
         git_commit_rough: {
             executor: 'per-vu-iterations',
             vus: 1, iterations: 10, maxDuration: '4m',
             exec: 'gitCommit', startTime: T_GIT_ROUGH_COMMIT,
-            tags: { scenario: 'rough', capability: 'git.commit@v1', tier: 'rough' },
+            tags: { capability: 'git.commit@v1', tier: 'rough' },
         },
     },
     thresholds: {
         // Core baseline: loose thresholds that echo PROVISIONAL targets.
-        'http_req_duration{scenario:baseline,capability:shell.exec@v1}':             ['p(99)<5000'],
-        'http_req_duration{scenario:baseline,capability:filesystem.read_file@v1}':   ['p(99)<500'],
-        'http_req_duration{scenario:baseline,capability:filesystem.write_file@v1}':  ['p(99)<1000'],
-        'http_req_duration{scenario:baseline,capability:http.request@v1}':            ['p(99)<10000'],
+        'http_req_duration{phase:baseline,capability:shell.exec@v1}':             ['p(99)<5000'],
+        'http_req_duration{phase:baseline,capability:filesystem.read_file@v1}':   ['p(99)<500'],
+        'http_req_duration{phase:baseline,capability:filesystem.write_file@v1}':  ['p(99)<1000'],
+        'http_req_duration{phase:baseline,capability:http.request@v1}':            ['p(99)<10000'],
         // No thresholds for saturation or rough; those are observational.
     },
     summaryTrendStats: ['min', 'avg', 'p(50)', 'p(95)', 'p(99)', 'max', 'count'],
