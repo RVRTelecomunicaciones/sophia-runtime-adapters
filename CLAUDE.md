@@ -84,3 +84,12 @@ Conventional commits (`feat(scope)`, `fix(scope)`, `chore(scope)`, `docs(scope)`
 14. **R14** — `MaxConcurrentExecutions` required. A semaphore cap must be configured and enforced at runtime startup.
 15. **R15** — Only 5 statuses. `success`, `failure`, `timeout`, `cancelled`, `partial` are the only valid values; adding a new status requires an ADR and a `schema_version` bump.
 16. **R16** — Metric cardinality bounded. Label whitelist: `capability`, `adapter`, `status`, `signal`. High-cardinality identifiers (error_class, receipt_id, handle_id, correlation_id, trace_id, retry_hint) go to logs / exemplars, not metrics.
+
+## Load baseline (Phase 2C.2)
+
+SLO targets in `ops/slo/*.yaml` are calibrated under a declared
+envelope. See `docs/load-baseline.md` for the operator workflow.
+Measurement env: `ops/local/compose.yaml`. Calibration artifacts:
+`ops/slo/calibration-reports/`. Re-run via `make load-baseline`
+when envelope or performance-affecting code changes land. ADRs
+0007 (k6 + pull-based pipeline) + 0008 (pinned compose envelope).
