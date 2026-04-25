@@ -33,7 +33,7 @@ type Config struct {
 
 // RequestPayload — wire payload for http.request@v1.
 type RequestPayload struct {
-	Method         string            `json:"method"`                    // GET/POST/PUT/DELETE/PATCH/HEAD/OPTIONS
+	Method         string            `json:"method"` // GET/POST/PUT/DELETE/PATCH/HEAD/OPTIONS
 	URL            string            `json:"url"`
 	Headers        map[string]string `json:"headers,omitempty"`
 	Body           []byte            `json:"body,omitempty"`            // base64 on wire

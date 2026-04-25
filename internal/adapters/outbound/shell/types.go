@@ -35,7 +35,7 @@ type Config struct {
 
 // ExecPayload is the wire payload for shell.exec@v1.
 type ExecPayload struct {
-	Command     string            `json:"command"`                // absolute path OR a name resolvable via AllowedCommandsPath
+	Command     string            `json:"command"` // absolute path OR a name resolvable via AllowedCommandsPath
 	Args        []string          `json:"args,omitempty"`
 	Env         map[string]string `json:"env,omitempty"`          // additive to the minimal base env
 	WorkingDir  string            `json:"working_dir,omitempty"`  // empty = process cwd
