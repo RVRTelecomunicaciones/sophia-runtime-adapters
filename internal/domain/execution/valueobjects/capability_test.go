@@ -163,6 +163,7 @@ func TestCapability_MarshalJSON_EmitsAllFields(t *testing.T) {
 	}
 
 	want := map[string]any{
+		"capability":         "shell.exec@v1",
 		"adapter_id":         "shell",
 		"name":               "exec",
 		"version":            "v1",

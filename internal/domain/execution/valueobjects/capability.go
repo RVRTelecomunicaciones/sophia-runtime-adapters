@@ -68,10 +68,14 @@ func (c Capability) Canonical() string {
 }
 
 // capabilityWire is the snake_case wire shape of a Capability. The
-// fields mirror the request envelope's naming (timeout_budget_ms in
-// requests, default_timeout_ms here) so SDK consumers see a coherent
-// vocabulary across both directions of the contract.
+// `capability` field carries the canonical "adapter.name@version" form
+// used as the human-facing identifier in tags and logs (matches the
+// k6 scenario tags and the OTel `capability` attribute). The structured
+// fields (adapter_id / name / version) are also emitted so SDK callers
+// don't have to re-parse the canonical string. `default_timeout_ms`
+// mirrors the request envelope's `timeout_budget_ms` vocabulary.
 type capabilityWire struct {
+	Canonical        string `json:"capability"`
 	AdapterID        string `json:"adapter_id"`
 	Name             string `json:"name"`
 	Version          string `json:"version"`
@@ -85,6 +89,7 @@ type capabilityWire struct {
 // of empty objects (caught by TestBuildRuntime_EndToEndSmoke).
 func (c Capability) MarshalJSON() ([]byte, error) {
 	return json.Marshal(capabilityWire{
+		Canonical:        c.Canonical(),
 		AdapterID:        c.adapterID.String(),
 		Name:             c.name,
 		Version:          c.version,
