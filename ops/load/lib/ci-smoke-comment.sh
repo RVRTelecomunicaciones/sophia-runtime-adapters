@@ -43,7 +43,7 @@ fi
 
 extract_p99() {
     local cap="$1"
-    jq -r ".metrics[\"http_req_duration{scenario:smoke,capability:${cap}}\"].values[\"p(99)\"] // 0 | tonumber" "$SUMMARY_FILE"
+    jq -r ".metrics[\"http_req_duration{phase:smoke,capability:${cap}}\"].values[\"p(99)\"] // 0 | tonumber" "$SUMMARY_FILE"
 }
 
 SHELL_P99=$(extract_p99 "shell.exec@v1")

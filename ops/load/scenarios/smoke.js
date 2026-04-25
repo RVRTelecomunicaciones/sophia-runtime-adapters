@@ -28,22 +28,27 @@ import { executeRequest,
 
 // ---- exec functions ------------------------------------------------------
 
+// smoke.js scenario names (`shell_exec`, `fs_read`, `fs_write`,
+// `http_request`) do NOT follow the `_smoke` suffix convention used in
+// suite.js, so derivePhase() in common.js would return 'unknown' here.
+// We pass `phase: 'smoke'` explicitly — the explicit value wins over
+// derivation in executeRequest's tag merge.
 export function shellExec() {
     executeRequest('shell.exec@v1', payloadForShellExec(),
-        { scenario: 'smoke', capability: 'shell.exec@v1' });
+        { phase: 'smoke' });
 }
 export function fsRead() {
     const size = (exec.scenario.iterationInTest % 2 === 0) ? '1kb' : '10kb';
     executeRequest('filesystem.read_file@v1', payloadForFilesystemRead(size),
-        { scenario: 'smoke', capability: 'filesystem.read_file@v1', size: size });
+        { phase: 'smoke', size: size });
 }
 export function fsWrite() {
     executeRequest('filesystem.write_file@v1', payloadForFilesystemWrite(),
-        { scenario: 'smoke', capability: 'filesystem.write_file@v1' });
+        { phase: 'smoke' });
 }
 export function httpRequest() {
     executeRequest('http.request@v1', payloadForHTTPRequest(),
-        { scenario: 'smoke', capability: 'http.request@v1' });
+        { phase: 'smoke' });
 }
 
 export function setup() {
@@ -73,28 +78,28 @@ export const options = {
             rate: 1, timeUnit: '1s', duration: '30s',
             preAllocatedVUs: 3, maxVUs: 10, gracefulStop: '5s',
             exec: 'shellExec', startTime: '0s',
-            tags: { scenario: 'smoke', capability: 'shell.exec@v1', tier: 'smoke' },
+            tags: { capability: 'shell.exec@v1', tier: 'smoke' },
         },
         fs_read: {
             executor: 'constant-arrival-rate',
             rate: 5, timeUnit: '1s', duration: '30s',
             preAllocatedVUs: 10, maxVUs: 20, gracefulStop: '5s',
             exec: 'fsRead', startTime: '35s',
-            tags: { scenario: 'smoke', capability: 'filesystem.read_file@v1', tier: 'smoke' },
+            tags: { capability: 'filesystem.read_file@v1', tier: 'smoke' },
         },
         fs_write: {
             executor: 'constant-arrival-rate',
             rate: 2, timeUnit: '1s', duration: '30s',
             preAllocatedVUs: 5, maxVUs: 15, gracefulStop: '5s',
             exec: 'fsWrite', startTime: '1m10s',
-            tags: { scenario: 'smoke', capability: 'filesystem.write_file@v1', tier: 'smoke' },
+            tags: { capability: 'filesystem.write_file@v1', tier: 'smoke' },
         },
         http_request: {
             executor: 'constant-arrival-rate',
             rate: 3, timeUnit: '1s', duration: '30s',
             preAllocatedVUs: 10, maxVUs: 20, gracefulStop: '5s',
             exec: 'httpRequest', startTime: '1m45s',
-            tags: { scenario: 'smoke', capability: 'http.request@v1', tier: 'smoke' },
+            tags: { capability: 'http.request@v1', tier: 'smoke' },
         },
     },
     thresholds: {

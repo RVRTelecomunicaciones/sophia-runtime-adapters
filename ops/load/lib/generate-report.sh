@@ -208,7 +208,7 @@ echo "-- writing latest-baseline.json --"
 # Extract per-capability baseline p50/p95/p99 from summary.json.
 extract_percentile() {
     local cap="$1" key="$2"
-    jq -r ".metrics[\"http_req_duration{scenario:baseline,capability:${cap}}\"].values[\"${key}\"] // 0 | tostring" \
+    jq -r ".metrics[\"http_req_duration{phase:baseline,capability:${cap}}\"].values[\"${key}\"] // 0 | tostring" \
         "$EVIDENCE_ROOT/$EVIDENCE_DIR/summary.json"
 }
 

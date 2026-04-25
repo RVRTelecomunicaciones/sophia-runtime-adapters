@@ -213,8 +213,50 @@ function splitCapability(canonical) {
     };
 }
 
+// derivePhase extracts the load phase from the k6 scenario name.
+//
+// CONTEXT (why this exists):
+// We MUST NOT override k6's `scenario` system tag — k6 sets it
+// automatically to the actual scenario key from `options.scenarios`
+// (e.g. `shell_exec_baseline`, `fs_read_saturation`). Earlier versions
+// of these scenarios passed `tags: { scenario: 'baseline' }` at the
+// scenario level trying to give threshold filters a stable key, but
+// k6 keeps the system tag bound to the real scenario name on per-
+// request HTTP samples. Result: `http_req_duration{scenario:baseline,…}`
+// matched an empty sub-metric (count=0), zero-valued the calibration
+// report, and silently passed the threshold (vacuous).
+//
+// Fix: introduce our own `phase` request-level tag with a stable
+// vocabulary (baseline | saturation | saturation_lite | smoke | rough)
+// and filter on `phase:X` in thresholds + report parsers. Suffix-based
+// derivation matches the suite.js naming convention; smoke.js scenarios
+// don't follow it and pass `phase: 'smoke'` explicitly via tags.
+//
+// `unknown` is intentional — it surfaces a missing case rather than
+// silently coalescing into a pre-existing bucket.
+function derivePhase(scenarioName) {
+    if (scenarioName.endsWith('_baseline'))         return 'baseline';
+    if (scenarioName.endsWith('_saturation_lite'))  return 'saturation_lite';
+    if (scenarioName.endsWith('_saturation'))       return 'saturation';
+    if (scenarioName.endsWith('_smoke'))            return 'smoke';
+    if (scenarioName.endsWith('_rough'))            return 'rough';
+    return 'unknown';
+}
+
 export function executeRequest(capability, payload, tags) {
     const parts = splitCapability(capability);
+    const inputTags = tags || {};
+    const scenarioName = exec.scenario.name;
+    const phase = inputTags.phase || derivePhase(scenarioName);
+    // capability is always sourced from the function arg — passing a
+    // mismatched `capability` in `tags` is a caller bug; the arg wins.
+    // Likewise for phase: explicit (smoke.js) overrides derivation.
+    const finalTags = {
+        ...inputTags,
+        capability,
+        phase,
+        scenario_name: scenarioName,
+    };
     const body = JSON.stringify({
         correlation_id:     newCorrelationID(),
         adapter_id:         parts.adapter_id,
@@ -226,7 +268,7 @@ export function executeRequest(capability, payload, tags) {
     });
     const res = http.post(`${baseURL}/api/v1/execute`, body, {
         headers: defaultHeaders,
-        tags:    tags || {},
+        tags:    finalTags,
     });
     check(res, {
         'status is 200':    (r) => r.status === 200,

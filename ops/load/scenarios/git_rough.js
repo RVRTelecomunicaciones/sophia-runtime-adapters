@@ -30,21 +30,21 @@ export const options = {
             executor: 'per-vu-iterations',
             vus: 1, iterations: 20, maxDuration: '5m',
             exec: 'cloneScenario', startTime: '0s',
-            tags: { scenario: 'rough', capability: 'git.clone@v1', tier: 'rough' },
+            tags: { capability: 'git.clone@v1', tier: 'rough' },
         },
         git_diff: {
             executor: 'constant-arrival-rate',
             rate: 5, timeUnit: '1s', duration: '1m',
             preAllocatedVUs: 10, maxVUs: 20, gracefulStop: '10s',
             exec: 'diffScenario', startTime: '5m10s',
-            tags: { scenario: 'rough', capability: 'git.diff@v1', tier: 'rough' },
+            tags: { capability: 'git.diff@v1', tier: 'rough' },
         },
         git_commit: {
             // Sequential 1 VU; commits mutate a tmpfs copy per iteration.
             executor: 'per-vu-iterations',
             vus: 1, iterations: 10, maxDuration: '4m',
             exec: 'commitScenario', startTime: '6m25s',
-            tags: { scenario: 'rough', capability: 'git.commit@v1', tier: 'rough' },
+            tags: { capability: 'git.commit@v1', tier: 'rough' },
         },
     },
     // NO thresholds — rough tier does not gate on anything.

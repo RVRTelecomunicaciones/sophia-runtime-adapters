@@ -24,7 +24,7 @@ export const options = {
             preAllocatedVUs:  30,
             maxVUs:           100,
             gracefulStop:     '15s',
-            tags: { scenario: 'baseline', capability: 'filesystem.read_file@v1', tier: 'core' },
+            tags: { capability: 'filesystem.read_file@v1', tier: 'core' },
         },
         saturation: {
             executor:         'ramping-arrival-rate',
@@ -40,12 +40,12 @@ export const options = {
             ],
             gracefulStop: '30s',
             startTime: '3m30s',
-            tags: { scenario: 'saturation', capability: 'filesystem.read_file@v1', tier: 'core' },
+            tags: { capability: 'filesystem.read_file@v1', tier: 'core' },
         },
     },
     thresholds: {
-        'http_req_duration{scenario:baseline,capability:filesystem.read_file@v1}': ['p(99)<500'],
-        'http_req_failed{scenario:baseline,capability:filesystem.read_file@v1}':    ['rate<0.01'],
+        'http_req_duration{phase:baseline,capability:filesystem.read_file@v1}': ['p(99)<500'],
+        'http_req_failed{phase:baseline,capability:filesystem.read_file@v1}':    ['rate<0.01'],
     },
     summaryTrendStats: ['min', 'avg', 'p(50)', 'p(95)', 'p(99)', 'max', 'count'],
 };

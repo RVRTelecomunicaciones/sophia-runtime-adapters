@@ -18,7 +18,7 @@ export const options = {
             executor: 'constant-arrival-rate',
             rate: 5, timeUnit: '1s', duration: '90s',
             preAllocatedVUs: 10, maxVUs: 20, gracefulStop: '10s',
-            tags: { scenario: 'smoke', capability: 'git.status@v1', tier: 'smoke' },
+            tags: { capability: 'git.status@v1', tier: 'smoke' },
         },
         saturation_lite: {
             executor: 'ramping-arrival-rate',
@@ -30,13 +30,13 @@ export const options = {
             ],
             gracefulStop: '30s',
             startTime: '1m35s',
-            tags: { scenario: 'saturation_lite', capability: 'git.status@v1', tier: 'smoke' },
+            tags: { capability: 'git.status@v1', tier: 'smoke' },
         },
     },
     thresholds: {
         // Reflects PROVISIONAL target (p99<2s). Relaxed during smoke.
-        'http_req_duration{scenario:smoke,capability:git.status@v1}': ['p(99)<2000'],
-        'http_req_failed{scenario:smoke,capability:git.status@v1}':    ['rate<0.01'],
+        'http_req_duration{phase:smoke,capability:git.status@v1}': ['p(99)<2000'],
+        'http_req_failed{phase:smoke,capability:git.status@v1}':    ['rate<0.01'],
     },
     summaryTrendStats: ['min', 'avg', 'p(50)', 'p(95)', 'p(99)', 'max', 'count'],
 };

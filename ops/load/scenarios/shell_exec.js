@@ -19,7 +19,7 @@ export const options = {
             preAllocatedVUs:  20,
             maxVUs:           50,
             gracefulStop:     '15s',
-            tags: { scenario: 'baseline', capability: 'shell.exec@v1', tier: 'core' },
+            tags: { capability: 'shell.exec@v1', tier: 'core' },
         },
         saturation: {
             executor:         'ramping-arrival-rate',
@@ -35,15 +35,15 @@ export const options = {
             ],
             gracefulStop: '30s',
             startTime: '3m30s',
-            tags: { scenario: 'saturation', capability: 'shell.exec@v1', tier: 'core' },
+            tags: { capability: 'shell.exec@v1', tier: 'core' },
         },
     },
     thresholds: {
         // Reflects current PROVISIONAL target (5s p99). Post-calibration
         // this tightens; but we leave it loose here so baseline gives
         // signal rather than fail-fast.
-        'http_req_duration{scenario:baseline,capability:shell.exec@v1}': ['p(99)<5000'],
-        'http_req_failed{scenario:baseline,capability:shell.exec@v1}':    ['rate<0.01'],
+        'http_req_duration{phase:baseline,capability:shell.exec@v1}': ['p(99)<5000'],
+        'http_req_failed{phase:baseline,capability:shell.exec@v1}':    ['rate<0.01'],
         // Saturation: no threshold. We WANT the breakpoint to show.
     },
     summaryTrendStats: ['min', 'avg', 'p(50)', 'p(95)', 'p(99)', 'max', 'count'],
