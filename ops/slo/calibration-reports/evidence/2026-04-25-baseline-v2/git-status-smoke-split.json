@@ -1,0 +1,19 @@
+{
+  "aggregate": {
+    "type": "trend",
+    "contains": "time",
+    "values": {
+      "max": 1256.442501,
+      "count": 218943,
+      "min": 0.086834,
+      "avg": 7.317401767825415,
+      "p(50)": 1.497625,
+      "p(95)": 6.6264080999999955,
+      "p(99)": 224.76483499999998
+    }
+  },
+  "by_tree": {
+    "small_repo": null,
+    "dirty_tree": null
+  }
+}
