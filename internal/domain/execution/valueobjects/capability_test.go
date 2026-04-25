@@ -1,6 +1,7 @@
 package valueobjects
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -137,5 +138,91 @@ func TestCapability_EqualityByValue(t *testing.T) {
 	c3, _ := NewCapability(aid, "exec", "v1", true, 30*time.Second)
 	if c1 == c3 {
 		t.Error("Capabilities differing in allowsPartial should not be equal")
+	}
+}
+
+// TestCapability_MarshalJSON_EmitsAllFields guards against the regression
+// where Capability had unexported fields and no MarshalJSON: encoding/json
+// silently emitted "{}" because it could not see the fields. The
+// integration test TestBuildRuntime_EndToEndSmoke caught this when
+// /api/v1/capabilities returned an array of empty objects. The wire
+// shape uses snake_case and emits default_timeout as milliseconds (an
+// integer) — symmetric with the request envelope's timeout_budget_ms.
+func TestCapability_MarshalJSON_EmitsAllFields(t *testing.T) {
+	aid, _ := NewAdapterID("shell")
+	c, _ := NewCapability(aid, "exec", "v1", true, 30*time.Second)
+
+	b, err := json.Marshal(c)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("decode: %v (body=%s)", err, b)
+	}
+
+	want := map[string]any{
+		"adapter_id":         "shell",
+		"name":               "exec",
+		"version":            "v1",
+		"allows_partial":     true,
+		"default_timeout_ms": float64(30_000),
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("field %q = %#v, want %#v (full body: %s)", k, got[k], v, b)
+		}
+	}
+	if len(got) != len(want) {
+		t.Errorf("expected exactly %d fields, got %d: %s", len(want), len(got), b)
+	}
+}
+
+// TestCapability_RoundTripJSON exercises the symmetric Unmarshal path
+// so SDK callers (in-proc Go consumers) and external HTTP clients
+// share the same wire contract. Deliberately uses a separate adapter +
+// non-default timeout to ensure no field is hardcoded in the marshal.
+func TestCapability_RoundTripJSON(t *testing.T) {
+	aid, _ := NewAdapterID("git")
+	original, _ := NewCapability(aid, "clone", "v1", false, 90*time.Second)
+
+	b, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+
+	var decoded Capability
+	if err := json.Unmarshal(b, &decoded); err != nil {
+		t.Fatalf("Unmarshal: %v (body=%s)", err, b)
+	}
+
+	if decoded != original {
+		t.Errorf("round-trip mismatch:\n  before = %+v\n  after  = %+v", original, decoded)
+	}
+}
+
+// TestCapability_UnmarshalJSON_RejectsInvalid asserts that the validator
+// in NewCapability is reused on the wire — a malformed payload must
+// fail to decode rather than producing a zero-valued Capability that
+// would later panic deeper in the runtime.
+func TestCapability_UnmarshalJSON_RejectsInvalid(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+	}{
+		{"bad adapter_id", `{"adapter_id":"BAD","name":"exec","version":"v1","allows_partial":false,"default_timeout_ms":1000}`},
+		{"bad name", `{"adapter_id":"shell","name":"BAD","version":"v1","allows_partial":false,"default_timeout_ms":1000}`},
+		{"bad version", `{"adapter_id":"shell","name":"exec","version":"1.0","allows_partial":false,"default_timeout_ms":1000}`},
+		{"zero timeout", `{"adapter_id":"shell","name":"exec","version":"v1","allows_partial":false,"default_timeout_ms":0}`},
+		{"negative timeout", `{"adapter_id":"shell","name":"exec","version":"v1","allows_partial":false,"default_timeout_ms":-1}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var c Capability
+			if err := json.Unmarshal([]byte(tc.body), &c); err == nil {
+				t.Errorf("expected error for %s, got nil", tc.name)
+			}
+		})
 	}
 }
