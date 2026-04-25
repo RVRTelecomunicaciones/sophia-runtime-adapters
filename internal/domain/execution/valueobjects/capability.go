@@ -1,6 +1,7 @@
 package valueobjects
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"time"
@@ -64,4 +65,54 @@ func (c Capability) DefaultTimeout() time.Duration { return c.defaultTimeout }
 // normalizer registration and JSON serialization (e.g. "shell.exec@v1").
 func (c Capability) Canonical() string {
 	return c.adapterID.String() + "." + c.name + "@" + c.version
+}
+
+// capabilityWire is the snake_case wire shape of a Capability. The
+// fields mirror the request envelope's naming (timeout_budget_ms in
+// requests, default_timeout_ms here) so SDK consumers see a coherent
+// vocabulary across both directions of the contract.
+type capabilityWire struct {
+	AdapterID        string `json:"adapter_id"`
+	Name             string `json:"name"`
+	Version          string `json:"version"`
+	AllowsPartial    bool   `json:"allows_partial"`
+	DefaultTimeoutMs int64  `json:"default_timeout_ms"`
+}
+
+// MarshalJSON emits the snake_case wire form. Required because all
+// fields on the struct are unexported — without this, encoding/json
+// silently emits "{}" and HTTP /api/v1/capabilities returns an array
+// of empty objects (caught by TestBuildRuntime_EndToEndSmoke).
+func (c Capability) MarshalJSON() ([]byte, error) {
+	return json.Marshal(capabilityWire{
+		AdapterID:        c.adapterID.String(),
+		Name:             c.name,
+		Version:          c.version,
+		AllowsPartial:    c.allowsPartial,
+		DefaultTimeoutMs: c.defaultTimeout.Milliseconds(),
+	})
+}
+
+// UnmarshalJSON decodes the snake_case wire form and re-runs the same
+// validation as NewCapability (identifier regexes, positive timeout).
+// Symmetric with MarshalJSON so SDK callers can round-trip a catalog
+// fetched over HTTP.
+func (c *Capability) UnmarshalJSON(b []byte) error {
+	var w capabilityWire
+	if err := json.Unmarshal(b, &w); err != nil {
+		return err
+	}
+	aid, err := NewAdapterID(w.AdapterID)
+	if err != nil {
+		return err
+	}
+	parsed, err := NewCapability(
+		aid, w.Name, w.Version, w.AllowsPartial,
+		time.Duration(w.DefaultTimeoutMs)*time.Millisecond,
+	)
+	if err != nil {
+		return err
+	}
+	*c = parsed
+	return nil
 }
