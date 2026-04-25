@@ -67,7 +67,7 @@ type ExecuteInput struct {
 	AdapterID         string
 	CapabilityName    string
 	CapabilityVersion string
-	ContentType       string          // defaults to "application/json"
+	ContentType       string // defaults to "application/json"
 	Payload           json.RawMessage
 	TimeoutBudgetMs   int64
 	IdempotencyKey    string // optional

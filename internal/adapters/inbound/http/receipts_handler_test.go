@@ -21,7 +21,7 @@ import (
 
 type receiptsStubOK struct {
 	receipt        entities.ExecutionReceipt
-	includeStreams  bool // records last call's option
+	includeStreams bool // records last call's option
 }
 
 func (s *receiptsStubOK) ListCapabilities(_ context.Context, _ inbound.CapabilityFilter) (inbound.ListCapabilitiesResponse, error) {

@@ -378,9 +378,9 @@ func TestGetReceipt_PassesOptionsThrough(t *testing.T) {
 	}
 
 	tests := []struct {
-		name          string
-		opts          sdk.GetReceiptOptions
-		wantStreams   bool
+		name        string
+		opts        sdk.GetReceiptOptions
+		wantStreams bool
 	}{
 		{"IncludeStreams=false", sdk.GetReceiptOptions{IncludeStreams: false}, false},
 		{"IncludeStreams=true", sdk.GetReceiptOptions{IncludeStreams: true}, true},

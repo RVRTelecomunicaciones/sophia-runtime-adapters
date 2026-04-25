@@ -13,6 +13,7 @@ import (
 	"context"
 	"fmt"
 	nethttp "net/http"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/otel"
@@ -194,6 +195,11 @@ func BuildRuntime(ctx context.Context, cfg config.Config) (*Runtime, error) {
 	server := &nethttp.Server{
 		Addr:    cfg.HTTPAddr,
 		Handler: router,
+		// ReadHeaderTimeout caps the time spent reading the request line +
+		// headers — closes Slowloris-style stalled-header attacks (G112).
+		// 10s is generous for any well-behaved client given runtime-adapters
+		// is typically reached over the same VPC / cluster as its callers.
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	shutdown := func(ctx context.Context) error {

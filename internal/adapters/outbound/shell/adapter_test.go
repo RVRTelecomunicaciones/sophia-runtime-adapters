@@ -266,6 +266,9 @@ func TestResolveCommand_RelativeFoundInAllowlist(t *testing.T) {
 	// Create a temp dir with a fake executable.
 	dir := t.TempDir()
 	fake := filepath.Join(dir, "myfakecmd")
+	// #nosec G306 -- the test path simulates an allowlisted executable; the
+	// fake script must carry exec bits for resolveCommand's stat check to treat
+	// it as runnable. Lives in t.TempDir(); permissions are scoped to the run.
 	if err := os.WriteFile(fake, []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatalf("write fake cmd: %v", err)
 	}
