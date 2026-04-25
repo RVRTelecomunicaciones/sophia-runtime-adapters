@@ -1,6 +1,15 @@
-# PROVISIONAL — initial operational hypotheses.
-# Quantitative calibration deferred to track 2C.2 (load baseline).
-# Changing these targets before 2C.2 closes requires explicit justification in PR.
+# Mixed calibration state — Phase 2C.2:
+#   - git.status@v1: SMOKE_CALIBRATED with limited confidence — derived
+#     from a 90s smoke run (5 rps) on 2026-04-25, not from a sustained
+#     baseline run. p99 under saturation may be higher. Re-evaluate in
+#     2C.4 when a sustained git.status scenario is added to suite.js.
+#   - git.clone@v1, git.diff@v1, git.commit@v1: PROVISIONAL — rough
+#     tier per D2C2.9, deferred to 2C.4 (no thresholds on the rough
+#     scenarios in 2C.2; observation only).
+# Compose envelope: 2 CPU / 2 GiB runtime (ADR 0008).
+# Changing git.status@v1 requires re-running the targeted standalone
+# scenario; changing rough-tier targets requires 2C.4 sustained-suite
+# work.
 
 version: "prometheus/v1"
 service: "runtime-adapters"
@@ -34,7 +43,7 @@ slos:
 
   - name: "git-status-latency"
     objective: 99.0
-    description: "99% of git.status@v1 successful executions complete under 2s"
+    description: "99% of git.status@v1 successful executions complete under 250ms (SMOKE_CALIBRATED — see header)"
     labels:
       capability: "git.status@v1"
     sli:
@@ -42,7 +51,7 @@ slos:
         error_query: |
           sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.status@v1"}[{{.window}}]))
           -
-          sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.status@v1",le="2"}[{{.window}}]))
+          sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.status@v1",le="0.25"}[{{.window}}]))
         total_query: |
           sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.status@v1"}[{{.window}}]))
     alerting:
