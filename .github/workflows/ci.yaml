@@ -191,9 +191,18 @@ jobs:
           # `promtool` as the first arg makes prometheus treat it as an
           # unknown flag ("unexpected promtool"). Override the entrypoint
           # so docker invokes the promtool binary directly.
+          #
+          # `promtool check config` also resolves every rule_file listed
+          # in the config and verifies it parses. The config uses absolute
+          # paths (/etc/prometheus/rules/* + /etc/prometheus/generated/*)
+          # because that is where compose mounts them at runtime; we
+          # mirror that layout in the validation container by mounting the
+          # same source directories at the same in-container paths.
           docker run --rm \
             --entrypoint promtool \
             -v "$(pwd)/ops/local/prometheus.yaml:/tmp/prometheus.yaml:ro" \
+            -v "$(pwd)/ops/prometheus/rules:/etc/prometheus/rules:ro" \
+            -v "$(pwd)/ops/prometheus/generated:/etc/prometheus/generated:ro" \
             prom/prometheus:v3.11.2 \
             check config /tmp/prometheus.yaml
           echo "✅ 2C.2 ops configs all valid"
