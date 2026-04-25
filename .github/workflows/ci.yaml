@@ -197,8 +197,15 @@ jobs:
           # OTel Collector config — uses pinned container tag matching compose.
           ./ops/otel-collector/scripts/validate-config.sh
           # Prometheus config (via promtool in a temp container).
-          docker run --rm -v "$(pwd)/ops/local/prometheus.yaml:/tmp/prometheus.yaml:ro" \
-            prom/prometheus:v3.11.2 promtool check config /tmp/prometheus.yaml
+          # The image's default ENTRYPOINT is `/bin/prometheus`; passing
+          # `promtool` as the first arg makes prometheus treat it as an
+          # unknown flag ("unexpected promtool"). Override the entrypoint
+          # so docker invokes the promtool binary directly.
+          docker run --rm \
+            --entrypoint promtool \
+            -v "$(pwd)/ops/local/prometheus.yaml:/tmp/prometheus.yaml:ro" \
+            prom/prometheus:v3.11.2 \
+            check config /tmp/prometheus.yaml
           echo "✅ 2C.2 ops configs all valid"
 
   integration:
