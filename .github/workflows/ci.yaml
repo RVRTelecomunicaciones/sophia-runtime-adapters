@@ -18,9 +18,19 @@ jobs:
       - name: vet
         run: go vet ./...
       - name: lint
+        # `install-mode: goinstall` builds golangci-lint from source with
+        # the Go toolchain already set up by setup-go (Go 1.26.x).
+        # The default binary mode pulls a precompiled artifact built with
+        # an older Go (e.g. v1.64.8 ships built with Go 1.24), which
+        # rejects projects whose go.mod targets Go 1.26 with:
+        #   "the Go language version (go1.24) used to build golangci-lint
+        #    is lower than the targeted Go version (1.26)"
+        # Building from source guarantees the lint binary's runtime Go
+        # matches (or exceeds) the project's targeted version.
         uses: golangci/golangci-lint-action@v6
         with:
           version: latest
+          install-mode: goinstall
       - name: unit
         run: make test-unit
       - name: contract
