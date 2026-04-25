@@ -1,6 +1,7 @@
-# PROVISIONAL — initial operational hypotheses.
-# Quantitative calibration deferred to track 2C.2 (load baseline).
-# Changing these targets before 2C.2 closes requires explicit justification in PR.
+# Calibrated — Phase 2C.2 baseline 2026-04-25 (latest-baseline.json v2).
+# Compose envelope: 2 CPU / 2 GiB runtime (ADR 0008).
+# Changing these targets requires re-running `make load-baseline`
+# under the same or a newer-but-declared envelope.
 
 version: "prometheus/v1"
 service: "runtime-adapters"
@@ -34,7 +35,7 @@ slos:
 
   - name: "filesystem-read-file-latency"
     objective: 99.0
-    description: "99% of filesystem.read_file@v1 successful executions complete under 500ms"
+    description: "99% of filesystem.read_file@v1 successful executions complete under 100ms"
     labels:
       capability: "filesystem.read_file@v1"
     sli:
@@ -42,7 +43,7 @@ slos:
         error_query: |
           sum(rate(runtime_adapters_execution_duration_seconds_count{capability="filesystem.read_file@v1"}[{{.window}}]))
           -
-          sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="filesystem.read_file@v1",le="0.5"}[{{.window}}]))
+          sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="filesystem.read_file@v1",le="0.1"}[{{.window}}]))
         total_query: |
           sum(rate(runtime_adapters_execution_duration_seconds_count{capability="filesystem.read_file@v1"}[{{.window}}]))
     alerting:
@@ -81,7 +82,7 @@ slos:
 
   - name: "filesystem-write-file-latency"
     objective: 99.0
-    description: "99% of filesystem.write_file@v1 successful executions complete under 1s"
+    description: "99% of filesystem.write_file@v1 successful executions complete under 500ms"
     labels:
       capability: "filesystem.write_file@v1"
     sli:
@@ -89,7 +90,7 @@ slos:
         error_query: |
           sum(rate(runtime_adapters_execution_duration_seconds_count{capability="filesystem.write_file@v1"}[{{.window}}]))
           -
-          sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="filesystem.write_file@v1",le="1"}[{{.window}}]))
+          sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="filesystem.write_file@v1",le="0.5"}[{{.window}}]))
         total_query: |
           sum(rate(runtime_adapters_execution_duration_seconds_count{capability="filesystem.write_file@v1"}[{{.window}}]))
     alerting:
