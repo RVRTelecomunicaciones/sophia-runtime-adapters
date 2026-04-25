@@ -4,6 +4,114 @@ All notable changes to `runtime-adapters` will be documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] — 2026-04-25
+
+Phase 2C.2 — load baseline + calibration. Replaces the PROVISIONAL SLO targets from 2C.1 with measured ones under a declared compose envelope (2 CPU / 2 GiB runtime). Adds k6 load scenarios, a pinned docker-compose measurement stack, a report generator that produces auditable Markdown + machine-readable evidence, and a GHA advisory smoke job that posts regression deltas as PR comments. Spec-complete against `docs/superpowers/specs/2026-04-23-phase-2c-load-baseline-design.md`.
+
+### Added
+
+#### Runtime image (Bundle 1)
+
+- `Dockerfile` — multi-stage Go 1.26.2 → `gcr.io/distroless/static:nonroot`.
+- `.dockerignore` excluding docs/, ops/, test/ + build detritus.
+
+#### Measurement environment (Bundle 2)
+
+- `ops/local/compose.yaml` — 7-service baseline stack with cgroup-pinned limits. Services: runtime-adapters, postgres, otel-collector, prometheus, grafana, http-upstream-mock, k6.
+- `ops/local/compose.ci-smoke.yaml` — 4-service stack for GHA advisory smoke. Reduced limits (0.75 CPU / 768 MiB runtime; 0.4 CPU / 256 MiB k6).
+- `ops/local/prometheus.yaml` — scrape config (scrapes collector Prom exporter on `:8889`, not runtime directly).
+- `ops/local/mock/default.conf` — nginx fixed static ~1 KiB response with explicit determinism requirements (§6.8).
+- `ops/otel-collector/config.yaml` — OTLP receiver → Prometheus exporter (pull-based, ADR 0007). Pinned at `0.106.1`.
+- `ops/otel-collector/scripts/validate-config.sh` — validates config against the same pinned container tag as compose.
+
+#### k6 scenarios (Bundles 3 + 4)
+
+- `ops/load/lib/common.js` — shared helpers (Crockford base-32 ULID generation for correlation_id + idempotency_key, payload builders mirroring adapter `types.go`, `executeRequest` wrapper). Modern k6/execution API throughout (D2C2.19); `__ITER`/`__VU` globals never used.
+- 6 scenarios under `ops/load/scenarios/`: `shell_exec.js`, `filesystem_read_file.js`, `filesystem_write_file.js`, `http_request.js`, `git_status.js`, `git_rough.js`.
+- `suite.js` — sequential entrypoint for the full baseline (~42–45 min).
+- `smoke.js` — CI advisory reduced scenarios (core 4, ~10% RPS, ~2m30s).
+- `handleSummary(data)` is the SOLE source of machine-readable summary (D2C2.17); `--summary-export` explicitly NOT used.
+- `executeRequest` injects `phase` (derived from scenario name suffix) + `scenario_name` (raw) + `capability` (from arg) as request-level k6 tags. The k6 system `scenario` tag is **never** overridden — earlier attempts to override it produced empty `count=0` filtered sub-metrics (commit `238ed38`).
+
+#### Git fixtures (Bundle 4)
+
+- `test/fixtures/git-bench/` — deterministic blueprint sources + Makefile generator. Constructed `.git/` dirs NOT committed (D2C2.11).
+- `test/fixtures/git-bench/regen_test.go` — asserts byte-identical regeneration (`-tags fixture`).
+
+#### Report infrastructure (Bundle 5)
+
+- `ops/load/lib/verify-limits.sh` — pre-run cgroup assertion (D2C2.4).
+- `ops/load/lib/report-template.md.tmpl` — Markdown skeleton with 6 mandatory sections (§8.2).
+- `ops/load/lib/generate-report.sh` — consumes k6 summary + docker inspect + PromQL instant + query_range; emits Markdown report + evidence dir + `latest-baseline.json` + `manifest.json`.
+- `ops/load/lib/ci-smoke-comment.sh` — posts PR comment with 3-branch handling (delta / no baseline / k6 failed); shellcheck clean.
+- `ops/slo/calibration-reports/README.md` + `schema_test.go` (go tests with pre-first-calibration Skip branches per D2C2.14).
+
+#### First calibration (Bundle 7)
+
+- `ops/slo/calibration-reports/2026-04-25-baseline-v2.md` — first real calibration report. Core tier: 4 capabilities fully calibrated with `high` confidence (TIGHTEN). `git.status@v1`: SMOKE_CALIBRATED with `limited` confidence (90s targeted standalone run, no saturation evidence). `git.clone@v1` / `git.diff@v1` / `git.commit@v1`: ROUGH_NO_CHANGE (no YAML edits; targets remain PROVISIONAL pending real-load evidence in 2C.4 per D2C2.9).
+- `ops/slo/calibration-reports/latest-baseline.json` — machine-readable per-capability p50/p95/p99 snapshot. Carries `comparison_context` + `runner_class_*` fields (A2C2.22). CI smoke consumes this for delta comparison.
+- `ops/slo/calibration-reports/evidence/2026-04-25-baseline-v2/` — `manifest.json`, `summary.json`, per-capability PromQL files, git-status-smoke-split.json, git-rough-observations.json (latter two `null` this run — sub-metrics only emit when filtered by a threshold; intentional limitation, resolvable in 2C.4).
+
+#### CI jobs (Bundle 6)
+
+- `observability` job: new step `Validate 2C.2 ops configs` runs `compose config -q` + `otelcol validate` + `promtool check config` on the new ops files.
+- `load-ops-lint` job: shellcheck on `ops/load/` + collector scripts; pinned k6 install via `grafana/setup-k6-action@v1` + `k6 inspect` across all scenarios.
+- `load-smoke` job (PR-only, `continue-on-error: true`): advisory smoke on `ubuntu-latest`. Never fails CI (D2C2.6). Posts PR comment via `ci-smoke-comment.sh` with 3 branches.
+- `load-report-schema` job: Go tests with pre-first-calibration Skip branches; TemplateRenderable always runs.
+
+#### ADRs + docs
+
+- ADR 0007 — k6 for load baseline + pull-based metrics pipeline.
+- ADR 0008 — pinned compose envelope for calibration.
+- `docs/load-baseline.md` — operator-facing workflow reference.
+- `CLAUDE.md` pointer to ops/load + docs/load-baseline.md.
+
+### Recalibrated SLO targets (Bundle 7 T44)
+
+| Capability | Before | After | `le` | Decision | Confidence |
+|---|--:|--:|---|---|---|
+| `shell.exec@v1` | 5000 ms | **250 ms** | `0.25` | TIGHTEN | high |
+| `filesystem.read_file@v1` | 500 ms | **100 ms** | `0.1` | TIGHTEN | high |
+| `filesystem.write_file@v1` | 1000 ms | **500 ms** | `0.5` | TIGHTEN | high |
+| `http.request@v1` | 10000 ms | **500 ms** | `0.5` | TIGHTEN | high |
+| `git.status@v1` | 2000 ms | **250 ms** | `0.25` | SMOKE_CALIBRATED | limited |
+| `git.clone@v1` | 30000 ms | 30000 ms | `30` | ROUGH_NO_CHANGE | n/a |
+| `git.diff@v1` | 3000 ms | 3000 ms | `3` | ROUGH_NO_CHANGE | n/a |
+| `git.commit@v1` | 2000 ms | 2000 ms | `2` | ROUGH_NO_CHANGE | n/a |
+
+All new `le` values reuse existing buckets in `obs.DurationBuckets {0.1, 0.25, 0.5, 1, 2, 3, 5, 10, 30, 60}` — no histogram boundary changes; no re-baseline required.
+
+### Changed
+
+- `ops/slo/{shell,filesystem,http}.yaml` — core-tier latency targets recalibrated per the baseline v2 report. Headers updated from "PROVISIONAL — initial operational hypotheses" to "Calibrated — Phase 2C.2 baseline 2026-04-25 under envelope 2 CPU / 2 GiB (ADR 0008)".
+- `ops/slo/git.yaml` — `git.status@v1` SMOKE_CALIBRATED to 250 ms; rough tier (clone/diff/commit) retained PROVISIONAL. Header reflects mixed calibration state.
+- `ops/prometheus/generated/*.yaml` — regenerated from updated Sloth specs via `make sloth-generate`. Bucket `le=` values shifted in 35 burn-rate recording rules across the 7 SLO multi-window periods (5m / 30m / 1h / 2h / 6h / 1d / 3d).
+- `Makefile` — filled the Bundle 1 stubs with real bodies (`load-up`, `load-down`, `load-baseline`, `load-smoke-local`, `fixture-git-bench`).
+
+### Tooling
+
+- k6: `0.58.0` (pinned via `ops/load/.k6-version`).
+- otel-collector-contrib: `0.106.1` (pinned via `ops/otel-collector/.collector-version`). Used both in compose and by `validate-config.sh` — no drift (D2C2.15).
+- Go, sloth, promtool, amtool, dashboard-linter: unchanged from 2C.1.
+
+### Out of scope for 2C.2 (deferred)
+
+Per spec §2.2 + §13:
+
+- **2C.3** — chaos + minimal hardening: programmatic E2E pipeline tests, Alertmanager + Tempo in compose, soak tests (if leak surfaces), alert fidelity validation.
+- **2C.4** — operational readiness: real pager/ticket receivers, runbooks, pgx pool Prometheus collector (unblocks `PoolIdleZero`), Loki integration, full operational local stack. Also picks up: per-tree git.status sub-metric thresholds, sustained git scenarios for full calibration, rough-tier observability thresholds.
+
+### Metrics gate
+
+- All packages green on `go test -race -count=1 ./...`.
+- 4 CI jobs running on every PR: `lint-unit-contract`, `observability` (extended), `load-ops-lint`, `load-smoke` (advisory), `load-report-schema`.
+- `shellcheck ops/load/lib/*.sh ops/otel-collector/scripts/*.sh` clean.
+- `k6 inspect` clean on all scenarios.
+- `docker compose config -q` clean on both compose files.
+- `TestDurationBuckets_CoverSlothThresholds` (from 2C.1) passes with recalibrated thresholds.
+
+---
+
 ## [0.2.0] — 2026-04-22
 
 Phase 2C.1 — observability depth + SLOs. Adds contract-bound `slog` logger, revised metric Registry with bounded cardinality (R16), code-defined metric contract (I23), Sloth-generated per-capability SLOs with multi-window burn-rate alerts, hand-written infra alerts, three-tier Alertmanager routing with `null-receiver` (real integrations in 2C.4), and 5 Grafana dashboards (1 overview + 4 per-adapter). New `observability` CI job enforces tool pins, Sloth idempotency, promtool/amtool/linter validation, and Go coverage tests. Spec-complete against `docs/superpowers/specs/2026-04-21-phase-2c-observability-slos-design.md`.
@@ -225,5 +333,6 @@ Per §11.2 trigger-driven Phase 2 tracks (A..F), NOT implemented:
 
 ---
 
+[0.3.0]: https://github.com/RVRTelecomunicaciones/sophia-runtime-adapters/releases/tag/v0.3.0
 [0.2.0]: https://github.com/RVRTelecomunicaciones/sophia-runtime-adapters/releases/tag/v0.2.0
 [0.1.0]: https://github.com/RVRTelecomunicaciones/sophia-runtime-adapters/releases/tag/v0.1.0
