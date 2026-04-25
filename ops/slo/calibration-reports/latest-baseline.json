@@ -1,0 +1,14 @@
+{
+  "generated_at":      "2026-04-25T11:12:02Z",
+  "from_report":       "ops/slo/calibration-reports/2026-04-25-baseline-v2.md",
+  "envelope_manifest": "ops/slo/calibration-reports/evidence/2026-04-25-baseline-v2/manifest.json",
+  "comparison_context": "This snapshot captures distributions measured under the 2C.2 local pinned compose envelope (2 CPU / 2 GiB, full stack with OTel collector, pgx postgres, http-upstream-mock). CI smoke runs under a different, more restrictive envelope (GHA ubuntu-latest public runner at 4 CPU / 16 GiB, but compose.ci-smoke.yaml pins limits conservatively for the private-repo floor, stripped compose without OTel collector). Absolute comparison is NOT apples-to-apples; delta thresholds in ci-smoke-comment.sh are calibrated to flag GROSS regressions only (>50% p99 drift).",
+  "runner_class_baseline":       "local-pinned-compose-2cpu-2gib",
+  "runner_class_smoke_expected": "github-actions-ubuntu-latest-public-4cpu-16gib",
+  "core": {
+    "shell.exec@v1":            { "p50_ms": 3.777167,            "p95_ms": 7.647417,            "p99_ms": 48.17125 },
+    "filesystem.read_file@v1":  { "p50_ms": 3.607166,  "p95_ms": 6.264125,  "p99_ms": 15.752542 },
+    "filesystem.write_file@v1": { "p50_ms": 4.7139585, "p95_ms": 7.7686854, "p99_ms": 51.00866891999992 },
+    "http.request@v1":          { "p50_ms": 4.159125,          "p95_ms": 7.115,          "p99_ms": 130.679583 }
+  }
+}
