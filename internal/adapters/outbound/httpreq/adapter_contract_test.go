@@ -31,9 +31,9 @@ func TestHTTPAdapter_ContractSuite(t *testing.T) {
 		"http.request@v1": {
 			Valid: jsonHTTP(t, map[string]any{"method": "GET", "url": srv.URL}),
 			Invalid: []json.RawMessage{
-				jsonHTTP(t, map[string]any{}),                                         // missing method+url
-				jsonHTTP(t, map[string]any{"method": "GET"}),                          // missing url
-				jsonHTTP(t, map[string]any{"method": "GET", "url": "ftp://x.com"}),    // bad scheme
+				jsonHTTP(t, map[string]any{}),                                           // missing method+url
+				jsonHTTP(t, map[string]any{"method": "GET"}),                            // missing url
+				jsonHTTP(t, map[string]any{"method": "GET", "url": "ftp://x.com"}),      // bad scheme
 				jsonHTTP(t, map[string]any{"method": "GET", "url": srv.URL, "junk": 1}), // unknown field
 				json.RawMessage(`not json`),
 			},

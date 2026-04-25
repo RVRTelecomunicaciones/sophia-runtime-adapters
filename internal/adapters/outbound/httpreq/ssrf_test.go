@@ -16,11 +16,11 @@ func TestValidateURL(t *testing.T) {
 	}
 
 	tests := []struct {
-		name        string
-		cfg         Config
-		rawURL      string
-		lookup      func(string) ([]net.IP, error)
-		wantErrSub  string // non-empty → expect error containing this substring
+		name       string
+		cfg        Config
+		rawURL     string
+		lookup     func(string) ([]net.IP, error)
+		wantErrSub string // non-empty → expect error containing this substring
 	}{
 		{
 			name:   "public IPv4 passes",

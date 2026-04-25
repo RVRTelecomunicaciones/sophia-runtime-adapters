@@ -75,23 +75,23 @@ INSERT INTO execution_receipts (
 	}
 
 	_, err = r.pool.Exec(ctx, q,
-		receipt.ReceiptID().String(),    // $1
-		receipt.SchemaVersion(),          // $2
+		receipt.ReceiptID().String(),               // $1
+		receipt.SchemaVersion(),                    // $2
 		receipt.Request().CorrelationID().String(), // $3
 		receipt.Handle().AdapterID().String(),      // $4
 		receipt.Handle().Capability().Canonical(),  // $5
 		string(receipt.Result().Status),            // $6
 		string(receipt.Result().ErrorClass),        // $7
 		string(receipt.Result().Retryable),         // $8
-		timings.SubmittedAt,             // $9
-		timings.StartedAt,               // $10
-		timings.CompletedAt,             // $11
-		now,                             // $12 persisted_at
-		receipt.Result().DurationMs,     // $13
-		payloadJSON,                     // $14 payload jsonb
-		resultJSON,                      // $15 result jsonb
-		provJSON,                        // $16 provenance jsonb
-		fullJSON,                        // $17 full_receipt jsonb
+		timings.SubmittedAt,                        // $9
+		timings.StartedAt,                          // $10
+		timings.CompletedAt,                        // $11
+		now,                                        // $12 persisted_at
+		receipt.Result().DurationMs,                // $13
+		payloadJSON,                                // $14 payload jsonb
+		resultJSON,                                 // $15 result jsonb
+		provJSON,                                   // $16 provenance jsonb
+		fullJSON,                                   // $17 full_receipt jsonb
 	)
 	if err != nil {
 		if isUniqueViolation(err) {
