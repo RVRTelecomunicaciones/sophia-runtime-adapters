@@ -252,7 +252,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="http.request@v1"}[5m]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="http.request@v1",le="10"}[5m]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="http.request@v1",le="0.5"}[5m]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="http.request@v1"}[5m]))
@@ -269,7 +269,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="http.request@v1"}[30m]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="http.request@v1",le="10"}[30m]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="http.request@v1",le="0.5"}[30m]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="http.request@v1"}[30m]))
@@ -286,7 +286,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="http.request@v1"}[1h]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="http.request@v1",le="10"}[1h]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="http.request@v1",le="0.5"}[1h]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="http.request@v1"}[1h]))
@@ -303,7 +303,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="http.request@v1"}[2h]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="http.request@v1",le="10"}[2h]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="http.request@v1",le="0.5"}[2h]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="http.request@v1"}[2h]))
@@ -320,7 +320,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="http.request@v1"}[6h]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="http.request@v1",le="10"}[6h]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="http.request@v1",le="0.5"}[6h]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="http.request@v1"}[6h]))
@@ -337,7 +337,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="http.request@v1"}[1d]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="http.request@v1",le="10"}[1d]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="http.request@v1",le="0.5"}[1d]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="http.request@v1"}[1d]))
@@ -354,7 +354,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="http.request@v1"}[3d]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="http.request@v1",le="10"}[3d]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="http.request@v1",le="0.5"}[3d]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="http.request@v1"}[3d]))

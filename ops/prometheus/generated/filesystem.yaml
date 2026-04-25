@@ -252,7 +252,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="filesystem.read_file@v1"}[5m]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="filesystem.read_file@v1",le="0.5"}[5m]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="filesystem.read_file@v1",le="0.1"}[5m]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="filesystem.read_file@v1"}[5m]))
@@ -269,7 +269,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="filesystem.read_file@v1"}[30m]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="filesystem.read_file@v1",le="0.5"}[30m]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="filesystem.read_file@v1",le="0.1"}[30m]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="filesystem.read_file@v1"}[30m]))
@@ -286,7 +286,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="filesystem.read_file@v1"}[1h]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="filesystem.read_file@v1",le="0.5"}[1h]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="filesystem.read_file@v1",le="0.1"}[1h]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="filesystem.read_file@v1"}[1h]))
@@ -303,7 +303,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="filesystem.read_file@v1"}[2h]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="filesystem.read_file@v1",le="0.5"}[2h]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="filesystem.read_file@v1",le="0.1"}[2h]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="filesystem.read_file@v1"}[2h]))
@@ -320,7 +320,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="filesystem.read_file@v1"}[6h]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="filesystem.read_file@v1",le="0.5"}[6h]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="filesystem.read_file@v1",le="0.1"}[6h]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="filesystem.read_file@v1"}[6h]))
@@ -337,7 +337,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="filesystem.read_file@v1"}[1d]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="filesystem.read_file@v1",le="0.5"}[1d]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="filesystem.read_file@v1",le="0.1"}[1d]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="filesystem.read_file@v1"}[1d]))
@@ -354,7 +354,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="filesystem.read_file@v1"}[3d]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="filesystem.read_file@v1",le="0.5"}[3d]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="filesystem.read_file@v1",le="0.1"}[3d]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="filesystem.read_file@v1"}[3d]))
@@ -750,7 +750,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="filesystem.write_file@v1"}[5m]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="filesystem.write_file@v1",le="1"}[5m]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="filesystem.write_file@v1",le="0.5"}[5m]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="filesystem.write_file@v1"}[5m]))
@@ -767,7 +767,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="filesystem.write_file@v1"}[30m]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="filesystem.write_file@v1",le="1"}[30m]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="filesystem.write_file@v1",le="0.5"}[30m]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="filesystem.write_file@v1"}[30m]))
@@ -784,7 +784,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="filesystem.write_file@v1"}[1h]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="filesystem.write_file@v1",le="1"}[1h]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="filesystem.write_file@v1",le="0.5"}[1h]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="filesystem.write_file@v1"}[1h]))
@@ -801,7 +801,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="filesystem.write_file@v1"}[2h]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="filesystem.write_file@v1",le="1"}[2h]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="filesystem.write_file@v1",le="0.5"}[2h]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="filesystem.write_file@v1"}[2h]))
@@ -818,7 +818,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="filesystem.write_file@v1"}[6h]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="filesystem.write_file@v1",le="1"}[6h]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="filesystem.write_file@v1",le="0.5"}[6h]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="filesystem.write_file@v1"}[6h]))
@@ -835,7 +835,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="filesystem.write_file@v1"}[1d]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="filesystem.write_file@v1",le="1"}[1d]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="filesystem.write_file@v1",le="0.5"}[1d]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="filesystem.write_file@v1"}[1d]))
@@ -852,7 +852,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="filesystem.write_file@v1"}[3d]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="filesystem.write_file@v1",le="1"}[3d]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="filesystem.write_file@v1",le="0.5"}[3d]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="filesystem.write_file@v1"}[3d]))
