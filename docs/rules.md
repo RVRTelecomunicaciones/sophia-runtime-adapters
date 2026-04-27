@@ -1,6 +1,6 @@
-# Hard Rules — runtime-adapters Phase 1
+# Hard Rules — runtime-adapters Phase 1+
 
-These 15 rules are absolute constraints. Every code review, every ADR, and every sub-agent prompt MUST check compliance. A rule may only be relaxed by a formal ADR with a default-rejected stance.
+These rules are absolute constraints (R1–R16 from Phase 1, R16 added in Phase 2C.1, R17 added in Phase 2C.3). Every code review, every ADR, and every sub-agent prompt MUST check compliance. A rule may only be relaxed by a formal ADR with a default-rejected stance.
 
 ---
 
@@ -135,3 +135,51 @@ CI enforces this via `TestMetricContract_LabelBlacklist` and
 `TestMetricContract_LabelWhitelist`.
 
 **Rationale:** §6.4 + §12.1 (spec). Added in Phase 2C.1.
+
+---
+
+## R17 — Chaos disabled by default and fail-closed in production
+
+Chaos-capable code is compiled into the runtime binary but is **inert
+by default**. It activates only when **all three** conditions hold:
+
+1. `RUNTIME_CHAOS_ENABLED=true`.
+2. `RUNTIME_ENV != "production"` (only `development` and `staging` are
+   allowed; `production` is rejected at startup regardless of
+   `RUNTIME_CHAOS_ENABLED`).
+3. `RUNTIME_CHAOS_PROFILE` points to a valid profile file inside the
+   allowlist.
+
+Profile loading enforces the following hard guards (any failure aborts
+startup):
+
+1. Profile path passes `filepath.Clean`.
+2. Cleaned path contains no `..` segments (defense-in-depth even after
+   Clean).
+3. Resolved absolute path lies inside the allowlist roots:
+   `ops/chaos/profiles/ci`, `ops/chaos/profiles/local`,
+   `internal/infrastructure/chaos/testdata`,
+   `/etc/runtime-adapters/chaos/profiles` (runtime-container mount).
+4. `filepath.EvalSymlinks` resolves the path; the resolved path must
+   also lie inside the allowlist (catches symlink escape).
+5. Profile schema version is `1` (only v1 supported).
+6. Every capability key in the profile is in the runtime's closed
+   capability catalog (Phase 1's 8 IDs).
+7. Every fault kind in the profile is in the closed `FaultKind` enum
+   (`internal/infrastructure/chaos/fault_kinds.go`).
+8. Every `(capability, fault)` pair in the profile is supported by
+   the wrapped adapter's `ChaosCapable.SupportedChaosFaults` list, OR
+   the fault is decorator-native (`latency`, `hang_until_cancel`,
+   `inject_panic`).
+
+There is no dynamic profile loading at runtime; no remote profile
+sources; no fallback paths. Chaos profiles are deliberate, versioned,
+and reviewable.
+
+**Enforced at:** `internal/infrastructure/chaos/loader.go`,
+`internal/infrastructure/chaos/config.go`,
+`internal/infrastructure/chaos/validate_support.go`,
+`internal/infrastructure/chaos/wire.go`,
+`internal/bootstrap/wire.go`.
+**Source:** spec §5.3 + §8 + §15.1 (Phase 2C.3 design). Added in
+Phase 2C.3.

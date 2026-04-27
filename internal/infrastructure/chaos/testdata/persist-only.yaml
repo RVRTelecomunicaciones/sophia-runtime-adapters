@@ -1,0 +1,10 @@
+version: 1
+name: persist-only
+description: Persist-only profile; no adapter faults.
+adapters: {}
+persistence:
+  fault: persist_failure
+expected_outcome:
+  status: success
+  error_class: ""
+  retry_hint: unknown

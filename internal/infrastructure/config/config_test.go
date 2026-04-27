@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -28,6 +29,7 @@ func validBase() Config {
 		OTelExporterEndpoint:    "",
 		OTelTracesSampler:       "parentbased_traceidratio",
 		OTelTracesSamplerArg:    0.1,
+		Env:                     "development",
 	}
 }
 
@@ -173,6 +175,36 @@ func TestConfig_Validate_FieldErrors(t *testing.T) {
 			tt.mutate(&c)
 			if err := c.Validate(); err == nil {
 				t.Errorf("expected validation error for %q, got nil", tt.name)
+			}
+		})
+	}
+}
+
+// TestConfig_Validate_RuntimeEnvValues verifies the Env enum is enforced by Validate.
+func TestConfig_Validate_RuntimeEnvValues(t *testing.T) {
+	valid := []string{"development", "staging", "production"}
+	for _, env := range valid {
+		t.Run("valid/"+env, func(t *testing.T) {
+			c := validBase()
+			c.Env = env
+			if err := c.Validate(); err != nil {
+				t.Errorf("Env=%q should be valid, got: %v", env, err)
+			}
+		})
+	}
+
+	invalid := []string{"", "qa", "prod", "dev", "PRODUCTION", " production"}
+	for _, env := range invalid {
+		t.Run("invalid/"+env, func(t *testing.T) {
+			c := validBase()
+			c.Env = env
+			err := c.Validate()
+			if err == nil {
+				t.Errorf("Env=%q should be invalid, got nil error", env)
+				return
+			}
+			if !strings.Contains(err.Error(), "RUNTIME_ENV") {
+				t.Errorf("error should mention RUNTIME_ENV, got: %v", err)
 			}
 		})
 	}

@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/sophia-ecosystem/runtime-adapters/internal/infrastructure/chaos"
 )
 
 // EnvSource abstracts env-var lookup for testability. os.LookupEnv is
@@ -65,6 +67,11 @@ func Load(src EnvSource) (Config, error) {
 		OTelExporterEndpoint:     lookupString(src, "OTEL_EXPORTER_OTLP_ENDPOINT", ""),
 		OTelTracesSampler:        lookupString(src, "OTEL_TRACES_SAMPLER", "parentbased_traceidratio"),
 		OTelTracesSamplerArg:     lookupFloat(src, "OTEL_TRACES_SAMPLER_ARG", 0.1),
+		Env:                      lookupRuntimeEnv(src),
+		Chaos: chaos.ChaosConfigEnv{
+			Enabled:     lookupBool(src, "RUNTIME_CHAOS_ENABLED", false),
+			ProfilePath: lookupString(src, "RUNTIME_CHAOS_PROFILE", ""),
+		},
 	}
 
 	if err := c.Validate(); err != nil {
@@ -132,4 +139,14 @@ func lookupList(src EnvSource, key, sep string, def []string) []string {
 		return def
 	}
 	return out
+}
+
+// lookupRuntimeEnv reads RUNTIME_ENV and returns the value as-is (defaulting
+// to "development" when unset). Enum validation is performed by Validate() so
+// that unknown values are rejected at startup per R10 with a clear error.
+func lookupRuntimeEnv(src EnvSource) string {
+	if v, ok := src.Lookup("RUNTIME_ENV"); ok && v != "" {
+		return v
+	}
+	return "development"
 }

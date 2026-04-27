@@ -267,6 +267,117 @@ func TestLoad_NilEnvSourceUsesOSEnv(t *testing.T) {
 	}
 }
 
+// --- RUNTIME_ENV tests ---
+
+// TestLoad_RuntimeEnv_Default verifies that RUNTIME_ENV defaults to "development".
+func TestLoad_RuntimeEnv_Default(t *testing.T) {
+	c, err := Load(minimalMap())
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if c.Env != "development" {
+		t.Errorf("Env: got %q, want %q", c.Env, "development")
+	}
+}
+
+// TestLoad_RuntimeEnv_ValidValues verifies all three allowed values are accepted.
+func TestLoad_RuntimeEnv_ValidValues(t *testing.T) {
+	for _, env := range []string{"development", "staging", "production"} {
+		t.Run(env, func(t *testing.T) {
+			m := minimalMap()
+			m["RUNTIME_ENV"] = env
+			c, err := Load(m)
+			if err != nil {
+				t.Fatalf("RUNTIME_ENV=%q should be valid, got error: %v", env, err)
+			}
+			if c.Env != env {
+				t.Errorf("Env: got %q, want %q", c.Env, env)
+			}
+		})
+	}
+}
+
+// TestLoad_RuntimeEnv_InvalidValue verifies that an unknown value is rejected
+// at parse time (R10) with an error mentioning RUNTIME_ENV.
+func TestLoad_RuntimeEnv_InvalidValue(t *testing.T) {
+	m := minimalMap()
+	m["RUNTIME_ENV"] = "qa"
+	_, err := Load(m)
+	if err == nil {
+		t.Fatal("expected error for RUNTIME_ENV=qa, got nil")
+	}
+	if !strings.Contains(err.Error(), "RUNTIME_ENV") {
+		t.Errorf("error should mention RUNTIME_ENV, got: %v", err)
+	}
+}
+
+// --- RUNTIME_CHAOS_ENABLED tests ---
+
+// TestLoad_ChaosEnabled_Default verifies that RUNTIME_CHAOS_ENABLED defaults to false.
+func TestLoad_ChaosEnabled_Default(t *testing.T) {
+	c, err := Load(minimalMap())
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if c.Chaos.Enabled {
+		t.Error("Chaos.Enabled: got true, want false (default)")
+	}
+}
+
+// TestLoad_ChaosEnabled_True verifies "true" is parsed as true.
+func TestLoad_ChaosEnabled_True(t *testing.T) {
+	m := minimalMap()
+	m["RUNTIME_CHAOS_ENABLED"] = "true"
+	c, err := Load(m)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if !c.Chaos.Enabled {
+		t.Error("Chaos.Enabled: got false, want true")
+	}
+}
+
+// TestLoad_ChaosEnabled_One verifies "1" is parsed as true via strconv.ParseBool.
+func TestLoad_ChaosEnabled_One(t *testing.T) {
+	m := minimalMap()
+	m["RUNTIME_CHAOS_ENABLED"] = "1"
+	c, err := Load(m)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if !c.Chaos.Enabled {
+		t.Error("Chaos.Enabled: got false, want true (strconv.ParseBool accepts '1')")
+	}
+}
+
+// --- RUNTIME_CHAOS_PROFILE tests ---
+
+// TestLoad_ChaosProfile_Default verifies that RUNTIME_CHAOS_PROFILE defaults to "".
+func TestLoad_ChaosProfile_Default(t *testing.T) {
+	c, err := Load(minimalMap())
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if c.Chaos.ProfilePath != "" {
+		t.Errorf("Chaos.ProfilePath: got %q, want %q (default empty)", c.Chaos.ProfilePath, "")
+	}
+}
+
+// TestLoad_ChaosProfile_LiteralPassThrough verifies that the profile path is
+// stored verbatim — path validation is intentionally deferred to LoadConfig.
+func TestLoad_ChaosProfile_LiteralPassThrough(t *testing.T) {
+	path := "ops/chaos/profiles/ci/my-profile.yaml"
+	m := minimalMap()
+	m["RUNTIME_CHAOS_PROFILE"] = path
+	c, err := Load(m)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if c.Chaos.ProfilePath != path {
+		t.Errorf("Chaos.ProfilePath: got %q, want %q", c.Chaos.ProfilePath, path)
+	}
+}
+
 // TestLookupList_Separators verifies that both ":" and "," separators work
 // correctly in lookupList.
 func TestLookupList_Separators(t *testing.T) {

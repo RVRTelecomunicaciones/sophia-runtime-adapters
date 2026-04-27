@@ -20,6 +20,9 @@
 //	RUNTIME_VERSION                    (default "0.1.0")
 //	RUNTIME_HOSTNAME                   (default from os.Hostname)
 //	RUNTIME_PROVENANCE_SOURCE          (default "http"; one of governance|sdk|http|cli|test)
+//	RUNTIME_ENV                        (default "development"; one of development|staging|production)
+//	RUNTIME_CHAOS_ENABLED              (default "false")
+//	RUNTIME_CHAOS_PROFILE              (default ""; not validated here — LoadConfig + LoadProfile own that)
 //
 //	OTEL_ENABLED                       (default "false")
 //	OTEL_SERVICE_NAME                  (default "runtime-adapters")
@@ -31,6 +34,8 @@ package config
 import (
 	"fmt"
 	"time"
+
+	"github.com/sophia-ecosystem/runtime-adapters/internal/infrastructure/chaos"
 )
 
 // Config bundles all runtime settings. Never construct directly —
@@ -72,6 +77,12 @@ type Config struct {
 	OTelExporterEndpoint string
 	OTelTracesSampler    string
 	OTelTracesSamplerArg float64
+
+	// Runtime environment; one of development|staging|production.
+	Env string
+
+	// Chaos injection (opt-in, disabled by default; R17 fail-closed).
+	Chaos chaos.ChaosConfigEnv
 }
 
 // Validate enforces domain rules on a constructed Config. Load() calls
@@ -126,12 +137,23 @@ func (c Config) Validate() error {
 	if c.OTelTracesSamplerArg < 0 || c.OTelTracesSamplerArg > 1 {
 		return fmt.Errorf("OTelTracesSamplerArg must be in [0,1], got %v", c.OTelTracesSamplerArg)
 	}
+	if !validRuntimeEnv(c.Env) {
+		return fmt.Errorf("RUNTIME_ENV %q invalid (must be one of development|staging|production)", c.Env)
+	}
 	return nil
 }
 
 func validProvenanceSource(s string) bool {
 	switch s {
 	case "governance", "sdk", "http", "cli", "test":
+		return true
+	}
+	return false
+}
+
+func validRuntimeEnv(s string) bool {
+	switch s {
+	case "development", "staging", "production":
 		return true
 	}
 	return false

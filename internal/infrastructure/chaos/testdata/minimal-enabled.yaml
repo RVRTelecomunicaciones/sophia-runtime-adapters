@@ -1,0 +1,13 @@
+version: 1
+name: minimal-enabled
+description: |
+  Minimal valid v1 profile used for loader unit tests.
+adapters:
+  shell.exec@v1:
+    fault: hang_until_cancel
+    timing: post_dispatch
+expected_outcome:
+  status: cancelled
+  error_class: Interrupted
+  retry_hint: non_retryable
+persistence: null
