@@ -10,6 +10,6 @@ adapters:
     timing: pre_dispatch
 expected_outcome:
   status: failure
-  error_class: AdapterInternalError
+  error_class: adapter_internal_error
   retry_hint: non_retryable
 persistence: null

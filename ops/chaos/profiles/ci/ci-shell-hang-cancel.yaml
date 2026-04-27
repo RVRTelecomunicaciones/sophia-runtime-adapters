@@ -1,14 +1,22 @@
 version: 1
 name: ci-shell-hang-cancel
 description: |
-  shell.exec@v1 hangs; caller cancels via context deadline.
-  Validates Interrupted ErrorClass + non_retryable RetryHint.
+  shell.exec@v1 hangs; caller cancels via context cancellation
+  (context.WithCancel + explicit cancel(), NOT WithTimeout).
+  ChaosAdapter.dispatchFault blocks on <-ctx.Done() and returns
+  ctx.Err() = context.Canceled. ExecuteService classifies the
+  cancellation as status=cancelled / error_class=cancelled /
+  retry_hint=non_retryable.
+
+  This profile demonstrates the cancellation path. The companion
+  timeout-via-deadline path is exercised by an explicit
+  context.WithTimeout test outside the chaos catalogue.
 adapters:
   shell.exec@v1:
     fault: hang_until_cancel
     timing: post_dispatch
 expected_outcome:
   status: cancelled
-  error_class: Interrupted
+  error_class: cancelled
   retry_hint: non_retryable
 persistence: null
