@@ -173,7 +173,7 @@ func TestHasParentTraversal_DirectCases(t *testing.T) {
 		{"../", true},
 		// already-cleaned paths — no leading ".."
 		{"foo/bar", false},
-		{"bar", false},       // result of Clean("foo/../bar")
+		{"bar", false}, // result of Clean("foo/../bar")
 		{".", false},
 		{"foo/baz/qux", false},
 	}
@@ -188,7 +188,7 @@ func TestHasParentTraversal_DirectCases(t *testing.T) {
 // TestInAllowlist_DirectCases tests inAllowlist directly with absolute paths.
 func TestInAllowlist_DirectCases(t *testing.T) {
 	// The testdata directory is an allowlist root; compute its absolute path.
-	absTestdata := testdataPath("")     // e.g. /repo/internal/infrastructure/chaos/testdata
+	absTestdata := testdataPath("") // e.g. /repo/internal/infrastructure/chaos/testdata
 	absTestdata = filepath.Clean(absTestdata)
 
 	nestedFile := filepath.Join(absTestdata, "minimal-enabled.yaml")

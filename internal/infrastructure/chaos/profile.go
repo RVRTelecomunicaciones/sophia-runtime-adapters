@@ -37,12 +37,12 @@ func (c *catalog) Has(canonical string) bool {
 // rawProfile mirrors the YAML schema v1 shape for unmarshalling. It is
 // converted to the package-public Profile after validation.
 type rawProfile struct {
-	Version     int                  `yaml:"version"`
-	Name        string               `yaml:"name"`
-	Description string               `yaml:"description"`
-	Adapters    map[string]rawFault  `yaml:"adapters"`
-	Persist     *rawPersistFault     `yaml:"persistence"`
-	Expected    *rawExpectedOutcome  `yaml:"expected_outcome"`
+	Version     int                 `yaml:"version"`
+	Name        string              `yaml:"name"`
+	Description string              `yaml:"description"`
+	Adapters    map[string]rawFault `yaml:"adapters"`
+	Persist     *rawPersistFault    `yaml:"persistence"`
+	Expected    *rawExpectedOutcome `yaml:"expected_outcome"`
 }
 
 type rawFault struct {

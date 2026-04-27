@@ -98,7 +98,7 @@ func (c *ChaosAdapter) dispatchFault(
 		// Defensive: this fault targets ChaosReceiptStore, not an adapter.
 		// ValidateProfileSupport (Task 1.4a) should reject this at startup.
 		return nil, fmt.Errorf(
-			"chaos: persist_failure dispatched to ChaosAdapter (should be ChaosReceiptStore); "+
+			"chaos: persist_failure dispatched to ChaosAdapter (should be ChaosReceiptStore); " +
 				"ValidateProfileSupport should reject this at startup",
 		)
 
