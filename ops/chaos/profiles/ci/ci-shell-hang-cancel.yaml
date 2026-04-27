@@ -1,0 +1,14 @@
+version: 1
+name: ci-shell-hang-cancel
+description: |
+  shell.exec@v1 hangs; caller cancels via context deadline.
+  Validates Interrupted ErrorClass + non_retryable RetryHint.
+adapters:
+  shell.exec@v1:
+    fault: hang_until_cancel
+    timing: post_dispatch
+expected_outcome:
+  status: cancelled
+  error_class: Interrupted
+  retry_hint: non_retryable
+persistence: null

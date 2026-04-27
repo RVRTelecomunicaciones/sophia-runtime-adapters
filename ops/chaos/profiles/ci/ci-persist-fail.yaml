@@ -1,0 +1,21 @@
+version: 1
+name: ci-persist-fail
+description: |
+  ChaosReceiptStore returns ErrChaosPersistFailure on every Persist.
+  The adapter call itself succeeds; the failure is at the persist
+  boundary. Validates A4.3 persistence-before-return: caller
+  receives 5xx, no receipt visible in the DB,
+  runtime_adapters.receipt.persist.failures counter increments.
+
+  expected_outcome metadata mirrors the success path of the underlying
+  capability (filesystem.read_file@v1) since the adapter does not
+  fault — the integration test for this profile asserts on the
+  persist-side contract (5xx + counter) instead of receipt
+  classification.
+adapters: {}
+persistence:
+  fault: persist_failure
+expected_outcome:
+  status: success
+  error_class: ""
+  retry_hint: unknown

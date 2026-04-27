@@ -1,0 +1,14 @@
+version: 1
+name: ci-git-remote-unreachable
+description: |
+  git.clone@v1 attempts a remote that is unreachable.
+  Validates ExternalFailure ErrorClass + retryable RetryHint.
+adapters:
+  git.clone@v1:
+    fault: remote_unreachable
+    timing: pre_dispatch
+expected_outcome:
+  status: failure
+  error_class: ExternalFailure
+  retry_hint: retryable
+persistence: null
