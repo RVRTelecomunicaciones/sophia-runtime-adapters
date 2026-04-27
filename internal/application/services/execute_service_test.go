@@ -1559,3 +1559,468 @@ func TestExecuteService_ConcurrencyRejectCountsMetric(t *testing.T) {
 	_, execErr := svc.Execute(context.Background(), req)
 	require.ErrorIs(t, execErr, services.ErrTooManyExecutions)
 }
+
+// ---------------------------------------------------------------------------
+// B9 — Bundle 9: complete panic recovery contract (4 sites + instrumentation)
+//
+// Each test below targets one of the four panic-recovery sites added by B9.
+// The "adapter_execute" site (SafeExecute) already had recovery; B9 adds the
+// adapter.panics counter wire + panic_location log field.
+// ---------------------------------------------------------------------------
+
+// panickingNormalizer returns a *domainservices.ResultNormalizer that panics
+// when Normalize is called. Registered under cap.Canonical().
+func makePanickingNormalizerService(
+	t *testing.T,
+	aid valueobjects.AdapterID,
+	cap valueobjects.Capability,
+	registry *valueobjects.CapabilityRegistry,
+) (*services.ExecuteService, *testDeps) {
+	t.Helper()
+	clk := &shared.FakeClock{T: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
+	normalizer := domainservices.NewResultNormalizer(4096)
+	require.NoError(t, normalizer.Register(cap.Canonical(), func(_ valueobjects.Capability, _ domainservices.AdapterRawOutcome, _ shared.Clock) (entities.ExecutionResult, error) {
+		panic("simulated normalizer panic")
+	}))
+	stub := testdoubles.NewStubAdapter(aid, cap)
+	stub.Program(cap.Canonical(), testdoubles.StubProgram{Raw: &successRaw{dur: 1 * time.Millisecond}})
+	repo := testdoubles.NewInMemoryReceiptRepository(clk)
+	idemp := testdoubles.NewInMemoryIdempotencyStore(clk)
+	prov, _ := entities.NewProvenance(entities.ProvTest, "v0.0.1", "test-host", "runtime-v0.0.1", "")
+	idGen := &entities.FakeIDGen{IDs: []string{ulid01, ulid02, ulid03, ulid04, ulid05}}
+
+	svc, err := services.NewExecuteService(services.ExecuteServiceConfig{
+		Adapters:    map[string]outbound.Adapter{"shell": stub},
+		Registry:    registry,
+		Normalizer:  normalizer,
+		Receipts:    repo,
+		Idempotency: idemp,
+		Limiter:     services.NewConcurrencyLimiter(10),
+		Clock:       clk,
+		IDGen:       idGen,
+		MaxTimeout:  30 * time.Second,
+		IdempWindow: 24 * time.Hour,
+		Provenance:  prov,
+	})
+	require.NoError(t, err)
+
+	deps := &testDeps{
+		adapter:    stub,
+		repo:       repo,
+		idemp:      idemp,
+		limiter:    services.NewConcurrencyLimiter(10),
+		clock:      clk,
+		normalizer: normalizer,
+		registry:   registry,
+		idGen:      idGen,
+		cap:        cap,
+		adapterID:  aid,
+		provenance: prov,
+	}
+	return svc, deps
+}
+
+// TestExecuteService_NormalizerPanic_RecoversAsNormalizationFailureReceipt
+// verifies that a panic inside the registered normalizer function is recovered,
+// the execution still produces a persisted receipt with status=failure /
+// error_class=normalization_failure / retry_hint=non_retryable, and the
+// panic_location=normalizer field is logged at ERROR level.
+func TestExecuteService_NormalizerPanic_RecoversAsNormalizationFailureReceipt(t *testing.T) {
+	aid, _ := valueobjects.NewAdapterID("shell")
+	cap, _ := valueobjects.NewCapability(aid, "exec", "v1", false, 5*time.Second)
+	registry, _ := valueobjects.NewCapabilityRegistry(cap)
+
+	svc, deps := makePanickingNormalizerService(t, aid, cap, registry)
+
+	var mu sync.Mutex
+	records := make([]slog.Record, 0)
+	h := &collectingHandler{mu: &mu, records: &records}
+	rootLogger := logpkg.NewWithHandler(h)
+	ctx := logpkg.ContextWith(context.Background(), rootLogger)
+
+	cid, _ := shared.NewCorrelationID(ulid13)
+	pl, _ := valueobjects.NewPayload(valueobjects.ContentTypeJSON, []byte(`{}`), 0)
+	tb, _ := valueobjects.NewTimeoutBudget(5000, 0)
+	req, _ := entities.NewExecutionRequest(entities.ExecutionRequestInput{
+		CorrelationID: cid, AdapterID: aid,
+		CapabilityName: "exec", CapabilityVersion: "v1",
+		Payload: pl, TimeoutBudget: tb,
+	}, deps.clock)
+
+	receipt, execErr := svc.Execute(ctx, req)
+	require.NoError(t, execErr, "normalizer panic must not propagate to caller")
+	require.Equal(t, valueobjects.StatusFailure, receipt.Result().Status)
+	require.Equal(t, valueobjects.ErrNormalizationFailure, receipt.Result().ErrorClass)
+	require.Equal(t, valueobjects.HintNonRetryable, receipt.Result().Retryable)
+	require.Equal(t, 1, deps.repo.Count(), "receipt must be persisted despite normalizer panic")
+	require.Contains(t, receipt.Result().ErrorMessage, "normalizer panic")
+
+	mu.Lock()
+	defer mu.Unlock()
+	var found bool
+	for _, r := range records {
+		if r.Level != slog.LevelError {
+			continue
+		}
+		attrs := collectAttrs(r)
+		if loc, ok := attrs["panic_location"]; ok && loc == "normalizer" {
+			found = true
+			break
+		}
+	}
+	require.True(t, found, "ERROR log with panic_location=normalizer must be emitted")
+}
+
+// panicingRepo is a ReceiptRepository whose Save panics (not just returns error).
+type panicingRepo struct{}
+
+func (r *panicingRepo) Save(_ context.Context, _ entities.ExecutionReceipt) (entities.ExecutionReceipt, error) {
+	panic("simulated persist panic")
+}
+
+func (r *panicingRepo) FindByID(_ context.Context, _ shared.ReceiptID) (entities.ExecutionReceipt, error) {
+	return entities.ExecutionReceipt{}, outbound.ErrReceiptNotFound
+}
+
+var _ outbound.ReceiptRepository = (*panicingRepo)(nil)
+
+// TestExecuteService_PersistPanic_NoFakeReceiptCallerGetsError verifies that a
+// panic inside receipts.Save does NOT fake persistence (A4.3). The caller
+// receives the persistence-failure error shape and NO receipt ID. The
+// receipt.persist.failures counter is incremented and panic_location=persist
+// is logged at ERROR.
+func TestExecuteService_PersistPanic_NoFakeReceiptCallerGetsError(t *testing.T) {
+	clk := &shared.FakeClock{T: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
+	aid, _ := valueobjects.NewAdapterID("shell")
+	cap, _ := valueobjects.NewCapability(aid, "exec", "v1", false, 5*time.Second)
+	registry, _ := valueobjects.NewCapabilityRegistry(cap)
+	normalizer := domainservices.NewResultNormalizer(4096)
+	require.NoError(t, normalizer.Register(cap.Canonical(), func(_ valueobjects.Capability, raw domainservices.AdapterRawOutcome, clk shared.Clock) (entities.ExecutionResult, error) {
+		return entities.NewExecutionResult(
+			valueobjects.StatusSuccess, valueobjects.HintRetryable,
+			"", "", nil, nil, nil, nil, nil, 0, 0, 0, clk.Now(),
+		)
+	}))
+	stub := testdoubles.NewStubAdapter(aid, cap)
+	stub.Program(cap.Canonical(), testdoubles.StubProgram{Raw: &successRaw{}})
+	idemp := testdoubles.NewInMemoryIdempotencyStore(clk)
+	prov, _ := entities.NewProvenance(entities.ProvTest, "v0.0.1", "test-host", "runtime-v0.0.1", "")
+	idGen := &entities.FakeIDGen{IDs: []string{ulid01, ulid02, ulid03, ulid04, ulid05}}
+
+	meter := otel.Meter("test.b9.persist.panic")
+	reg, err := obs.NewRegistry(meter)
+	require.NoError(t, err)
+
+	svc, err := services.NewExecuteService(services.ExecuteServiceConfig{
+		Adapters:    map[string]outbound.Adapter{"shell": stub},
+		Registry:    registry,
+		Metrics:     reg,
+		Normalizer:  normalizer,
+		Receipts:    &panicingRepo{},
+		Idempotency: idemp,
+		Limiter:     services.NewConcurrencyLimiter(10),
+		Clock:       clk,
+		IDGen:       idGen,
+		MaxTimeout:  30 * time.Second,
+		IdempWindow: 24 * time.Hour,
+		Provenance:  prov,
+	})
+	require.NoError(t, err)
+
+	var mu sync.Mutex
+	records := make([]slog.Record, 0)
+	h := &collectingHandler{mu: &mu, records: &records}
+	rootLogger := logpkg.NewWithHandler(h)
+	ctx := logpkg.ContextWith(context.Background(), rootLogger)
+
+	cid, _ := shared.NewCorrelationID(ulid13)
+	pl, _ := valueobjects.NewPayload(valueobjects.ContentTypeJSON, []byte(`{}`), 0)
+	tb, _ := valueobjects.NewTimeoutBudget(5000, 0)
+	req, _ := entities.NewExecutionRequest(entities.ExecutionRequestInput{
+		CorrelationID: cid, AdapterID: aid,
+		CapabilityName: "exec", CapabilityVersion: "v1",
+		Payload: pl, TimeoutBudget: tb,
+	}, clk)
+
+	receipt, execErr := svc.Execute(ctx, req)
+	require.Error(t, execErr, "persist panic must surface as error to caller")
+	require.Contains(t, execErr.Error(), "persistence failed; side effect may have occurred")
+	require.Empty(t, receipt.ReceiptID().String(), "no receipt id when persist panics")
+
+	mu.Lock()
+	defer mu.Unlock()
+	var found bool
+	for _, r := range records {
+		if r.Level != slog.LevelError {
+			continue
+		}
+		attrs := collectAttrs(r)
+		if loc, ok := attrs["panic_location"]; ok && loc == "persist" {
+			found = true
+			break
+		}
+	}
+	require.True(t, found, "ERROR log with panic_location=persist must be emitted")
+}
+
+// panicingIdempotencyStore panics on Lookup but works normally on Record.
+type panicingIdempotencyLookupStore struct{}
+
+func (s *panicingIdempotencyLookupStore) Lookup(_ context.Context, _ shared.IdempotencyKey) (shared.ReceiptID, bool, error) {
+	panic("simulated idempotency lookup panic")
+}
+
+func (s *panicingIdempotencyLookupStore) Record(_ context.Context, _ shared.IdempotencyKey, _ shared.ReceiptID, _ time.Duration) error {
+	return nil
+}
+
+var _ outbound.IdempotencyStore = (*panicingIdempotencyLookupStore)(nil)
+
+// TestExecuteService_IdempotencyLookupPanic_RecoversAsAdapterInternalError
+// verifies that a panic during idempotency.Lookup produces a structural
+// failure receipt with error_class=adapter_internal_error and is logged
+// with panic_location=idempotency_replay. The caller receives the receipt
+// (not a Go error) because persistStructural succeeds.
+func TestExecuteService_IdempotencyLookupPanic_RecoversAsAdapterInternalError(t *testing.T) {
+	clk := &shared.FakeClock{T: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
+	aid, _ := valueobjects.NewAdapterID("shell")
+	cap, _ := valueobjects.NewCapability(aid, "exec", "v1", false, 5*time.Second)
+	registry, _ := valueobjects.NewCapabilityRegistry(cap)
+	normalizer := domainservices.NewResultNormalizer(4096)
+	require.NoError(t, normalizer.Register(cap.Canonical(), func(_ valueobjects.Capability, _ domainservices.AdapterRawOutcome, _ shared.Clock) (entities.ExecutionResult, error) {
+		return entities.ExecutionResult{}, nil
+	}))
+	stub := testdoubles.NewStubAdapter(aid, cap)
+	repo := testdoubles.NewInMemoryReceiptRepository(clk)
+	prov, _ := entities.NewProvenance(entities.ProvTest, "v0.0.1", "test-host", "runtime-v0.0.1", "")
+	idGen := &entities.FakeIDGen{IDs: []string{ulid01, ulid02, ulid03, ulid04, ulid05}}
+
+	svc, err := services.NewExecuteService(services.ExecuteServiceConfig{
+		Adapters:    map[string]outbound.Adapter{"shell": stub},
+		Registry:    registry,
+		Normalizer:  normalizer,
+		Receipts:    repo,
+		Idempotency: &panicingIdempotencyLookupStore{},
+		Limiter:     services.NewConcurrencyLimiter(10),
+		Clock:       clk,
+		IDGen:       idGen,
+		MaxTimeout:  30 * time.Second,
+		IdempWindow: 24 * time.Hour,
+		Provenance:  prov,
+	})
+	require.NoError(t, err)
+
+	var mu sync.Mutex
+	records := make([]slog.Record, 0)
+	h := &collectingHandler{mu: &mu, records: &records}
+	rootLogger := logpkg.NewWithHandler(h)
+	ctx := logpkg.ContextWith(context.Background(), rootLogger)
+
+	cid, _ := shared.NewCorrelationID(ulid13)
+	pl, _ := valueobjects.NewPayload(valueobjects.ContentTypeJSON, []byte(`{}`), 0)
+	tb, _ := valueobjects.NewTimeoutBudget(5000, 0)
+	req, _ := entities.NewExecutionRequest(entities.ExecutionRequestInput{
+		CorrelationID: cid, AdapterID: aid,
+		CapabilityName:    "exec",
+		CapabilityVersion: "v1",
+		Payload:           pl,
+		TimeoutBudget:     tb,
+		// Supply an idempotency key so the Lookup path is exercised.
+		IdempotencyKey: func() *shared.IdempotencyKey {
+			ik, _ := shared.NewIdempotencyKey(ulid12)
+			return &ik
+		}(),
+	}, clk)
+
+	receipt, execErr := svc.Execute(ctx, req)
+	require.NoError(t, execErr, "idempotency lookup panic must not propagate as Go error")
+	require.Equal(t, valueobjects.StatusFailure, receipt.Result().Status)
+	require.Equal(t, valueobjects.ErrAdapterInternalError, receipt.Result().ErrorClass)
+	require.Equal(t, 1, repo.Count(), "structural failure receipt must be persisted")
+
+	mu.Lock()
+	defer mu.Unlock()
+	var found bool
+	for _, r := range records {
+		if r.Level != slog.LevelError {
+			continue
+		}
+		attrs := collectAttrs(r)
+		if loc, ok := attrs["panic_location"]; ok && loc == "idempotency_replay" {
+			found = true
+			break
+		}
+	}
+	require.True(t, found, "ERROR log with panic_location=idempotency_replay must be emitted")
+}
+
+// panicingIdempotencyRecordStore panics on Record but works normally on Lookup.
+type panicingIdempotencyRecordStore struct{}
+
+func (s *panicingIdempotencyRecordStore) Lookup(_ context.Context, _ shared.IdempotencyKey) (shared.ReceiptID, bool, error) {
+	return shared.ReceiptID{}, false, nil
+}
+
+func (s *panicingIdempotencyRecordStore) Record(_ context.Context, _ shared.IdempotencyKey, _ shared.ReceiptID, _ time.Duration) error {
+	panic("simulated idempotency record panic")
+}
+
+var _ outbound.IdempotencyStore = (*panicingIdempotencyRecordStore)(nil)
+
+// TestExecuteService_IdempotencyRecordPanic_DoesNotFailRequest verifies that a
+// panic during idempotency.Record is swallowed (best-effort) — the request
+// still returns the persisted receipt to the caller. The panic is logged at
+// ERROR with panic_location=idempotency_record.
+func TestExecuteService_IdempotencyRecordPanic_DoesNotFailRequest(t *testing.T) {
+	clk := &shared.FakeClock{T: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
+	aid, _ := valueobjects.NewAdapterID("shell")
+	cap, _ := valueobjects.NewCapability(aid, "exec", "v1", false, 5*time.Second)
+	registry, _ := valueobjects.NewCapabilityRegistry(cap)
+	normalizer := domainservices.NewResultNormalizer(4096)
+	require.NoError(t, normalizer.Register(cap.Canonical(), func(_ valueobjects.Capability, raw domainservices.AdapterRawOutcome, clk shared.Clock) (entities.ExecutionResult, error) {
+		return entities.NewExecutionResult(
+			valueobjects.StatusSuccess, valueobjects.HintRetryable,
+			"", "", nil, nil, nil, nil, nil, 0, 0, 0, clk.Now(),
+		)
+	}))
+	stub := testdoubles.NewStubAdapter(aid, cap)
+	stub.Program(cap.Canonical(), testdoubles.StubProgram{Raw: &successRaw{}})
+	repo := testdoubles.NewInMemoryReceiptRepository(clk)
+	prov, _ := entities.NewProvenance(entities.ProvTest, "v0.0.1", "test-host", "runtime-v0.0.1", "")
+	idGen := &entities.FakeIDGen{IDs: []string{ulid01, ulid02, ulid03, ulid04, ulid05}}
+
+	svc, err := services.NewExecuteService(services.ExecuteServiceConfig{
+		Adapters:    map[string]outbound.Adapter{"shell": stub},
+		Registry:    registry,
+		Normalizer:  normalizer,
+		Receipts:    repo,
+		Idempotency: &panicingIdempotencyRecordStore{},
+		Limiter:     services.NewConcurrencyLimiter(10),
+		Clock:       clk,
+		IDGen:       idGen,
+		MaxTimeout:  30 * time.Second,
+		IdempWindow: 24 * time.Hour,
+		Provenance:  prov,
+	})
+	require.NoError(t, err)
+
+	var mu sync.Mutex
+	records := make([]slog.Record, 0)
+	h := &collectingHandler{mu: &mu, records: &records}
+	rootLogger := logpkg.NewWithHandler(h)
+	ctx := logpkg.ContextWith(context.Background(), rootLogger)
+
+	cid, _ := shared.NewCorrelationID(ulid13)
+	pl, _ := valueobjects.NewPayload(valueobjects.ContentTypeJSON, []byte(`{}`), 0)
+	tb, _ := valueobjects.NewTimeoutBudget(5000, 0)
+	req, _ := entities.NewExecutionRequest(entities.ExecutionRequestInput{
+		CorrelationID: cid, AdapterID: aid,
+		CapabilityName:    "exec",
+		CapabilityVersion: "v1",
+		Payload:           pl,
+		TimeoutBudget:     tb,
+		// Supply an idempotency key so the Record path is exercised.
+		IdempotencyKey: func() *shared.IdempotencyKey {
+			ik, _ := shared.NewIdempotencyKey(ulid12)
+			return &ik
+		}(),
+	}, clk)
+
+	receipt, execErr := svc.Execute(ctx, req)
+	require.NoError(t, execErr, "idempotency record panic must not propagate to caller")
+	require.Equal(t, valueobjects.StatusSuccess, receipt.Result().Status)
+	require.NotEmpty(t, receipt.ReceiptID().String(), "receipt must be returned despite record panic")
+	require.Equal(t, 1, repo.Count(), "receipt must be persisted")
+
+	mu.Lock()
+	defer mu.Unlock()
+	var found bool
+	for _, r := range records {
+		if r.Level != slog.LevelError {
+			continue
+		}
+		attrs := collectAttrs(r)
+		if loc, ok := attrs["panic_location"]; ok && loc == "idempotency_record" {
+			found = true
+			break
+		}
+	}
+	require.True(t, found, "ERROR log with panic_location=idempotency_record must be emitted")
+}
+
+// TestExecuteService_AdapterPanic_IncrementsAdapterPanicsCounter verifies that
+// the adapter.panics counter (obs.Registry.AdapterPanics) is wired at the
+// adapter-execute site and the panic_location=adapter_execute field is logged
+// at ERROR level. The counter itself is a no-op meter instrument in unit tests;
+// the B4 Task 4.1 integration test asserts the observable increment.
+func TestExecuteService_AdapterPanic_IncrementsAdapterPanicsCounter(t *testing.T) {
+	clk := &shared.FakeClock{T: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
+	aid, _ := valueobjects.NewAdapterID("shell")
+	cap, _ := valueobjects.NewCapability(aid, "exec", "v1", false, 5*time.Second)
+	registry, _ := valueobjects.NewCapabilityRegistry(cap)
+	normalizer := domainservices.NewResultNormalizer(4096)
+	require.NoError(t, normalizer.Register(cap.Canonical(), func(_ valueobjects.Capability, _ domainservices.AdapterRawOutcome, _ shared.Clock) (entities.ExecutionResult, error) {
+		return entities.ExecutionResult{}, nil
+	}))
+	repo := testdoubles.NewInMemoryReceiptRepository(clk)
+	idemp := testdoubles.NewInMemoryIdempotencyStore(clk)
+	prov, _ := entities.NewProvenance(entities.ProvTest, "v0.0.1", "test-host", "runtime-v0.0.1", "")
+	idGen := &entities.FakeIDGen{IDs: []string{ulid01, ulid02, ulid03, ulid04, ulid05}}
+
+	meter := otel.Meter("test.b9.adapter.panics")
+	reg, err := obs.NewRegistry(meter)
+	require.NoError(t, err)
+
+	svc, err := services.NewExecuteService(services.ExecuteServiceConfig{
+		Adapters:    map[string]outbound.Adapter{"shell": &panicAdapterStub{id: aid, caps: []valueobjects.Capability{cap}}},
+		Registry:    registry,
+		Metrics:     reg,
+		Normalizer:  normalizer,
+		Receipts:    repo,
+		Idempotency: idemp,
+		Limiter:     services.NewConcurrencyLimiter(10),
+		Clock:       clk,
+		IDGen:       idGen,
+		MaxTimeout:  30 * time.Second,
+		IdempWindow: 24 * time.Hour,
+		Provenance:  prov,
+	})
+	require.NoError(t, err)
+
+	var mu sync.Mutex
+	records := make([]slog.Record, 0)
+	h := &collectingHandler{mu: &mu, records: &records}
+	rootLogger := logpkg.NewWithHandler(h)
+	ctx := logpkg.ContextWith(context.Background(), rootLogger)
+
+	cid, _ := shared.NewCorrelationID(ulid13)
+	pl, _ := valueobjects.NewPayload(valueobjects.ContentTypeJSON, []byte(`{}`), 0)
+	tb, _ := valueobjects.NewTimeoutBudget(5000, 0)
+	req, _ := entities.NewExecutionRequest(entities.ExecutionRequestInput{
+		CorrelationID: cid, AdapterID: aid,
+		CapabilityName: "exec", CapabilityVersion: "v1",
+		Payload: pl, TimeoutBudget: tb,
+	}, clk)
+
+	receipt, execErr := svc.Execute(ctx, req)
+	require.NoError(t, execErr, "adapter panic must not propagate to caller")
+	require.Equal(t, valueobjects.StatusFailure, receipt.Result().Status)
+	require.Equal(t, valueobjects.ErrAdapterInternalError, receipt.Result().ErrorClass)
+	// The counter increment is exercised here (no-op meter — observable value
+	// assertions live in B4 Task 4.1's OTel ManualReader integration test).
+
+	mu.Lock()
+	defer mu.Unlock()
+	var found bool
+	for _, r := range records {
+		if r.Level != slog.LevelError {
+			continue
+		}
+		attrs := collectAttrs(r)
+		if loc, ok := attrs["panic_location"]; ok && loc == "adapter_execute" {
+			found = true
+			break
+		}
+	}
+	require.True(t, found, "ERROR log with panic_location=adapter_execute must be emitted")
+}
