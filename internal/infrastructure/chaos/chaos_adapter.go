@@ -24,10 +24,16 @@ type ChaosAdapter struct {
 	clock   shared.Clock
 }
 
-// NewChaosAdapter constructs the decorator. real and profile must be non-nil;
-// clock is required for fault kinds that need deterministic timing (latency,
+// NewChaosAdapter constructs the decorator. real must be non-nil and is
+// enforced via panic — a nil wrapped adapter is a programming error
+// (chaos wiring must always hand off a real adapter, never an unbound one).
+// profile may be nil; Profile methods nil-guard the receiver. clock is
+// required for fault kinds that need deterministic timing (latency,
 // hang_until_cancel) once Task 1.4 lands.
 func NewChaosAdapter(real outbound.Adapter, profile *Profile, clk shared.Clock) *ChaosAdapter {
+	if real == nil {
+		panic("chaos.NewChaosAdapter: real adapter must not be nil")
+	}
 	return &ChaosAdapter{real: real, profile: profile, clock: clk}
 }
 
