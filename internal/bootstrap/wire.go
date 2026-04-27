@@ -30,6 +30,7 @@ import (
 	domainservices "github.com/sophia-ecosystem/runtime-adapters/internal/domain/execution/services"
 	"github.com/sophia-ecosystem/runtime-adapters/internal/domain/execution/valueobjects"
 	"github.com/sophia-ecosystem/runtime-adapters/internal/domain/shared"
+	"github.com/sophia-ecosystem/runtime-adapters/internal/infrastructure/chaos"
 	"github.com/sophia-ecosystem/runtime-adapters/internal/infrastructure/config"
 	"github.com/sophia-ecosystem/runtime-adapters/internal/infrastructure/obs"
 	"github.com/sophia-ecosystem/runtime-adapters/internal/infrastructure/obs/log"
@@ -83,7 +84,10 @@ func BuildRuntime(ctx context.Context, cfg config.Config) (*Runtime, error) {
 
 	// 4. Outbound repos (T48 / T49).
 	// NewReceiptRepositoryPG and NewIdempotencyStorePG only take a pool.
-	receiptRepo, err := pg.NewReceiptRepositoryPG(pool)
+	// receiptRepo is declared as the interface so the chaos wrap (step 6.5)
+	// can reassign it to a ChaosReceiptRepository without a type mismatch.
+	var receiptRepo outbound.ReceiptRepository
+	receiptRepo, err = pg.NewReceiptRepositoryPG(pool)
 	if err != nil {
 		pool.Close()
 		_ = otelShutdown(ctx)
@@ -136,6 +140,27 @@ func BuildRuntime(ctx context.Context, cfg config.Config) (*Runtime, error) {
 		_ = otelShutdown(ctx)
 		return nil, fmt.Errorf("verify catalog: %w", err)
 	}
+
+	// 6.5. Chaos integration (Phase 2C.3 B1 Task 1.10).
+	// chaos.LoadConfig is fail-closed (R17): disabled by default, rejects
+	// production, requires a profile path when enabled, validates against
+	// the Phase 1 catalog. MaybeWrapAdaptersWithChaos returns inputs
+	// unchanged when chaos is disabled — zero behavior change to the
+	// non-chaos production path.
+	chaosCat := chaos.NewCatalogFromCapabilities(caps)
+	chaosCfg, err := chaos.LoadConfig(cfg.Chaos, cfg.Env, chaosCat)
+	if err != nil {
+		pool.Close()
+		_ = otelShutdown(ctx)
+		return nil, fmt.Errorf("chaos config: %w", err)
+	}
+	adapters, wrappedReceiptRepo, err := chaos.MaybeWrapAdaptersWithChaos(adapters, receiptRepo, chaosCfg, clk)
+	if err != nil {
+		pool.Close()
+		_ = otelShutdown(ctx)
+		return nil, fmt.Errorf("chaos wrap: %w", err)
+	}
+	receiptRepo = wrappedReceiptRepo
 
 	// 7. Concurrency limiter + provenance baseline.
 	limiter := services.NewConcurrencyLimiter(cfg.MaxConcurrentExecutions)
