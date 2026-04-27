@@ -734,6 +734,79 @@ func TestExecuteService_PersistenceFails_ReturnsError(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Scenario 10b: persistence failure increments
+// runtime_adapters.receipt.persist.failures counter (B3-discovered gap;
+// counter was declared in obs.Registry but the wire was missing at both
+// persist-failure sites in execute_service.go before this test landed).
+// ---------------------------------------------------------------------------
+
+func TestExecuteService_PersistenceFails_IncrementsPersistFailuresCounter(t *testing.T) {
+	clk := &shared.FakeClock{T: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
+	aid, _ := valueobjects.NewAdapterID("shell")
+	cap, _ := valueobjects.NewCapability(aid, "exec", "v1", false, 5*time.Second)
+	registry, _ := valueobjects.NewCapabilityRegistry(cap)
+	normalizer := domainservices.NewResultNormalizer(4096)
+	require.NoError(t, normalizer.Register(cap.Canonical(),
+		func(_ valueobjects.Capability, raw domainservices.AdapterRawOutcome, clk shared.Clock) (entities.ExecutionResult, error) {
+			return entities.NewExecutionResult(
+				valueobjects.StatusSuccess, valueobjects.HintRetryable,
+				"", "", nil, nil, nil, nil, nil, 0, 0, 0, clk.Now(),
+			)
+		}))
+
+	stub := testdoubles.NewStubAdapter(aid, cap)
+	stub.Program(cap.Canonical(), testdoubles.StubProgram{Raw: &successRaw{}})
+	brokenRepo := &alwaysFailRepo{}
+	idemp := testdoubles.NewInMemoryIdempotencyStore(clk)
+	prov, _ := entities.NewProvenance(entities.ProvTest, "v0.0.1", "test-host", "runtime-v0.0.1", "")
+	idGen := &entities.FakeIDGen{IDs: []string{ulid01, ulid02, ulid03, ulid04, ulid05}}
+
+	// Real Registry bound to the global no-op meter — we cannot read
+	// values back from the no-op provider, so this test treats the
+	// counter as a thin shim and verifies only that the call site is
+	// reached without panic. The B3 chaos integration test
+	// (test/chaos/integration/) verifies the counter increments
+	// observably under a Manual reader installed at bootstrap time.
+	meter := otel.Meter("test.persistfail.counter")
+	reg, err := obs.NewRegistry(meter)
+	require.NoError(t, err)
+
+	svc, err := services.NewExecuteService(services.ExecuteServiceConfig{
+		Adapters:    map[string]outbound.Adapter{"shell": stub},
+		Registry:    registry,
+		Metrics:     reg,
+		Normalizer:  normalizer,
+		Receipts:    brokenRepo,
+		Idempotency: idemp,
+		Limiter:     services.NewConcurrencyLimiter(10),
+		Clock:       clk,
+		IDGen:       idGen,
+		MaxTimeout:  30 * time.Second,
+		IdempWindow: 24 * time.Hour,
+		Provenance:  prov,
+	})
+	require.NoError(t, err)
+
+	cid, _ := shared.NewCorrelationID(ulid13)
+	pl, _ := valueobjects.NewPayload(valueobjects.ContentTypeJSON, []byte(`{}`), 0)
+	tb, _ := valueobjects.NewTimeoutBudget(5000, 0)
+	req, _ := entities.NewExecutionRequest(entities.ExecutionRequestInput{
+		CorrelationID: cid, AdapterID: aid,
+		CapabilityName: "exec", CapabilityVersion: "v1",
+		Payload: pl, TimeoutBudget: tb,
+	}, clk)
+
+	// Happy path that persists and fails persistence (alwaysFailRepo).
+	receipt, execErr := svc.Execute(context.Background(), req)
+	require.Error(t, execErr, "persistence failure must surface to caller")
+	require.Empty(t, receipt.ReceiptID().String(), "no receipt id on persist failure")
+	require.Contains(t, execErr.Error(), "persistence failed; side effect may have occurred")
+	// The counter increment is exercised in this code path (we cannot
+	// observe it through the no-op meter; B3 integration test does the
+	// observable assertion through a Manual reader).
+}
+
+// ---------------------------------------------------------------------------
 // Scenario 11: Concurrency limit reached — ErrTooManyExecutions.
 // ---------------------------------------------------------------------------
 

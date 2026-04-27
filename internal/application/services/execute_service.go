@@ -295,6 +295,16 @@ func (s *ExecuteService) Execute(ctx context.Context, req entities.ExecutionRequ
 		// the side effect and the receipt is unrecoverable. The enriched
 		// logger on ctx already carries correlation_id / capability /
 		// adapter / handle_id from steps 0/3/5.
+		//
+		// runtime_adapters.receipt.persist.failures (§6.3 instrument 6 /
+		// A4.3 instrumentation): incremented on every persist failure
+		// regardless of which path (happy path here; persistStructural
+		// path symmetrically below). The metric is the operational
+		// signal a persist outage is occurring; the log is the
+		// incident-level enrichment.
+		if s.metrics != nil {
+			s.metrics.ReceiptPersistFails.Add(persistCtx, 1)
+		}
 		obslog.FromContext(ctx).Error(ctx, "persist receipt",
 			slog.String("error", perr.Error()),
 		)
@@ -397,6 +407,14 @@ func (s *ExecuteService) persistStructural(
 		// enriched the logger with correlation_id before entering
 		// persistStructural; capability / adapter / handle_id may or may
 		// not be bound depending on which step failed upstream.
+		//
+		// runtime_adapters.receipt.persist.failures: same instrumentation
+		// as the happy path; persist failures from the structural path
+		// are operationally indistinguishable from happy-path persist
+		// failures and must contribute to the same counter.
+		if s.metrics != nil {
+			s.metrics.ReceiptPersistFails.Add(ctx, 1)
+		}
 		obslog.FromContext(ctx).Error(ctx, "persist receipt",
 			slog.String("error", err.Error()),
 		)
