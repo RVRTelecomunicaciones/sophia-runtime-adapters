@@ -292,6 +292,7 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true            # NEVER fails the overall CI run
     permissions:
+      contents: read                    # required by actions/checkout@v4 (GHA reduces unlisted permissions to none when permissions: is set explicitly)
       pull-requests: write              # to post PR comment
     steps:
       - uses: actions/checkout@v4
