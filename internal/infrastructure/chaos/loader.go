@@ -83,11 +83,9 @@ func LoadProfile(path string, cat Catalog) (*Profile, error) {
 	if !inAllowlist(resolved) {
 		return nil, fmt.Errorf("chaos: profile path %q escapes allowlist via symlink", abs)
 	}
-	profile, err := parseProfile(resolved, cat)
-	if err != nil {
-		return nil, fmt.Errorf("chaos: %w", err)
-	}
-	return profile, nil
+	// parseProfile already prefixes its errors with "chaos:"; do not
+	// double-wrap.
+	return parseProfile(resolved, cat)
 }
 
 // hasParentTraversal reports whether p contains a ".." path component

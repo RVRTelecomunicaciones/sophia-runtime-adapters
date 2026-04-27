@@ -73,6 +73,11 @@ func parseProfile(path string, cat Catalog) (*Profile, error) {
 }
 
 // parseProfileBytes parses + validates raw YAML bytes against the Catalog.
+//
+// Decoding is intentionally permissive (yaml.Unmarshal, not
+// yaml.Decoder + KnownFields(true)): D2C3.24 allows new optional
+// top-level fields in v1 as long as v1 tests ignore them. The schema-
+// shape validation below still rejects every known invalid case.
 func parseProfileBytes(data []byte, cat Catalog) (*Profile, error) {
 	var raw rawProfile
 	if err := yaml.Unmarshal(data, &raw); err != nil {

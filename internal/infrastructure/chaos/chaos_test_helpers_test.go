@@ -13,16 +13,20 @@ import (
 )
 
 // testCatalog returns a Catalog containing the canonical capability strings
-// most commonly needed by white-box chaos tests. Reused by profile_test.go
-// and any future test that needs a Catalog without building the full Phase 1
-// capability set.
+// of the full Phase 1 capability set. Reused by profile_test.go and any
+// future test that needs a Catalog without building the production catalog
+// from valueobjects.NewPhase1Capabilities. Mirrors the eight Phase 1 canonicals
+// so tests can target any capability without "not in catalog" surprises.
 func testCatalog() Catalog {
 	return &fakeCatalog{set: map[string]bool{
-		"shell.exec@v1":        true,
-		"git.clone@v1":         true,
-		"git.status@v1":        true,
-		"filesystem.read_file@v1": true,
-		"http.request@v1":      true,
+		"shell.exec@v1":            true,
+		"git.clone@v1":             true,
+		"git.status@v1":            true,
+		"git.diff@v1":              true,
+		"git.commit@v1":            true,
+		"filesystem.read_file@v1":  true,
+		"filesystem.write_file@v1": true,
+		"http.request@v1":          true,
 	}}
 }
 
