@@ -147,10 +147,36 @@ func (s *ExecuteService) Execute(ctx context.Context, req entities.ExecutionRequ
 	defer s.limiter.Release()
 
 	// Step 2: idempotency lookup.
+	// A panic during Lookup cannot be treated as a cache-miss and allowed
+	// to proceed — that risks duplicate side effects (D6.4). Instead
+	// convert to a structural failure receipt and return it. Log at ERROR
+	// with panic_location=idempotency_replay.
 	if key, ok := req.IdempotencyKey(); ok {
-		if rid, found, err := s.idempotency.Lookup(ctx, key); err == nil && found {
+		type lookupResult struct {
+			rid   shared.ReceiptID
+			found bool
+			err   error
+		}
+		var lr lookupResult
+		var lookupPanicked bool
+		func() {
+			defer func() {
+				if rec := recover(); rec != nil {
+					lookupPanicked = true
+					obslog.FromContext(ctx).Error(ctx, "idempotency lookup panic recovered",
+						slog.String("panic_location", "idempotency_replay"),
+						slog.String("panic_value", fmt.Sprintf("%v", rec)),
+					)
+				}
+			}()
+			lr.rid, lr.found, lr.err = s.idempotency.Lookup(ctx, key)
+		}()
+		if lookupPanicked {
+			return s.persistStructural(ctx, req, valueobjects.ErrAdapterInternalError, "idempotency replay panic recovered")
+		}
+		if lr.err == nil && lr.found {
 			// Replay-everything: return the cached receipt (success or failure alike).
-			return s.receipts.FindByID(ctx, rid)
+			return s.receipts.FindByID(ctx, lr.rid)
 		}
 	}
 
@@ -224,6 +250,24 @@ func (s *ExecuteService) Execute(ctx context.Context, req entities.ExecutionRequ
 		raw = &panicRaw{recoveredValue: nil, structuralErr: adapterErr}
 	}
 
+	// Step 7c: wire adapter.panics counter and panic_location log for
+	// the adapter-execute site (D2C3.16). The counter is wired here
+	// (not inside SafeExecute) so we avoid threading *obs.Registry
+	// through the free function — the panicRaw type-check is sufficient.
+	// Non-adapter panics (normalizer, persist, idempotency) do NOT
+	// increment this counter per D2C3.16 ("no fingir métrica
+	// semánticamente falsa").
+	if pr, ok := raw.(*panicRaw); ok && pr.structuralErr == nil {
+		if s.metrics != nil {
+			s.metrics.AdapterPanics.Add(ctx, 1,
+				metric.WithAttributes(attribute.String("adapter", cap.AdapterID().String())))
+		}
+		obslog.FromContext(ctx).Error(ctx, "adapter panic recovered",
+			slog.String("panic_location", "adapter_execute"),
+			slog.String("panic_value", fmt.Sprintf("%v", pr.recoveredValue)),
+		)
+	}
+
 	// Step 8 (Option A): dispatch ctx-special and panic-special raws
 	// directly; otherwise delegate to the registered normalizer.
 	var result entities.ExecutionResult
@@ -266,7 +310,27 @@ func (s *ExecuteService) Execute(ctx context.Context, req entities.ExecutionRequ
 		}
 	default:
 		var nErr error
-		result, nErr = s.normalizer.Normalize(cap, raw, s.clock)
+		result, nErr = func() (r entities.ExecutionResult, e error) {
+			defer func() {
+				if rec := recover(); rec != nil {
+					obslog.FromContext(ctx).Error(ctx, "normalizer panic recovered",
+						slog.String("panic_location", "normalizer"),
+						slog.String("panic_value", fmt.Sprintf("%v", rec)),
+					)
+					var buildErr error
+					r, buildErr = entities.NewExecutionResult(
+						valueobjects.StatusFailure, valueobjects.HintNonRetryable,
+						valueobjects.ErrNormalizationFailure,
+						fmt.Sprintf("normalizer panic: %v", rec),
+						nil, nil, nil, nil, nil, 0, 0, dur, tEnd,
+					)
+					if buildErr != nil {
+						e = fmt.Errorf("build normalizer-panic result: %w", buildErr)
+					}
+				}
+			}()
+			return s.normalizer.Normalize(cap, raw, s.clock)
+		}()
 		if nErr != nil {
 			result, err = entities.NewExecutionResult(
 				valueobjects.StatusFailure, valueobjects.HintNonRetryable,
@@ -288,8 +352,29 @@ func (s *ExecuteService) Execute(ctx context.Context, req entities.ExecutionRequ
 
 	// Step 10: persist (use persistCtx so caller cancellation doesn't block
 	// the audit write — per A4.3 the receipt is the central artifact).
-	saved, perr := s.receipts.Save(persistCtx, receipt)
-	if perr != nil {
+	//
+	// The inner closure carries a defer/recover for the panic case (R4).
+	// On panic: logs at ERROR with panic_location=persist, increments
+	// receipt.persist.failures, returns the same error shape as the normal
+	// persist-failure path so the caller always gets a consistent 5xx.
+	// Per A4.3: do NOT fake persistence; return error to caller.
+	var persistPanicHandled bool
+	saved, perr := func() (entities.ExecutionReceipt, error) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				persistPanicHandled = true
+				obslog.FromContext(ctx).Error(ctx, "persist receipt",
+					slog.String("panic_location", "persist"),
+					slog.String("panic_value", fmt.Sprintf("%v", rec)),
+				)
+				if s.metrics != nil {
+					s.metrics.ReceiptPersistFails.Add(persistCtx, 1)
+				}
+			}
+		}()
+		return s.receipts.Save(persistCtx, receipt)
+	}()
+	if perr != nil || persistPanicHandled {
 		// §5.4 orthogonal ERROR-always: persistence failure MUST emit even
 		// when the underlying execution succeeded — the persist error masks
 		// the side effect and the receipt is unrecoverable. The enriched
@@ -302,18 +387,39 @@ func (s *ExecuteService) Execute(ctx context.Context, req entities.ExecutionRequ
 		// path symmetrically below). The metric is the operational
 		// signal a persist outage is occurring; the log is the
 		// incident-level enrichment.
-		if s.metrics != nil {
-			s.metrics.ReceiptPersistFails.Add(persistCtx, 1)
+		//
+		// Note: the panic-recovery path already logged + incremented above;
+		// the non-panic error path logs + increments here.
+		if !persistPanicHandled {
+			if s.metrics != nil {
+				s.metrics.ReceiptPersistFails.Add(persistCtx, 1)
+			}
+			obslog.FromContext(ctx).Error(ctx, "persist receipt",
+				slog.String("error", perr.Error()),
+			)
 		}
-		obslog.FromContext(ctx).Error(ctx, "persist receipt",
-			slog.String("error", perr.Error()),
-		)
+		if persistPanicHandled {
+			return entities.ExecutionReceipt{}, fmt.Errorf("persistence failed; side effect may have occurred: panic at persist site")
+		}
 		return entities.ExecutionReceipt{}, fmt.Errorf("persistence failed; side effect may have occurred: %w", perr)
 	}
 
 	// Step 10b: record idempotency key (best-effort; ignore errors).
+	// A panic during Record is also swallowed — the receipt is already
+	// persisted and observable; idempotency-record is best-effort by
+	// design. Log only with panic_location=idempotency_record.
 	if key, ok := req.IdempotencyKey(); ok {
-		_ = s.idempotency.Record(persistCtx, key, saved.ReceiptID(), s.idempWindow)
+		func() {
+			defer func() {
+				if rec := recover(); rec != nil {
+					obslog.FromContext(ctx).Error(ctx, "idempotency record panic recovered",
+						slog.String("panic_location", "idempotency_record"),
+						slog.String("panic_value", fmt.Sprintf("%v", rec)),
+					)
+				}
+			}()
+			_ = s.idempotency.Record(persistCtx, key, saved.ReceiptID(), s.idempWindow)
+		}()
 	}
 
 	// Step 11: final emit — "execution complete" with all §5.3 contract
@@ -401,8 +507,23 @@ func (s *ExecuteService) persistStructural(
 	if err != nil {
 		return entities.ExecutionReceipt{}, fmt.Errorf("persistStructural: build receipt: %w", err)
 	}
-	saved, err := s.receipts.Save(ctx, receipt)
-	if err != nil {
+	var structuralPersistPanicHandled bool
+	saved, err := func() (entities.ExecutionReceipt, error) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				structuralPersistPanicHandled = true
+				obslog.FromContext(ctx).Error(ctx, "persist receipt",
+					slog.String("panic_location", "persist"),
+					slog.String("panic_value", fmt.Sprintf("%v", rec)),
+				)
+				if s.metrics != nil {
+					s.metrics.ReceiptPersistFails.Add(ctx, 1)
+				}
+			}
+		}()
+		return s.receipts.Save(ctx, receipt)
+	}()
+	if err != nil || structuralPersistPanicHandled {
 		// §5.4 orthogonal ERROR-always (persistStructural path). The caller
 		// enriched the logger with correlation_id before entering
 		// persistStructural; capability / adapter / handle_id may or may
@@ -412,12 +533,17 @@ func (s *ExecuteService) persistStructural(
 		// as the happy path; persist failures from the structural path
 		// are operationally indistinguishable from happy-path persist
 		// failures and must contribute to the same counter.
-		if s.metrics != nil {
-			s.metrics.ReceiptPersistFails.Add(ctx, 1)
+		if !structuralPersistPanicHandled {
+			if s.metrics != nil {
+				s.metrics.ReceiptPersistFails.Add(ctx, 1)
+			}
+			obslog.FromContext(ctx).Error(ctx, "persist receipt",
+				slog.String("error", err.Error()),
+			)
 		}
-		obslog.FromContext(ctx).Error(ctx, "persist receipt",
-			slog.String("error", err.Error()),
-		)
+		if structuralPersistPanicHandled {
+			return entities.ExecutionReceipt{}, fmt.Errorf("persistence failed; side effect may have occurred: panic at persist site")
+		}
 		return entities.ExecutionReceipt{}, fmt.Errorf("persistence failed; side effect may have occurred: %w", err)
 	}
 
