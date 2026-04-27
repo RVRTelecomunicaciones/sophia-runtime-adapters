@@ -29,8 +29,11 @@ README.md
 # Tests + fixtures (runtime image doesn't need them)
 test
 
-# Ops configs (mounted at runtime, not baked in)
+# Ops configs (mounted at runtime, not baked in).
+# Exception: receiver-stub source is compiled via ops/chaos/receiver/Dockerfile
+# (multi-stage build; the receiver binary is not the runtime-adapters image).
 ops
+!ops/chaos/receiver
 
 # Local artifacts
 *.test

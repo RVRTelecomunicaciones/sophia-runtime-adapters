@@ -1,0 +1,36 @@
+# ops/alertmanager/alertmanager.chaos.yaml
+#
+# Test-only Alertmanager config for chaos runs.
+# Routes ALL alerts to receiver-stub:8088/alerts so chaos tests can
+# assert that SLO burn alerts fire and are delivered end-to-end.
+#
+# Short group timings are intentional — they keep canary budget windows
+# (B6) tight enough to complete within a single test run.
+#
+# inhibit_rules follow D2C1.17: when a critical fast-burn fires for a
+# {sloth_slo, capability} pair, the corresponding warning slow-burn is
+# suppressed (same logic as the production alertmanager.yaml, but with
+# equal=[sloth_slo, capability] matching the chaos SLO label set).
+#
+# NOT for production use. The production config is ops/alertmanager/alertmanager.yaml.
+
+global:
+  resolve_timeout: 5s
+
+route:
+  receiver: stub
+  group_by: [alertname, capability]
+  group_wait: 5s
+  group_interval: 10s
+  repeat_interval: 1m
+
+receivers:
+  - name: stub
+    webhook_configs:
+      - url: http://receiver-stub:8088/alerts
+        send_resolved: true
+
+inhibit_rules:
+  - source_matchers: [severity="critical"]
+    target_matchers: [severity="warning"]
+    equal: [sloth_slo, capability]
