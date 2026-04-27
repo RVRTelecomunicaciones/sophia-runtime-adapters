@@ -1,0 +1,15 @@
+version: 1
+name: ci-shell-panic
+description: |
+  shell.exec@v1 invoked under chaos.inject_panic — the decorator
+  panics before calling the real adapter; R4's recoverer must catch
+  and produce AdapterInternalError.
+adapters:
+  shell.exec@v1:
+    fault: inject_panic
+    timing: pre_dispatch
+expected_outcome:
+  status: failure
+  error_class: AdapterInternalError
+  retry_hint: non_retryable
+persistence: null

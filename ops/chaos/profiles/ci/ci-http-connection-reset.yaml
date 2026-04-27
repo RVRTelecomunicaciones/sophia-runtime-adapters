@@ -1,0 +1,19 @@
+version: 1
+name: ci-http-connection-reset
+description: |
+  http.request@v1 sees an in-process synthesised connection_reset.
+
+  Used by the per-PR E2E canary (spec §12) to validate the full
+  pipeline: runtime → otel-collector → prometheus → sloth rules
+  → alertmanager → receiver-stub. Drives the
+  HttpRequestAvailabilityBurn alert under test-window Sloth rules
+  (ops/slo/test/, see Bundle 6).
+adapters:
+  http.request@v1:
+    fault: connection_reset
+    timing: pre_dispatch
+expected_outcome:
+  status: failure
+  error_class: ExternalFailure
+  retry_hint: retryable
+persistence: null

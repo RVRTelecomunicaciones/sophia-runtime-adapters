@@ -1,6 +1,8 @@
 package chaos
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -194,4 +196,44 @@ func TestParseProfileBytes_DecoderError(t *testing.T) {
 	require.Error(t, err)
 	assert.True(t, strings.Contains(err.Error(), "decode"),
 		"error %q should mention decode", err.Error())
+}
+
+// TestProfile_AllCIProfilesParse walks ops/chaos/profiles/ci/ and asserts every
+// YAML file parses cleanly against the test catalog (all 8 Phase 1 canonicals).
+// This catches malformed profiles and schema v1 drift before integration tests
+// (Bundle 3) run.
+func TestProfile_AllCIProfilesParse(t *testing.T) {
+	// Walk ops/chaos/profiles/ci/ from the repo root.
+	repoRoot, err := os.Getwd()
+	require.NoError(t, err)
+	// chaos package's CWD during go test is internal/infrastructure/chaos/.
+	// Walk up to the module root (containing go.mod) — match the pattern
+	// already used in loader.go's findModuleRoot helper if accessible,
+	// otherwise walk up manually until go.mod is found.
+	for repoRoot != "/" {
+		if _, err := os.Stat(filepath.Join(repoRoot, "go.mod")); err == nil {
+			break
+		}
+		repoRoot = filepath.Dir(repoRoot)
+	}
+	require.NotEqual(t, "/", repoRoot, "go.mod not found walking up from CWD")
+
+	dir := filepath.Join(repoRoot, "ops/chaos/profiles/ci")
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err, "directory %s must exist with profiles", dir)
+	require.NotEmpty(t, entries)
+
+	cat := testCatalog() // from chaos_test_helpers_test.go (extends to all 8 Phase 1 capabilities now)
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".yaml" {
+			continue
+		}
+		t.Run(e.Name(), func(t *testing.T) {
+			path := filepath.Join(dir, e.Name())
+			p, err := parseProfile(path, cat)
+			require.NoError(t, err, "profile %s must parse against the test catalog", e.Name())
+			require.NotEmpty(t, p.Name, "profile %s name must be non-empty", e.Name())
+			require.NotEmpty(t, p.Expected.Status, "profile %s expected_outcome.status must be non-empty", e.Name())
+		})
+	}
 }
