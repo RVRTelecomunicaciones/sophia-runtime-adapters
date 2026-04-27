@@ -1,0 +1,5 @@
+version: 1
+name: missing-expected-outcome
+adapters:
+  shell.exec@v1:
+    fault: latency

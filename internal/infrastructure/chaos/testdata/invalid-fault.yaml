@@ -1,0 +1,10 @@
+version: 1
+name: invalid-fault
+adapters:
+  shell.exec@v1:
+    fault: not_a_real_fault
+    timing: post_dispatch
+expected_outcome:
+  status: failure
+  error_class: ExternalFailure
+  retry_hint: retryable

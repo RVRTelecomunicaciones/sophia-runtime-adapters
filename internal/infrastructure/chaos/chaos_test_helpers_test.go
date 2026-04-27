@@ -12,6 +12,24 @@ import (
 	"github.com/sophia-ecosystem/runtime-adapters/internal/domain/shared"
 )
 
+// testCatalog returns a Catalog containing the canonical capability strings
+// most commonly needed by white-box chaos tests. Reused by profile_test.go
+// and any future test that needs a Catalog without building the full Phase 1
+// capability set.
+func testCatalog() Catalog {
+	return &fakeCatalog{set: map[string]bool{
+		"shell.exec@v1":        true,
+		"git.clone@v1":         true,
+		"git.status@v1":        true,
+		"filesystem.read_file@v1": true,
+		"http.request@v1":      true,
+	}}
+}
+
+type fakeCatalog struct{ set map[string]bool }
+
+func (f *fakeCatalog) Has(canonical string) bool { return f.set[canonical] }
+
 // testRawOutcome is a minimal AdapterRawOutcome used across chaos package
 // white-box tests. Shared here so that chaos_adapter_test.go and
 // chaos_receipt_repository_test.go (both package chaos) can use it without

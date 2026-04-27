@@ -1,0 +1,9 @@
+version: 1
+name: invalid-capability
+adapters:
+  not.a.capability@v1:
+    fault: latency
+expected_outcome:
+  status: success
+  error_class: ""
+  retry_hint: unknown

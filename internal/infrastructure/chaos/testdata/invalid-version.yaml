@@ -1,0 +1,6 @@
+version: 99
+name: invalid-version
+expected_outcome:
+  status: success
+  error_class: ""
+  retry_hint: unknown
