@@ -1,0 +1,48 @@
+# ops/prometheus/prometheus.chaos.yml
+#
+# Overlay-only Prometheus config for chaos tests.
+# Bound by ops/local/compose.chaos.yaml in place of the base prometheus.yaml
+# (D2C3.26 — deterministic file swap via volume; no env-var YAML interpolation).
+#
+# Changes from base ops/local/prometheus.yaml:
+#   - scrape_interval / evaluation_interval reduced to 1s for short-window canary budgets
+#   - external_labels updated to identify the chaos environment
+#   - alerting block added targeting alertmanager:9093
+#   - rule_files block adds test-slo-rules.yaml (rendered from ops/slo/test/ in B6
+#     via `make chaos-render-rules`; placeholder ships with B5 at
+#     ops/prometheus/generated/test-slo-rules.yaml)
+#   - scrape_configs match the base exactly (same job names, same targets/ports)
+# Production prometheus.yaml is unchanged.
+
+global:
+  scrape_interval:     1s
+  evaluation_interval: 1s
+  external_labels:
+    cluster: chaos-test
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+rule_files:
+  - /etc/prometheus/test-slo-rules.yaml
+
+scrape_configs:
+  # Runtime metrics via the collector's prometheus exporter.
+  # See ops/otel-collector/config.yaml — exporter listens on :8889.
+  - job_name: runtime-adapters
+    static_configs:
+      - targets: ['otel-collector:8889']
+        labels:
+          service: runtime-adapters
+
+  # Self-monitoring.
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Collector's own internal metrics.
+  - job_name: otel-collector-self
+    static_configs:
+      - targets: ['otel-collector:8888']

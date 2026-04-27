@@ -1,0 +1,70 @@
+# ops/local/compose.chaos.yaml
+#
+# Overlay extending ops/local/compose.yaml for chaos test runs.
+# Usage: docker compose -f ops/local/compose.yaml -f ops/local/compose.chaos.yaml up -d
+#
+# Adds:
+#   - alertmanager (prom/alertmanager:v0.27.0) listening :9093
+#   - receiver-stub built from ops/chaos/receiver/Dockerfile
+#   - toxiproxy (profile-gated; only spun up with --profile toxiproxy)
+#   - chaos env vars on runtime-adapters (RUNTIME_CHAOS_ENABLED, RUNTIME_CHAOS_PROFILE, RUNTIME_ENV)
+#   - chaos profiles host volume mounted at /etc/runtime-adapters/chaos/profiles/ (D2C3.25)
+#   - Prometheus config swapped to ops/prometheus/prometheus.chaos.yml (D2C3.26 — deterministic file
+#     swap; no env-var YAML interpolation)
+
+name: runtime-load
+
+services:
+
+  prometheus:
+    volumes:
+      - ../prometheus/prometheus.chaos.yml:/etc/prometheus/prometheus.yml:ro
+      - ../prometheus/generated/test-slo-rules.yaml:/etc/prometheus/test-slo-rules.yaml:ro
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    cpus: "0.25"
+    mem_limit: 128m
+    volumes:
+      - ../alertmanager/alertmanager.chaos.yaml:/etc/alertmanager/alertmanager.yml:ro
+    networks:
+      - runtime-load
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9093/-/healthy"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+      start_period: 5s
+
+  receiver-stub:
+    build:
+      context: ../..
+      dockerfile: ops/chaos/receiver/Dockerfile
+    cpus: "0.25"
+    mem_limit: 128m
+    networks:
+      - runtime-load
+    ports:
+      - "8088:8088"
+
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.9.0
+    cpus: "0.25"
+    mem_limit: 128m
+    profiles: [toxiproxy]
+    networks:
+      - runtime-load
+
+  runtime-adapters:
+    environment:
+      RUNTIME_CHAOS_ENABLED: "${RUNTIME_CHAOS_ENABLED:-false}"
+      RUNTIME_CHAOS_PROFILE: "${RUNTIME_CHAOS_PROFILE:-}"
+      RUNTIME_ENV: "${RUNTIME_ENV:-development}"
+    volumes:
+      - ../chaos/profiles/ci:/etc/runtime-adapters/chaos/profiles/ci:ro
+      - ../chaos/profiles/local:/etc/runtime-adapters/chaos/profiles/local:ro
+    depends_on:
+      alertmanager:
+        condition: service_healthy
+      receiver-stub:
+        condition: service_started

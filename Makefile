@@ -1,4 +1,4 @@
-.PHONY: all build test test-unit test-contract test-integration test-e2e chaos-integration lint vet fmt cover clean run help sloth-generate test-obs test-rules test-alertmanager test-dashboards test-observability load-up load-down load-baseline load-smoke-local fixture-git-bench
+.PHONY: all build test test-unit test-contract test-integration test-e2e chaos-integration lint vet fmt cover clean run help sloth-generate test-obs test-rules test-alertmanager test-dashboards test-observability load-up load-down load-baseline load-smoke-local fixture-git-bench chaos-up chaos-up-toxiproxy chaos-down chaos-local chaos-dump
 
 GO              ?= go
 GOLANGCI_LINT   ?= golangci-lint
@@ -127,3 +127,25 @@ load-smoke-local:
 
 fixture-git-bench:
 	$(MAKE) -C test/fixtures/git-bench all
+
+# ----- Phase 2C.3 chaos compose -----
+
+COMPOSE_CHAOS_BASE    := ops/local/compose.yaml
+COMPOSE_CHAOS_OVERLAY := ops/local/compose.chaos.yaml
+
+chaos-up:                 ## Start chaos compose stack
+	docker compose -f $(COMPOSE_CHAOS_BASE) -f $(COMPOSE_CHAOS_OVERLAY) up -d
+
+chaos-up-toxiproxy:       ## Start chaos compose with toxiproxy profile
+	docker compose -f $(COMPOSE_CHAOS_BASE) -f $(COMPOSE_CHAOS_OVERLAY) \
+	  --profile toxiproxy up -d
+
+chaos-down:               ## Tear down chaos compose
+	docker compose -f $(COMPOSE_CHAOS_BASE) -f $(COMPOSE_CHAOS_OVERLAY) down -v
+
+chaos-local:              ## Run a local-only chaos profile (PROFILE=name)
+	@test -n "$(PROFILE)" || (echo "PROFILE=<name> required"; exit 1)
+	@echo "Local-only chaos run not yet wired (B7 ships local catalogue)"
+
+chaos-dump:               ## Dump receiver, prom, AM state for diagnostics
+	./ops/chaos/scripts/dump.sh
