@@ -36,6 +36,12 @@ func ValidateProfileSupport(
 		if IsDecoratorNative(fault.Kind) {
 			continue
 		}
+		if fault.Kind == FaultPersistFailure {
+			// FaultPersistFailure targets ChaosReceiptStore via profile.Persist,
+			// not an adapter. Profile loader (Task 1.6) should reject this key
+			// placement at parse time; this guard is the runtime's defense-in-depth.
+			continue
+		}
 		adapter, cap, ok := lookupAdapterByCanonical(registry, canonical)
 		if !ok {
 			unsupported = append(unsupported,

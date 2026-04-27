@@ -30,9 +30,14 @@ type ChaosCapable interface {
 	SupportedChaosFaults(cap valueobjects.Capability) []FaultKind
 
 	// SyntheticOutcome constructs an AdapterRawOutcome of the same shape
-	// the adapter would produce for the equivalent real fault. Returns
-	// (outcome, true) on success; (nil, false) if the fault is unsupported
-	// for this capability. The (nil, false) path is defensive —
+	// the adapter would produce for the equivalent real fault.
+	// Implementations may inspect payload fields they would use in a real
+	// execution (e.g. the command string for process_signal, the URL for
+	// remote_unreachable) to produce maximally realistic shapes per I24.
+	// They MUST NOT execute any side effects — no real subprocesses, no
+	// real network calls, no file writes. Returns (outcome, true) on
+	// success; (nil, false) if the fault is unsupported for this
+	// capability. The (nil, false) path is defensive —
 	// ValidateProfileSupport should reject this case at startup.
 	SyntheticOutcome(
 		ctx context.Context,

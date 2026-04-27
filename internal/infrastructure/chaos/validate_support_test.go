@@ -166,6 +166,29 @@ func TestValidateProfileSupport_PersistFault_Ignored(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestValidateProfileSupport_PersistFaultInAdaptersMap_IsIgnored(t *testing.T) {
+	// Defensive: if a misconfigured profile places persist_failure in
+	// profile.Adapters (it should be in profile.Persist), ValidateProfileSupport
+	// must not reject it as an unregistered capability. Profile loader (1.6)
+	// is the primary defense; this test guards the runtime's defense-in-depth.
+	httpCap := mustCapability(t, "http.request@v1")
+	profile := &Profile{
+		Version: 1,
+		Name:    "misplaced-persist",
+		Adapters: map[string]FaultConfig{
+			httpCap.Canonical(): {Kind: FaultPersistFailure},
+		},
+	}
+	// Build a registry — the adapter does not need ChaosCapable since
+	// the persist-failure entry must be skipped before the type-assertion.
+	plain := testdoubles.NewStubAdapter(httpCap.AdapterID(), httpCap)
+	registry := map[valueobjects.AdapterID]outbound.Adapter{
+		plain.ID(): plain,
+	}
+	err := ValidateProfileSupport(registry, profile)
+	require.NoError(t, err)
+}
+
 func TestValidateProfileSupport_ErrIs_ErrChaosProfileUnsupported(t *testing.T) {
 	// When the function returns an error, errors.Is must unwrap to
 	// ErrChaosProfileUnsupported.

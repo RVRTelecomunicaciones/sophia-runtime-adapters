@@ -11,10 +11,17 @@ import (
 	"github.com/sophia-ecosystem/runtime-adapters/internal/ports/outbound/testdoubles"
 )
 
-// fakeChaosCapable is a test double that implements both outbound.Adapter
-// (via embedded *testdoubles.StubAdapter) and ChaosCapable.
-// When chaos_receipt_store_test.go lands (Task 1.5), helpers shared across
-// test files should move to chaos_test_helpers_test.go.
+// fakeChaosCapable is a test double implementing the ChaosCapable interface
+// for chaos package unit tests. Embeds *testdoubles.StubAdapter to satisfy
+// outbound.Adapter; the two ChaosCapable methods are explicit.
+//
+// SILENT-MISMATCH WARNING (revisit when chaos_receipt_store_test.go in
+// Task 1.5 lands and helpers move to chaos_test_helpers_test.go):
+// SupportedChaosFaults does map[canonical]→[]FaultKind lookup. If a test
+// constructs the double with one canonical and queries with a Capability
+// whose Canonical() returns a different string, the lookup silently
+// returns nil. Tests that exercise this code path must register the same
+// canonical strings they will query with.
 type fakeChaosCapable struct {
 	*testdoubles.StubAdapter
 	supported   map[string][]FaultKind
