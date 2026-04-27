@@ -6,6 +6,13 @@ PKG             := ./...
 COVER_OUT       := coverage.out
 COVER_THRESHOLD_DOMAIN := 85
 COVER_THRESHOLD_APP    := 85
+# Packages subject to the ≥85% per-package coverage gate.
+# chaos package included here; gate is enforced once tests land in B1.
+COV_GATE_PKGS := \
+  ./internal/domain/... \
+  ./internal/application/... \
+  ./internal/infrastructure/obs/log/... \
+  ./internal/infrastructure/chaos/...
 
 all: fmt vet lint test
 
