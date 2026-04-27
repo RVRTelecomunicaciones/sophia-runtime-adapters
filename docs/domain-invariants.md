@@ -1,6 +1,6 @@
-# Domain Invariants — runtime-adapters Phase 1
+# Domain Invariants — runtime-adapters Phase 1+
 
-These invariants are enforced at domain / application boundaries. Every code change that touches a receipt, a closed enum, or a request field MUST cite the invariant it preserves or deliberately updates in the commit body.
+These invariants are enforced at domain / application boundaries (I1–I22 from Phase 1, I23 added in Phase 2C.1, I24 added in Phase 2C.3). Every code change that touches a receipt, a closed enum, or a request field MUST cite the invariant it preserves or deliberately updates in the commit body.
 
 ---
 
@@ -214,3 +214,44 @@ rename or drop in the code contract requires an ADR and a
 **Enforced at:** `internal/infrastructure/obs/metrics.go` + CI
 contract tests (`TestMetricContract_*`).
 **Source:** §4.3 + §12.2 (spec). Added in Phase 2C.1.
+
+---
+
+### I24 — Chaos injection must not bypass runtime semantics
+
+A fault produced by chaos injection must result in an
+`ExecutionReceipt` that is **shape-identical, classification-identical,
+and lifecycle-identical** to a real fault of the same kind.
+
+The same rules apply uniformly to chaos-induced and real-fault
+outcomes:
+
+- `ResultNormalizer` is invoked unchanged — chaos outcomes flow through
+  the same per-capability normalizer registered by the adapter.
+- The receipt is built unchanged — same `ExecutionResult`, same
+  `ExecutionReceipt` constructor.
+- Persistence-before-return (A4.3) holds — the runtime does not return
+  to the caller until the receipt has been persisted (or persist has
+  faulted, in which case the caller receives an error).
+- Metrics emit unchanged — `runtime_adapters.execution.total{status=...}`
+  increments via the same path; `receipt.persist.failures` increments
+  on persist faults.
+- Logs emit at the level dictated by `LevelFor(status, error_class)`.
+
+A test or operator inspecting a receipt cannot tell whether the fault
+was real or injected — by design.
+
+**Mechanism:** the chaos package does NOT construct adapter raw
+outcomes itself (raw types are unexported per R5). Instead, each
+adapter implements the opt-in `chaos.ChaosCapable` interface; its
+`SyntheticOutcome` method constructs a raw outcome **inside the
+adapter package** using the same private type and the same
+construction patterns used for real-fault paths.
+
+**Enforced at:** `internal/infrastructure/chaos/chaos_adapter.go`,
+`internal/infrastructure/chaos/chaos_capable.go`,
+`internal/adapters/outbound/{shell,git,filesystem,httpreq}/chaos.go`.
+Each adapter's `chaos_test.go` round-trips synthetic outcomes through
+the real normalizer to verify shape-fidelity.
+**Source:** spec §5.1 + Appendix D + §15.2 (Phase 2C.3 design).
+Added in Phase 2C.3.
