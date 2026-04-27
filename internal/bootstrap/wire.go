@@ -34,6 +34,7 @@ import (
 	"github.com/sophia-ecosystem/runtime-adapters/internal/infrastructure/config"
 	"github.com/sophia-ecosystem/runtime-adapters/internal/infrastructure/obs"
 	"github.com/sophia-ecosystem/runtime-adapters/internal/infrastructure/obs/log"
+	"github.com/sophia-ecosystem/runtime-adapters/internal/ports/inbound"
 	"github.com/sophia-ecosystem/runtime-adapters/internal/ports/outbound"
 )
 
@@ -44,6 +45,12 @@ type Runtime struct {
 	Server   *nethttp.Server
 	Pool     *pgxpool.Pool
 	Shutdown func(ctx context.Context) error // idempotent; tears down HTTP → OTel → pool in order
+	// ExecSvc and QuerySvc are the inbound service handles wired at
+	// bootstrap. Exposed for the in-process SDK peer (test/chaos/integration)
+	// and any other consumer that needs direct service access without going
+	// through the HTTP transport. Production callers use the HTTP server.
+	ExecSvc  inbound.RuntimeService
+	QuerySvc inbound.QueryService
 }
 
 // BuildRuntime composes the full Phase 1 runtime from cfg. Returns the
@@ -252,6 +259,8 @@ func BuildRuntime(ctx context.Context, cfg config.Config) (*Runtime, error) {
 		Server:   server,
 		Pool:     pool,
 		Shutdown: shutdown,
+		ExecSvc:  execSvc,
+		QuerySvc: querySvc,
 	}, nil
 }
 

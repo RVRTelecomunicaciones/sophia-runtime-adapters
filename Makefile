@@ -1,4 +1,4 @@
-.PHONY: all build test test-unit test-contract test-integration test-e2e lint vet fmt cover clean run help sloth-generate test-obs test-rules test-alertmanager test-dashboards test-observability load-up load-down load-baseline load-smoke-local fixture-git-bench
+.PHONY: all build test test-unit test-contract test-integration test-e2e chaos-integration lint vet fmt cover clean run help sloth-generate test-obs test-rules test-alertmanager test-dashboards test-observability load-up load-down load-baseline load-smoke-local fixture-git-bench
 
 GO              ?= go
 GOLANGCI_LINT   ?= golangci-lint
@@ -32,6 +32,9 @@ test-integration:
 
 test-e2e:
 	$(GO) test -race -count=1 -tags=e2e -timeout=10m ./test/e2e/...
+
+chaos-integration:           ## Run per-PR chaos integration tests (no compose; DB testcontainer)
+	$(GO) test -race -count=1 -tags=integration -timeout=5m ./test/chaos/integration/...
 
 cover: test-unit
 	$(GO) tool cover -func=$(COVER_OUT) | tail -n 1
