@@ -7,8 +7,13 @@
 // See docs/superpowers/specs/2026-04-26-phase-2c.3-chaos-hardening-design.md.
 package chaos
 
-// FaultKind enumerates the closed set of injectable fault kinds (spec §5.1,
-// D2C3.11). Profile validation rejects unknown kinds at startup.
+// FaultKind enumerates the closed set of injectable fault kinds per spec §5.1.
+// Profile validation rejects unknown kinds at startup (R17). Extending the
+// enum requires an ADR — chaos faults are a public contract surface that
+// integration tests, profile YAMLs, and operators consume; silent additions
+// or removals would break that contract.
+//
+// Members are declared in fault_kinds.go.
 type FaultKind string
 
 // Timing controls when the fault is applied relative to the wrapped call.
