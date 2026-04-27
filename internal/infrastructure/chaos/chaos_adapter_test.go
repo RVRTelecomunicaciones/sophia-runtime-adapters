@@ -14,28 +14,6 @@ import (
 	"github.com/sophia-ecosystem/runtime-adapters/internal/ports/outbound/testdoubles"
 )
 
-// testRawOutcome is a minimal AdapterRawOutcome used in chaos package tests.
-// When chaos_receipt_store_test.go lands (Task 1.5), move this type to a
-// shared file (e.g. chaos_test_helpers_test.go) to avoid duplicate-type
-// collisions across white-box test files.
-type testRawOutcome struct{ tag string }
-
-func (testRawOutcome) IsAdapterRawOutcome() {}
-
-// mustCapability returns the Phase 1 capability with the given canonical or fails.
-func mustCapability(t *testing.T, canonical string) valueobjects.Capability {
-	t.Helper()
-	caps, err := valueobjects.NewPhase1Capabilities()
-	require.NoError(t, err)
-	for _, c := range caps {
-		if c.Canonical() == canonical {
-			return c
-		}
-	}
-	t.Fatalf("capability %q not in Phase 1 catalog", canonical)
-	return valueobjects.Capability{}
-}
-
 // makeProfile creates a single-capability fault profile for use in tests.
 func makeProfile(canonical string, fault FaultConfig) *Profile {
 	return &Profile{
