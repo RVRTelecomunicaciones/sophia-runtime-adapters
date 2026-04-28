@@ -1,0 +1,22 @@
+version: 1
+name: local-http-slow-body
+description: |
+  http.request@v1 receives the response headers but the body streams
+  slowly (or stalls). The chaos adapter synthesises slow_body via
+  the http adapter's ChaosCapable hook.
+
+  Validates body-read deadline enforcement. If the body-read timeout
+  fires before the deadline, the runtime classifies as
+  ExternalFailure with unknown retry hint. If the parent context
+  deadline fires first, classification is timeout. Use a tight
+  TimeoutBudget locally to drive the timeout path; widen it to
+  exercise the body-read defence.
+adapters:
+  http.request@v1:
+    fault: slow_body
+    timing: post_dispatch
+expected_outcome:
+  status: failure
+  error_class: external_failure
+  retry_hint: unknown
+persistence: null

@@ -1,0 +1,23 @@
+version: 1
+name: local-fs-cancel-mid-write
+description: |
+  filesystem.write_file@v1 hangs post-dispatch and the caller cancels
+  the context mid-flight. The chaos adapter blocks on ctx.Done() so
+  the cancellation path is exercised before the FS adapter has a
+  chance to commit (atomic tmp+fsync+rename — see filesystem-safety
+  skill).
+
+  Validates the cancellation contract for write paths: status=cancelled
+  / error_class=cancelled / retry_hint=non_retryable. Operator value:
+  confirm no partial file was left behind in the target directory and
+  that the staged tmp file (if any) is cleaned up — the FS adapter
+  must honour atomic-write invariants under cancellation.
+adapters:
+  filesystem.write_file@v1:
+    fault: hang_until_cancel
+    timing: post_dispatch
+expected_outcome:
+  status: cancelled
+  error_class: cancelled
+  retry_hint: non_retryable
+persistence: null

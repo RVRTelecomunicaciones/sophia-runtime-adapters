@@ -1,0 +1,29 @@
+version: 1
+name: local-cross-pool-exhaustion
+description: |
+  Approximation of MaxConcurrentExecutions semaphore exhaustion
+  (A9.1). The closed fault catalog has no dedicated "saturate the
+  semaphore" kind — the realistic way to drive exhaustion is to
+  hold each in-flight slot long enough that the configured cap is
+  reached and excess requests trip the fast-reject path
+  (HTTP 503 immediately, no queue).
+
+  Best-effort proxy: post-dispatch latency on shell.exec long
+  enough that, when run concurrently from a load harness (k6 or
+  hey at concurrency > MaxConcurrentExecutions), saturation is
+  reached and the front-end returns 503 to the excess fraction.
+  Per-request expected_outcome here describes the in-the-pool
+  request that does succeed; the operator-facing assertion is on
+  the 503 ratio observed at the HTTP layer, not on the receipt
+  classification of any single execution.
+adapters:
+  shell.exec@v1:
+    fault: latency
+    timing: post_dispatch
+    match:
+      duration: 5s
+expected_outcome:
+  status: success
+  error_class: ""
+  retry_hint: unknown
+persistence: null

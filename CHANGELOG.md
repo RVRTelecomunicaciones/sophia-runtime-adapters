@@ -4,6 +4,91 @@ All notable changes to `runtime-adapters` will be documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] — 2026-04-28
+
+Phase 2C.3 — chaos + minimal hardening. Adds a deliberate fault-injection layer that compiles into the production binary as opt-in code gated at runtime by `RUNTIME_CHAOS_ENABLED` plus `RUNTIME_ENV != "production"` (R17 fail-closed). Adapters opt into chaos via a new `ChaosCapable` interface; the wrapper is identity unless config + env authorise. Six CI fault profiles plus ~24 local-only exploratory profiles cover shell, git, filesystem, http, and cross-cutting (panic, persist, pool-exhaustion) failure modes. Two-tier CI: per-PR canary (single profile, label-precise + tiered 60s/90s budget) plus nightly comprehensive (five active scenarios + inhibition contract). Two reactive bundles (B8 + B9) closed gaps surfaced by the chaos suite during development. Spec-complete against `docs/superpowers/specs/2026-04-26-phase-2c.3-chaos-hardening-design.md`.
+
+### Added
+
+#### Chaos framework (Bundle 1)
+
+- `internal/infrastructure/chaos/` — decorator package with closed fault enum (`fault_kinds.go`), decorator-native `ChaosAdapter` (`chaos_adapter.go`), `ChaosReceiptRepository` wrapper for persist-fault injection, profile loader with v1 schema (`profile.go`, `loader.go`), path-hardened allowlist (`validate_support.go`), config + fail-closed env wiring (`config.go`, `wire.go`), opt-in `ChaosCapable` interface (`chaos_capable.go`).
+- Per-adapter `ChaosCapable` implementations: `internal/adapters/outbound/{shell,git,filesystem,httpreq}/chaos.go`. Each adapter owns its `SupportedChaosFaults()` + `SyntheticOutcome()` mappings; the chaos package never constructs adapter-internal raw outcome types.
+- `internal/bootstrap/wire.go` — integrates `MaybeWrapAdaptersWithChaos` into `BuildRuntime` after env-config load and before application service construction. Identity wrapper when chaos disabled; R17 fail-closed assertion at bootstrap.
+- New rule **R17 — chaos fail-closed in production** (`docs/rules.md`).
+- New invariant **I24 — chaos preserves runtime semantics** (`docs/domain-invariants.md`).
+
+#### CI fault catalogue (Bundle 2)
+
+- 6 PR-gating profiles under `ops/chaos/profiles/ci/`:
+  - `ci-fs-readfile-eio.yaml` — synth EIO on `filesystem.read_file@v1`
+  - `ci-git-remote-unreachable.yaml` — DNS/TCP unreachable on `git.clone@v1`
+  - `ci-http-connection-reset.yaml` — synth ECONNRESET on `http.request@v1`
+  - `ci-persist-fail.yaml` — `ChaosReceiptStore` returns persist error
+  - `ci-shell-hang-cancel.yaml` — `hang_until_cancel` on `shell.exec@v1`
+  - `ci-shell-panic.yaml` — `inject_panic` on `shell.exec@v1` (R4 audit)
+- `TestProfile_AllCIProfilesParse` walks the CI directory and asserts every YAML parses against the test catalogue (R15 status validity).
+
+#### Per-PR chaos integration tests (Bundle 3)
+
+- `test/chaos/integration/chaos_integration_test.go` — table-driven test, build tag `integration`. Six subtests (one per CI profile) running classification + receipt persistence + metric increment assertions in a fresh testcontainers Postgres + in-process app.
+- `test/chaos/integration/persist_invariant_test.go` — concurrent-load persist-before-return invariant (A4.3) under chaos.
+- `test/chaos/integration/fixtures_test.go` — shared fixture helpers + builder.
+
+#### Safety-net invariant tests (Bundle 4)
+
+- `test/chaos/safety/panic_audit_test.go` — R4 panic-recoverer mount audit at four code paths: adapter-execute, normalizer, persist, idempotency-replay.
+- `test/chaos/safety/normalize_property_test.go` — `testing/quick` property tests asserting `ResultNormalizer` determinism and idempotency across the closed status × error-class space (I3 + I22).
+- Surfaced two reactive gaps (see Reactive bundles below).
+
+#### Receiver stub + compose chaos overlay (Bundle 5)
+
+- `ops/chaos/receiver/main.go` + `Dockerfile` — small purpose-built HTTP receiver-stub with `GET /inspect`, `GET /inspect?since=<rfc3339>`, `POST /clear`. Records every Alertmanager webhook POST in a ring buffer with server-side `Received time.Time`. ~150 LOC of Go.
+- `ops/local/compose.chaos.yaml` — overlay extending `compose.yaml` with `alertmanager` (`prom/alertmanager:v0.27.0`), `receiver-stub`, `toxiproxy` (profile-gated), and chaos env vars on the runtime service. Mounts `ops/chaos/profiles/{ci,local}` at `/etc/runtime-adapters/chaos/profiles/`. Swaps Prometheus config for the chaos variant via deterministic file mount (D2C3.26 — no env-var YAML interpolation).
+- `ops/prometheus/prometheus.chaos.yml` — overlay Prom config (1s scrape + evaluation interval, alertmanager:9093 target, glob over `/etc/prometheus/test-rules/*.yaml`).
+- `ops/alertmanager/alertmanager.chaos.yaml` — chaos AM config routing all alerts to `http://receiver-stub:8088/`.
+- `ops/chaos/scripts/dump.sh` — diagnostic dump (Prom rules/alerts/SLI query, AM alerts/status, receiver `/inspect`, container logs).
+- Make targets: `chaos-up`, `chaos-up-toxiproxy`, `chaos-down`, `chaos-local`, `chaos-dump`, `chaos-render-rules`, `chaos-render-rules-check`.
+
+#### Per-PR E2E canary + test SLO + GHA workflow (Bundle 6)
+
+- `test/chaos/e2e/canary_test.go` :: `TestChaos_Canary_HttpConnectionReset` — drives sustained ~80s of failed `http.request@v1` calls and asserts `HttpRequestAvailabilityBurn` reaches the receiver-stub within the D2C3.21 tiered budget (60s target / 90s deadline).
+- `test/chaos/e2e/{compose_lifecycle,helpers,breadcrumbs,receiver_client}.go` — shared E2E infrastructure (ComposeUp/Down lifecycle, repo-root finder, in-test diagnostics dump, receiver client with `WaitForAlert`/`AlertsMatching`/`AlertsMatchingSince`/`Clear`).
+- `ops/slo/test/{shell,git,http,filesystem}.yaml` — test SLO specs with `service: "runtime-adapters-chaos-test"` (avoids `sloth_slo` collision with prod). Rendered with `--default-slo-period 5m`.
+- `ops/slo/windows/5m.yaml` — custom Sloth `AlertWindows` catalog (Sloth 0.16.0 ships only the 30d catalog out of the box).
+- `ops/prometheus/generated/test/{shell,git,http,filesystem}.yaml` — per-spec rendered burn-rate rules (one file per SLO spec; concatenation invalid for Prom `rule_files`).
+- `.github/workflows/ci.yaml` — new `chaos-canary-e2e` job (PR-only, `timeout-minutes: 10`).
+- Make target: `chaos-canary`.
+- Sloth idempotency gate (`chaos-render-rules-check`) extends to test rules with explicit exclusion of the test path from the prod sloth-generate diff.
+
+#### Nightly comprehensive + local catalogue + docs + ADRs (Bundle 7)
+
+- `test/chaos/e2e/comprehensive_test.go` :: `TestChaos_Comprehensive` — parameterised version of the canary running across five active CI scenarios (`ci-persist-fail` skipped, no test SLO covers persist counter). Each scenario asserts the label-precise critical alert plus the inhibition contract (`AlertsMatchingSince(criticalAlert.Received)` returns zero warnings for the same `(sloth_slo, capability)` after the critical lands — D2C1.17).
+- `.github/workflows/chaos-nightly.yaml` — daily cron `0 7 * * *` UTC + `workflow_dispatch`. Workflow-level `permissions: contents:read + issues:write`. Uploads 90-day diagnostics artifact (`chaos-nightly-diagnostics-${{ github.run_id }}`) on every run; opens auto-issue labeled `chaos-nightly-fail` via `gh issue create` direct on failure.
+- 24 local-only profiles under `ops/chaos/profiles/local/` covering shell (4), git (3), filesystem (5), http (6), cross-cutting (6). Three §7.1 scenarios honestly skipped (no closed-catalog representation): `stdout-flood`, `dirty-workdir`, `corrupt-repo`. Two scenarios approximated with documentation (`http-5xx-storm` via `latency`, `cross-pool-exhaustion` via concurrent-load latency on a hot adapter).
+- `TestProfile_AllLocalProfilesParse` — sibling of CI walker, walks `ops/chaos/profiles/local/` with R15 status enforcement.
+- `docs/chaos.md` — operator guide (10 sections per spec §14.2): what chaos means, enabling locally, fault catalogue, profile schema, per-PR canary, nightly comprehensive, adding new fault types/profiles, reactive fix workflow, troubleshooting + diagnostic command cheat sheet.
+- ADR 0009 — Chaos as opt-in compiled-in code (Q2 = d).
+- ADR 0010 — Receiver-stub for the Alertmanager webhook contract.
+- ADR 0011 — Two-tier chaos CI (Q3 = d, Q5 split, D2C3.21 tiered budget).
+- Make target: `chaos-e2e-comprehensive`.
+
+### Fixed
+
+#### Reactive bundle B8 — receipt.persist.failures counter wire (PR #30)
+
+- Surfaced by Bundle 3 chaos integration test on `ci-persist-fail`. The `runtime_adapters.receipt.persist.failures` counter declared in 2C.1 §6.3 was never incremented at the persist sites. Wired the counter at both persist call sites in `internal/application/services/execute_service.go`. No spec change; the spec already required this metric.
+
+#### Reactive bundle B9 — complete panic recovery contract (PR #32)
+
+- Surfaced by Bundle 4 panic audit. R4's "no panic crosses the application boundary" rule held only at adapter-execute; the normalizer, persist, and idempotency-replay paths all lacked `defer recover`. Added surgical recovery at all four sites in `internal/application/services/execute_service.go`, plus a `panic_location` log field and an `adapter.panics` counter wire. ADR pending in any future revision; the change closes R4 across the application boundary.
+
+### Changed
+
+- `RUNTIME_CHAOS_ENABLED`, `RUNTIME_CHAOS_PROFILE`, and `RUNTIME_ENV` join the runtime config surface. `RUNTIME_ENV=production` rejects chaos at bootstrap regardless of `ENABLED` (R17).
+- `MaybeWrapAdaptersWithChaos` is now part of the bootstrap path. Production binaries carry the chaos package as inert code when chaos is disabled — no measurable runtime cost.
+- Sloth idempotency-gate exclusions extended to cover the test rules path (`ci.yaml`).
+
 ## [0.3.0] — 2026-04-25
 
 Phase 2C.2 — load baseline + calibration. Replaces the PROVISIONAL SLO targets from 2C.1 with measured ones under a declared compose envelope (2 CPU / 2 GiB runtime). Adds k6 load scenarios, a pinned docker-compose measurement stack, a report generator that produces auditable Markdown + machine-readable evidence, and a GHA advisory smoke job that posts regression deltas as PR comments. Spec-complete against `docs/superpowers/specs/2026-04-23-phase-2c-load-baseline-design.md`.

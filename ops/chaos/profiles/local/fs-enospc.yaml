@@ -1,0 +1,22 @@
+version: 1
+name: local-fs-enospc
+description: |
+  filesystem.write_file@v1 sees ENOSPC — disk full. Chaos synthesises
+  the enospc raw outcome via the FS adapter's ChaosCapable hook. The
+  runtime classifies as ExternalFailure with unknown retry hint:
+  retrying without intervention is unlikely to succeed, but the
+  upstream consumer (e.g. a queue worker draining persisted events)
+  may legitimately retry once disk capacity is restored.
+
+  Operator value: confirms the receipt's diagnostics carry the errno
+  shape and the FS metric labels exclude the path string (R16
+  cardinality bound — paths go to logs/exemplars, never metrics).
+adapters:
+  filesystem.write_file@v1:
+    fault: enospc
+    timing: post_dispatch
+expected_outcome:
+  status: failure
+  error_class: external_failure
+  retry_hint: unknown
+persistence: null

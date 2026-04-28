@@ -1,0 +1,21 @@
+version: 1
+name: local-http-redirect-loop
+description: |
+  http.request@v1 follows a synthesised redirect chain that exceeds
+  the configured redirect cap (5 per http-adapter-design skill).
+  The chaos adapter emits redirect_loop via the http adapter's
+  ChaosCapable hook.
+
+  Validates the redirect-cap defence: the runtime aborts after the
+  cap, classifies as ExternalFailure (the remote misbehaved by
+  redirecting in a cycle), and surfaces a non_retryable hint —
+  retrying without remote fix will reproduce the cycle.
+adapters:
+  http.request@v1:
+    fault: redirect_loop
+    timing: pre_dispatch
+expected_outcome:
+  status: failure
+  error_class: external_failure
+  retry_hint: non_retryable
+persistence: null

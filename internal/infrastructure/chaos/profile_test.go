@@ -237,3 +237,65 @@ func TestProfile_AllCIProfilesParse(t *testing.T) {
 		})
 	}
 }
+
+// validLocalStatuses enumerates the only ExecutionStatus values permitted by
+// R15 ("Only 5 statuses"). The local dir-walk asserts each profile's
+// expected_outcome.status is in this set; the CI walker does not, because
+// CI profiles are exercised end-to-end and any drift would already trip the
+// integration suite. Local profiles are not always run end-to-end (operator
+// triage), so this static guard catches drift earlier on the filesystem.
+var validLocalStatuses = map[string]struct{}{
+	"success":   {},
+	"failure":   {},
+	"timeout":   {},
+	"cancelled": {},
+	"partial":   {},
+}
+
+// TestProfile_AllLocalProfilesParse walks ops/chaos/profiles/local/ and
+// asserts every YAML file parses cleanly against the test catalog (all 8
+// Phase 1 canonicals). Sibling guard to TestProfile_AllCIProfilesParse —
+// the two are independent: CI profiles ride the production pipeline, local
+// profiles are operator-driven triage scenarios that ship in the repo for
+// hands-on use against ops/local/compose.yaml.
+//
+// In addition to the CI walker's parse + non-empty-name + non-empty-status
+// checks, this walker validates expected_outcome.status against the closed
+// 5-value enum from R15, catching drift in profiles that are not always
+// exercised end-to-end.
+func TestProfile_AllLocalProfilesParse(t *testing.T) {
+	// Walk ops/chaos/profiles/local/ from the repo root. Same module-root
+	// resolution pattern as TestProfile_AllCIProfilesParse.
+	repoRoot, err := os.Getwd()
+	require.NoError(t, err)
+	for repoRoot != "/" {
+		if _, err := os.Stat(filepath.Join(repoRoot, "go.mod")); err == nil {
+			break
+		}
+		repoRoot = filepath.Dir(repoRoot)
+	}
+	require.NotEqual(t, "/", repoRoot, "go.mod not found walking up from CWD")
+
+	dir := filepath.Join(repoRoot, "ops/chaos/profiles/local")
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err, "directory %s must exist with profiles", dir)
+	require.NotEmpty(t, entries, "ops/chaos/profiles/local must contain at least one profile")
+
+	cat := testCatalog()
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".yaml" {
+			continue
+		}
+		t.Run(e.Name(), func(t *testing.T) {
+			path := filepath.Join(dir, e.Name())
+			p, err := parseProfile(path, cat)
+			require.NoError(t, err, "profile %s must parse against the test catalog", e.Name())
+			require.NotEmpty(t, p.Name, "profile %s name must be non-empty", e.Name())
+			require.NotEmpty(t, p.Expected.Status, "profile %s expected_outcome.status must be non-empty", e.Name())
+			_, ok := validLocalStatuses[p.Expected.Status]
+			require.True(t, ok,
+				"profile %s expected_outcome.status %q must be one of success|failure|timeout|cancelled|partial (R15)",
+				e.Name(), p.Expected.Status)
+		})
+	}
+}

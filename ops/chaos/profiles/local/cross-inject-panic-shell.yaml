@@ -1,0 +1,22 @@
+version: 1
+name: local-cross-inject-panic-shell
+description: |
+  shell.exec@v1 invoked under chaos.inject_panic — the chaos
+  decorator panics before delegating to the real adapter; R4's
+  recoverer must catch and produce AdapterInternalError.
+
+  Cross-cutting profile: validates the panic-recovery contract is
+  uniform across adapters. Shell variant. Operator value: confirm
+  the runtime stays up (R4: adapters do not panic — recovered
+  panics map to AdapterInternalError, the runtime must keep
+  serving) and the receipt carries adapter_internal_error +
+  non_retryable hint.
+adapters:
+  shell.exec@v1:
+    fault: inject_panic
+    timing: pre_dispatch
+expected_outcome:
+  status: failure
+  error_class: adapter_internal_error
+  retry_hint: non_retryable
+persistence: null

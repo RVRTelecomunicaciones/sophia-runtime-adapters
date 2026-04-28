@@ -1,0 +1,23 @@
+version: 1
+name: local-fs-slow-disk
+description: |
+  filesystem.read_file@v1 with simulated slow-disk latency
+  (post-dispatch). Useful for rehearsing degraded-but-not-failing
+  scenarios — the read still succeeds, but the latency histogram
+  bucket should shift, and Sloth burn rules calibrated under the
+  Phase 2C.2 baseline should NOT fire on a single slow read.
+
+  Latency at 750ms is well above the baseline P95 for read_file
+  but below the timeout budget — adjust if your local envelope
+  differs (see docs/load-baseline.md for the operator workflow).
+adapters:
+  filesystem.read_file@v1:
+    fault: latency
+    timing: post_dispatch
+    match:
+      duration: 750ms
+expected_outcome:
+  status: success
+  error_class: ""
+  retry_hint: unknown
+persistence: null

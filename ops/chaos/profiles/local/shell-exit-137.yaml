@@ -1,0 +1,22 @@
+version: 1
+name: local-shell-exit-137
+description: |
+  shell.exec@v1 child exits non-zero (the canonical "OOM-killed by host"
+  scenario emits 137, but any non-zero exit code drives the same
+  classification). The chaos adapter synthesises a process_exit outcome
+  via the shell adapter's ChaosCapable hook.
+
+  Validates ResultNormalizer mapping of plain non-zero exits to
+  ExternalFailure with unknown retry hint (D3.5). Operator should
+  observe the receipt diagnostics block carrying the synthesised exit
+  code and zero-length stdout/stderr — chaos faults do not invent
+  output streams beyond what the synthetic shape allows.
+adapters:
+  shell.exec@v1:
+    fault: process_exit
+    timing: post_dispatch
+expected_outcome:
+  status: failure
+  error_class: external_failure
+  retry_hint: unknown
+persistence: null

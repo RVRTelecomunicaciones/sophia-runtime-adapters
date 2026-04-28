@@ -1,0 +1,23 @@
+version: 1
+name: local-shell-hang-sigterm-ignored
+description: |
+  shell.exec@v1 hangs and ignores graceful termination — i.e. the child
+  trapped/ignored SIGTERM. From the runtime point of view this is
+  indistinguishable from any other hang: the runtime issues the cancel
+  via context cancellation; the real shell adapter is responsible for
+  escalating to SIGKILL on the configured grace period.
+
+  The runtime contract is the same as shell-hang-sigkill: cancelled
+  status, non_retryable hint. This profile exists separately so the
+  operator can rehearse the SIGTERM-ignored matrix line of spec §7.1
+  with a longer wall-clock window for child-process inspection
+  (`ps -o pid,pgid,stat`) before the eventual KILL.
+adapters:
+  shell.exec@v1:
+    fault: hang_until_cancel
+    timing: post_dispatch
+expected_outcome:
+  status: cancelled
+  error_class: cancelled
+  retry_hint: non_retryable
+persistence: null

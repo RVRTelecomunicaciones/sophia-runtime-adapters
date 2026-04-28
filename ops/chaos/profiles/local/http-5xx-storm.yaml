@@ -1,0 +1,29 @@
+version: 1
+name: local-http-5xx-storm
+description: |
+  Approximation of an upstream 5xx storm. The closed fault catalog
+  has no dedicated "synthesise 5xx response" kind (status mapping per
+  §8.5 happens in the real adapter against a real upstream — chaos
+  cannot fabricate response bodies without inventing a new fault
+  kind, which is out of scope per R11).
+
+  Best-effort proxy: pre-dispatch latency long enough to collide with
+  typical caller TimeoutBudget settings, simulating the user-visible
+  shape of a degraded upstream (slow + eventual timeout). Combine
+  with http-connection-reset in a longer rehearsal session for a
+  fuller "storm" picture.
+
+  If the runtime introduces an http_status fault in a later phase
+  (would require an ADR), replace this profile's body. Until then
+  the latency proxy is the most honest representation available.
+adapters:
+  http.request@v1:
+    fault: latency
+    timing: pre_dispatch
+    match:
+      duration: 20s
+expected_outcome:
+  status: timeout
+  error_class: timeout
+  retry_hint: retryable
+persistence: null

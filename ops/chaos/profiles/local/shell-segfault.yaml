@@ -1,0 +1,21 @@
+version: 1
+name: local-shell-segfault
+description: |
+  shell.exec@v1 child terminates by signal (e.g. SIGSEGV from a faulty
+  binary). The chaos adapter synthesises a process_signal outcome via
+  the shell adapter's ChaosCapable hook so the test exercises the same
+  raw shape an in-the-wild segfault would produce.
+
+  Operator value: confirms ResultNormalizer maps signal-terminated
+  processes to ExternalFailure (D3.5: raw outcome → normalizer →
+  result; signal != exit-code is preserved in raw and surfaced in the
+  receipt's diagnostics block).
+adapters:
+  shell.exec@v1:
+    fault: process_signal
+    timing: post_dispatch
+expected_outcome:
+  status: failure
+  error_class: external_failure
+  retry_hint: unknown
+persistence: null

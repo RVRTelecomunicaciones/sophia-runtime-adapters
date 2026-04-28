@@ -1,0 +1,20 @@
+version: 1
+name: local-shell-hang-sigkill
+description: |
+  shell.exec@v1 hangs indefinitely; the consumer cancels the context
+  after the timeout budget elapses, which under the real shell adapter
+  would translate to SIGKILL of the runaway child process group.
+
+  Local-only variant of the cancellation path: longer to leave time for
+  manual log inspection (otel-collector spans, persisted receipt) and
+  receipt validation against R7 persistence-before-return. Pair with
+  ops/local/compose.yaml so the operator can watch traces in real time.
+adapters:
+  shell.exec@v1:
+    fault: hang_until_cancel
+    timing: post_dispatch
+expected_outcome:
+  status: cancelled
+  error_class: cancelled
+  retry_hint: non_retryable
+persistence: null

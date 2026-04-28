@@ -1,0 +1,22 @@
+version: 1
+name: local-http-auth-failure
+description: |
+  http.request@v1 fails authentication — bearer token rejected, basic
+  auth wrong, mTLS client cert untrusted by peer. Chaos synthesises
+  auth_failure via the http adapter's ChaosCapable hook.
+
+  The runtime classifies auth_failure on http.request as
+  ExternalFailure (the remote rejected a well-formed credential —
+  same reasoning as git-auth-failure). Non_retryable hint: retrying
+  the same credential reproduces the same rejection. The consumer
+  can refresh the token and submit a fresh idempotency key (D6.4 —
+  retrying a failure requires a new key).
+adapters:
+  http.request@v1:
+    fault: auth_failure
+    timing: pre_dispatch
+expected_outcome:
+  status: failure
+  error_class: external_failure
+  retry_hint: non_retryable
+persistence: null
