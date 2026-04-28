@@ -26,10 +26,11 @@ import (
 //	runtime → otel-collector → prometheus → sloth test rules
 //	→ alertmanager → receiver-stub
 //
-// It drives ~15s of failed HTTP requests through the runtime under the
-// ci-http-connection-reset chaos profile, then asserts that the
-// HttpRequestAvailabilityBurn alert fires with the correct label set and
-// is delivered to receiver-stub within the D2C3.21 tiered budget:
+// It drives sustained failed HTTP requests (~80s, concurrent with the
+// assertion phase) through the runtime under the ci-http-connection-reset
+// chaos profile, then asserts that the HttpRequestAvailabilityBurn alert
+// fires with the correct label set and is delivered to receiver-stub within
+// the D2C3.21 tiered budget:
 //
 //	≤ 60s  → pass
 //	60-90s → pass-with-warning
@@ -151,7 +152,7 @@ func TestChaos_Canary_HttpConnectionReset(t *testing.T) {
 	require.NoErrorf(t, err,
 		"alert not delivered to receiver-stub; exercise started at %s; "+
 			"check: (1) runtime metrics visible in Prometheus, "+
-			"(2) test-slo-rules.yaml recording rules evaluate, "+
+			"(2) per-spec test rule files in ops/prometheus/generated/test/ load in Prometheus, "+
 			"(3) alertmanager routing matches, "+
 			"(4) receiver-stub reachable from alertmanager",
 		startExercise.Format(time.RFC3339),

@@ -8,9 +8,10 @@
 #   - scrape_interval / evaluation_interval reduced to 1s for short-window canary budgets
 #   - external_labels updated to identify the chaos environment
 #   - alerting block added targeting alertmanager:9093
-#   - rule_files block adds test-slo-rules.yaml (rendered from ops/slo/test/ in B6
-#     via `make chaos-render-rules`; placeholder ships with B5 at
-#     ops/prometheus/generated/test-slo-rules.yaml)
+#   - rule_files block globs the per-spec rendered test rule files under
+#     ops/prometheus/generated/test/ (one file per SLO spec, rendered via
+#     `make chaos-render-rules`); concatenation into a single file is invalid
+#     because Sloth emits one top-level `groups:` per spec.
 #   - scrape_configs match the base exactly (same job names, same targets/ports)
 # Production prometheus.yaml is unchanged.
 
