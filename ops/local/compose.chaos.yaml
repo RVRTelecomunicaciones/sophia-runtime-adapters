@@ -29,6 +29,8 @@ services:
       - ../alertmanager/alertmanager.chaos.yaml:/etc/alertmanager/alertmanager.yml:ro
     networks:
       - runtime-load
+    ports:
+      - "9093:9093"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9093/-/healthy"]
       interval: 2s

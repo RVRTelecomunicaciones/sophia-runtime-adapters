@@ -1,0 +1,37 @@
+apiVersion: sloth.slok.dev/v1
+kind: AlertWindows
+spec:
+  # sloPeriod: 5m — custom window catalog for Phase 2C.3 chaos canary.
+  # Used with `sloth generate --slo-period-windows-path ops/slo/windows
+  # --default-slo-period 5m` to produce recording/alerting rules whose
+  # evaluation windows fit within the 90s canary deadline (D2C3.18).
+  #
+  # Window proportions follow the Sloth 30d template scaled to 5m:
+  #   30d → 5m is a ~8640x speedup.  We keep windows ≥1m (Prometheus
+  #   minimum meaningful rate window) and cap the long window at 5m to
+  #   stay within the SLO period.
+  #
+  # Fast-burn (page): 1% budget, 1m/2m — alert fires when ≥1% of the
+  #   5-minute budget is consumed in the last 1m AND 2m windows.
+  # Slow-burn (page): 5% budget, 2m/4m — alert fires when ≥5% of the
+  #   5-minute budget is consumed in the last 2m AND 4m windows.
+  # ticket alerts intentionally wider to avoid noise in short canary runs.
+  sloPeriod: 5m
+  page:
+    quick:
+      errorBudgetPercent: 1
+      shortWindow: 1m
+      longWindow: 2m
+    slow:
+      errorBudgetPercent: 5
+      shortWindow: 2m
+      longWindow: 4m
+  ticket:
+    quick:
+      errorBudgetPercent: 10
+      shortWindow: 2m
+      longWindow: 4m
+    slow:
+      errorBudgetPercent: 20
+      shortWindow: 3m
+      longWindow: 5m
