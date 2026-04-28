@@ -1,0 +1,109 @@
+# Test SLO spec for the per-PR E2E canary (Phase 2C.3 B6).
+# Mirrors ops/slo/filesystem.yaml exactly except:
+#   - service: "runtime-adapters-chaos-test" (avoids sloth_slo label collision
+#     with prod specs when both run in the same Prometheus instance)
+# Rendered with --default-slo-period 5m (D2C3.18) to produce short-window
+# recording/alerting rules that fire within the 90s canary deadline.
+# Do not calibrate objectives here — short period accelerates burn without
+# changing the math; keep objectives at prod values (D2C3.29).
+
+version: "prometheus/v1"
+service: "runtime-adapters-chaos-test"
+labels:
+  team: "platform"
+  adapter: "filesystem"
+
+slos:
+  # ---- filesystem.read_file@v1 ---------------------------------------------
+  - name: "filesystem-read-file-availability"
+    objective: 99.9
+    description: "filesystem.read_file@v1 non-error execution rate (chaos canary)"
+    labels:
+      capability: "filesystem.read_file@v1"
+    sli:
+      events:
+        error_query: |
+          sum(rate(runtime_adapters_execution_total{capability="filesystem.read_file@v1",status=~"failure|timeout"}[{{.window}}]))
+        total_query: |
+          sum(rate(runtime_adapters_execution_total{capability="filesystem.read_file@v1",status=~"success|failure|timeout"}[{{.window}}]))
+    alerting:
+      name: FilesystemReadFileAvailabilityBurn
+      labels:
+        capability: "filesystem.read_file@v1"
+      page_alert:
+        labels:
+          severity: critical
+      ticket_alert:
+        labels:
+          severity: warning
+
+  - name: "filesystem-read-file-latency"
+    objective: 99.0
+    description: "99% of filesystem.read_file@v1 successful executions complete under 100ms (chaos canary)"
+    labels:
+      capability: "filesystem.read_file@v1"
+    sli:
+      events:
+        error_query: |
+          sum(rate(runtime_adapters_execution_duration_seconds_count{capability="filesystem.read_file@v1"}[{{.window}}]))
+          -
+          sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="filesystem.read_file@v1",le="0.1"}[{{.window}}]))
+        total_query: |
+          sum(rate(runtime_adapters_execution_duration_seconds_count{capability="filesystem.read_file@v1"}[{{.window}}]))
+    alerting:
+      name: FilesystemReadFileLatencyBurn
+      labels:
+        capability: "filesystem.read_file@v1"
+      page_alert:
+        labels:
+          severity: critical
+      ticket_alert:
+        labels:
+          severity: warning
+
+  # ---- filesystem.write_file@v1 --------------------------------------------
+  - name: "filesystem-write-file-availability"
+    objective: 99.9
+    description: "filesystem.write_file@v1 non-error execution rate (chaos canary)"
+    labels:
+      capability: "filesystem.write_file@v1"
+    sli:
+      events:
+        error_query: |
+          sum(rate(runtime_adapters_execution_total{capability="filesystem.write_file@v1",status=~"failure|timeout"}[{{.window}}]))
+        total_query: |
+          sum(rate(runtime_adapters_execution_total{capability="filesystem.write_file@v1",status=~"success|failure|timeout"}[{{.window}}]))
+    alerting:
+      name: FilesystemWriteFileAvailabilityBurn
+      labels:
+        capability: "filesystem.write_file@v1"
+      page_alert:
+        labels:
+          severity: critical
+      ticket_alert:
+        labels:
+          severity: warning
+
+  - name: "filesystem-write-file-latency"
+    objective: 99.0
+    description: "99% of filesystem.write_file@v1 successful executions complete under 500ms (chaos canary)"
+    labels:
+      capability: "filesystem.write_file@v1"
+    sli:
+      events:
+        error_query: |
+          sum(rate(runtime_adapters_execution_duration_seconds_count{capability="filesystem.write_file@v1"}[{{.window}}]))
+          -
+          sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="filesystem.write_file@v1",le="0.5"}[{{.window}}]))
+        total_query: |
+          sum(rate(runtime_adapters_execution_duration_seconds_count{capability="filesystem.write_file@v1"}[{{.window}}]))
+    alerting:
+      name: FilesystemWriteFileLatencyBurn
+      labels:
+        capability: "filesystem.write_file@v1"
+      page_alert:
+        labels:
+          severity: critical
+      ticket_alert:
+        labels:
+          severity: warning

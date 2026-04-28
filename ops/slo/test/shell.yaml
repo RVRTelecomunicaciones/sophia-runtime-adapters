@@ -1,0 +1,61 @@
+# Test SLO spec for the per-PR E2E canary (Phase 2C.3 B6).
+# Mirrors ops/slo/shell.yaml exactly except:
+#   - service: "runtime-adapters-chaos-test" (avoids sloth_slo label collision
+#     with prod specs when both run in the same Prometheus instance)
+# Rendered with --default-slo-period 5m (D2C3.18) to produce short-window
+# recording/alerting rules that fire within the 90s canary deadline.
+# Do not calibrate objectives here — short period accelerates burn without
+# changing the math; keep objectives at prod values (D2C3.29).
+
+version: "prometheus/v1"
+service: "runtime-adapters-chaos-test"
+labels:
+  team: "platform"
+  adapter: "shell"
+
+slos:
+  - name: "shell-exec-availability"
+    objective: 99.5
+    description: "shell.exec@v1 non-error execution rate (chaos canary)"
+    labels:
+      capability: "shell.exec@v1"
+    sli:
+      events:
+        error_query: |
+          sum(rate(runtime_adapters_execution_total{capability="shell.exec@v1",status=~"failure|timeout"}[{{.window}}]))
+        total_query: |
+          sum(rate(runtime_adapters_execution_total{capability="shell.exec@v1",status=~"success|failure|timeout"}[{{.window}}]))
+    alerting:
+      name: ShellExecAvailabilityBurn
+      labels:
+        capability: "shell.exec@v1"
+      page_alert:
+        labels:
+          severity: critical
+      ticket_alert:
+        labels:
+          severity: warning
+
+  - name: "shell-exec-latency"
+    objective: 99.0
+    description: "99% of shell.exec@v1 successful executions complete under 250ms (chaos canary)"
+    labels:
+      capability: "shell.exec@v1"
+    sli:
+      events:
+        error_query: |
+          sum(rate(runtime_adapters_execution_duration_seconds_count{capability="shell.exec@v1"}[{{.window}}]))
+          -
+          sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="shell.exec@v1",le="0.25"}[{{.window}}]))
+        total_query: |
+          sum(rate(runtime_adapters_execution_duration_seconds_count{capability="shell.exec@v1"}[{{.window}}]))
+    alerting:
+      name: ShellExecLatencyBurn
+      labels:
+        capability: "shell.exec@v1"
+      page_alert:
+        labels:
+          severity: critical
+      ticket_alert:
+        labels:
+          severity: warning

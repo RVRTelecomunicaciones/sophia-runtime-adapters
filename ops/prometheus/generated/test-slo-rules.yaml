@@ -1,8 +1,0 @@
-# ops/prometheus/generated/test-slo-rules.yaml
-#
-# PLACEHOLDER — B5 ships this file empty so that the compose.chaos.yaml
-# volume mount resolves and `docker compose ... up` succeeds without B6 content.
-# B6 (`make chaos-render-rules`) overwrites this file with Sloth-rendered
-# SLO recording and alerting rules from ops/slo/test/.
-# Do not edit manually; contents are generated.
-groups: []

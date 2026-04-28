@@ -127,8 +127,18 @@ jobs:
           # The hand-written promtool test fixture (slo_rules.test.yaml) is
           # excluded: sloth does not emit it, so it cannot appear in the
           # regenerated tree.
+          #
+          # ops/slo/test/ — test SLO specs for the B6 chaos canary (rendered
+          # with --slo-period-windows-path + --default-slo-period 5m via
+          # `make chaos-render-rules`; separate invocation, not part of this gate).
+          # ops/slo/windows/ — custom Sloth window catalog for the 5m period;
+          # it is an AlertWindows manifest, not an SLO spec, and Sloth fails to
+          # parse it as one. Both subdirs must be excluded here.
           mkdir -p /tmp/slo-regen
-          sloth generate --input ops/slo/ --out /tmp/slo-regen/
+          sloth generate \
+            --fs-exclude '.*/test/.*|.*/windows/.*' \
+            --input ops/slo/ \
+            --out /tmp/slo-regen/
 
           # Normalize the embedded sloth version string before comparing.
           # The Linux GitHub-release binary at v0.16.0 emits
@@ -144,10 +154,10 @@ jobs:
 
           # Exclusions:
           #   - *.test.yaml: hand-written promtool fixtures (sloth never emits these)
-          #   - test-slo-rules.yaml: Phase 2C.3 chaos test rules placeholder
-          #     (rendered from ops/slo/test/ in B6 via `make chaos-render-rules`,
-          #     a separate Sloth invocation outside this idempotency gate)
-          diff -ru --exclude='*.test.yaml' --exclude='test-slo-rules.yaml' ops/prometheus/generated/ /tmp/slo-regen/
+          #   - test: Phase 2C.3 chaos test rules subdirectory (per-spec rendered
+          #     output under ops/prometheus/generated/test/, gated separately by
+          #     `make chaos-render-rules-check` in chaos-canary-e2e job)
+          diff -ru --exclude='*.test.yaml' --exclude='test' ops/prometheus/generated/ /tmp/slo-regen/
 
       - name: promtool check rules (infra + generated SLOs)
         shell: bash
@@ -376,6 +386,53 @@ jobs:
       - name: Teardown
         if: always()
         run: docker compose -f ops/local/compose.ci-smoke.yaml down -v
+
+  # --------------------------------------------------------------------
+  # Phase 2C.3 — per-PR E2E canary (B6)
+  # --------------------------------------------------------------------
+  chaos-canary-e2e:
+    name: chaos-canary-e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache: true
+
+      - name: Install Sloth (pinned)
+        run: |
+          set -euo pipefail
+          VERSION="$(cat ops/slo/.sloth-version)"
+          curl -sSL --fail \
+            "https://github.com/slok/sloth/releases/download/v${VERSION}/sloth-linux-amd64" \
+            -o /usr/local/bin/sloth
+          chmod +x /usr/local/bin/sloth
+
+      - name: chaos-render-rules-check (idempotency)
+        run: make chaos-render-rules-check
+
+      - name: Run canary
+        run: make chaos-canary
+
+      # NOTE: the canary's t.Cleanup runs DumpDiagnostics BEFORE ComposeDown
+      # when t.Failed() is true (see test/chaos/e2e/breadcrumbs.go), writing
+      # to <repo>/chaos-dump/. Do NOT run `make chaos-dump` here as a second
+      # post-step — by the time GHA evaluates `if: failure()` the compose stack
+      # is already torn down and every probe would 404, overwriting the useful
+      # in-test dump with empty failures.
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chaos-canary-diagnostics
+          path: chaos-dump/
+          retention-days: 14
+          if-no-files-found: warn
 
   # --------------------------------------------------------------------
   # Phase 2C.2 — load report schema (tolerates pre-first-calibration)
