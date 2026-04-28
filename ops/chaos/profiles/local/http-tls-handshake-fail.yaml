@@ -1,0 +1,23 @@
+version: 1
+name: local-http-tls-handshake-fail
+description: |
+  http.request@v1 fails the TLS handshake — bad certificate, mismatched
+  SNI, expired root, peer rejects ClientHello. The chaos adapter
+  synthesises tls_handshake_fail via the http adapter's ChaosCapable
+  hook so the resulting raw outcome matches what crypto/tls would
+  surface in production.
+
+  TLS verify is mandatory by default (http-adapter-design skill).
+  This profile exercises the failure path; it does NOT disable TLS.
+  Operator should observe ExternalFailure classification — the
+  handshake aborted before any HTTP semantics, so the status code
+  mapping in §8.5 doesn't apply.
+adapters:
+  http.request@v1:
+    fault: tls_handshake_fail
+    timing: pre_dispatch
+expected_outcome:
+  status: failure
+  error_class: external_failure
+  retry_hint: unknown
+persistence: null

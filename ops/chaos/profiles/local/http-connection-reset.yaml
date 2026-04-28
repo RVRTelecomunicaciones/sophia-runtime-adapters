@@ -1,0 +1,22 @@
+version: 1
+name: local-http-connection-reset
+description: |
+  http.request@v1 sees an in-process synthesised connection_reset.
+  Counterpart to ci-http-connection-reset, used for hands-on triage
+  of the full pipeline — runtime → otel-collector → prometheus →
+  sloth rules → alertmanager → receiver-stub — without depending on
+  CI infrastructure.
+
+  Expected: status=failure, error_class=external_failure, retry_hint
+  unknown. Operator should observe the burn alert fire and the
+  inhibition contract hold (HttpRequestAvailabilityBurn inhibits the
+  noisier downstream alerts during the chaos window).
+adapters:
+  http.request@v1:
+    fault: connection_reset
+    timing: pre_dispatch
+expected_outcome:
+  status: failure
+  error_class: external_failure
+  retry_hint: unknown
+persistence: null
