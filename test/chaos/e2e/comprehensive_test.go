@@ -141,8 +141,12 @@ func comprehensiveScenarios() []comprehensiveScenario {
 			// still want a non-zero number; the runtime handler treats
 			// the cancellation as cancelled, not timeout, because the
 			// client closes the connection mid-request via ctx cancel.
-			timeoutMs:   5000,
-			useCancel:   true,
+			timeoutMs: 5000,
+			useCancel: true,
+			// 50ms is long enough for the POST to reach the runtime handler
+			// and start executing the shell command; short enough that we're
+			// well below timeoutMs=5000 so the runtime classifies as
+			// cancelled, not timeout.
 			cancelAfter: 50 * time.Millisecond,
 			alertName:   "ShellExecAvailabilityBurn",
 			sloName:     "shell-exec-availability",
@@ -307,22 +311,31 @@ func runComprehensiveScenario(t *testing.T, sc comprehensiveScenario) {
 
 	// INHIBITION CONTRACT (spec §13.3, D2C1.17). After the critical lands,
 	// assert that no warning alert with the same (sloth_slo, capability)
-	// has been delivered. Alertmanager's inhibition rule is supposed to
-	// suppress the warning page when the critical for the same SLO fires.
-	// If a warning slips through, this nightly catches the regression
-	// before it shows up as duplicate paging in production.
-	warnings, werr := rc.AlertsMatching(context.Background(), ExpectedAlert{
+	// has been delivered AFTER the critical's received timestamp.
+	//
+	// We filter by `since=a.Received` (not the full ring buffer) because
+	// multi-window burn-rate alerts cross the warning threshold BEFORE the
+	// critical threshold by design — a warning legitimately fires during
+	// the early ramp and reaches the receiver. Alertmanager's inhibition
+	// rule only suppresses warnings that arrive WHILE a critical is active;
+	// it does not retroactively erase warnings already delivered. So the
+	// contract under test is: "no NEW warning for the same SLO+capability
+	// after the critical fired." Code-quality review on commit ec893a9
+	// flagged this as a flakiness vector.
+	warnings, werr := rc.AlertsMatchingSince(context.Background(), ExpectedAlert{
 		Severity:   "warning",
 		SLOName:    expected.SLOName,
 		Capability: expected.Capability,
-	})
+	}, a.Received)
 	require.NoError(t, werr,
-		"[%s] AlertsMatching(warning) failed: %v", sc.name, werr)
+		"[%s] AlertsMatchingSince(warning) failed: %v", sc.name, werr)
 	require.Emptyf(t, warnings,
-		"[%s] inhibition violated: warning alert delivered for same (sloth_slo=%s, capability=%s) "+
-			"as the critical; alertmanager.yml source_match/target_match must inhibit warning when "+
-			"critical fires for the same SLO+capability (D2C1.17). Got %d warning payloads.",
-		sc.name, expected.SLOName, expected.Capability, len(warnings))
+		"[%s] inhibition violated: warning alert delivered AFTER the critical "+
+			"for same (sloth_slo=%s, capability=%s); alertmanager.yml source_match/"+
+			"target_match must inhibit warning while critical is active for the "+
+			"same SLO+capability (D2C1.17). Got %d warning payloads after %s.",
+		sc.name, expected.SLOName, expected.Capability, len(warnings),
+		a.Received.Format(time.RFC3339Nano))
 }
 
 // driveOneRequest issues a single POST /api/v1/execute against the runtime
@@ -448,4 +461,3 @@ func readSLONameFromSpec(t *testing.T, specFile, expectedSLOName string) string 
 		expectedSLOName, rulesPath)
 	return ""
 }
-
