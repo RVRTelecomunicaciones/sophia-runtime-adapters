@@ -138,14 +138,19 @@ func readSLOName(t *testing.T) string {
 	t.Helper()
 
 	root := findRepoRoot(t)
-	rulesPath := filepath.Join(root, "ops", "prometheus", "generated", "test-slo-rules.yaml")
+	// Per-spec rendered files live under ops/prometheus/generated/test/.
+	// http-request-availability lives in http.yaml; read that one
+	// directly. (The previous single-file concatenation produced
+	// invalid YAML for Prometheus rule_files; D2C3.29 + B6 fix —
+	// per-spec files mirror the prod sloth-generate pattern.)
+	rulesPath := filepath.Join(root, "ops", "prometheus", "generated", "test", "http.yaml")
 	data, err := os.ReadFile(rulesPath)
 	if err != nil {
-		t.Fatalf("readSLOName: read %s: %v", rulesPath, err)
+		t.Fatalf("readSLOName: read %s: %v (run `make chaos-render-rules` first)", rulesPath, err)
 	}
 
-	// The rendered YAML is a multi-document stream (one `---` per adapter file
-	// concatenated by `cat`).  We need to find any recording rule that has
+	// The rendered YAML is a single Sloth output for one spec.
+	// We need to find any recording rule that has
 	// sloth_slo=http-request-availability in its labels block.
 	//
 	// Structure we're looking for:
