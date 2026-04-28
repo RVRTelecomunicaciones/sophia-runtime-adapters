@@ -1,0 +1,22 @@
+version: 1
+name: local-git-remote-unreachable
+description: |
+  git.clone@v1 targets an unreachable remote — DNS failure, connection
+  refused, network partition. The chaos adapter synthesises a
+  remote_unreachable raw outcome via go-git's ChaosCapable hook so the
+  resulting error shape matches a real failed clone.
+
+  Local-only counterpart to ci-git-remote-unreachable: longer
+  description, identical contract. Useful for rehearsing operator
+  flow — does the receipt's diagnostics carry the URL? Does the
+  alert label set match the inhibition contract? — without depending
+  on production network state.
+adapters:
+  git.clone@v1:
+    fault: remote_unreachable
+    timing: pre_dispatch
+expected_outcome:
+  status: failure
+  error_class: external_failure
+  retry_hint: unknown
+persistence: null

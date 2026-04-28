@@ -1,0 +1,22 @@
+version: 1
+name: local-git-auth-failure
+description: |
+  git.clone@v1 fails authentication — bad SSH key, expired token,
+  missing credentials. Chaos synthesises an auth_failure raw outcome
+  via the go-git adapter's ChaosCapable hook, mimicking the shape
+  go-git returns when the transport rejects the credential.
+
+  The runtime classifies auth_failure as ExternalFailure (not
+  ValidationFailure): from the runtime's standpoint the credentials
+  came in as well-formed input — the remote rejected them. The
+  consumer decides whether to surface as 401 upstream or trigger a
+  credential refresh.
+adapters:
+  git.clone@v1:
+    fault: auth_failure
+    timing: pre_dispatch
+expected_outcome:
+  status: failure
+  error_class: external_failure
+  retry_hint: non_retryable
+persistence: null

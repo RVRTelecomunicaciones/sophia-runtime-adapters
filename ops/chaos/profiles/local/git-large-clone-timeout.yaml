@@ -1,0 +1,26 @@
+version: 1
+name: local-git-large-clone-timeout
+description: |
+  git.clone@v1 of a slow/large remote — the chaos adapter injects
+  pre-dispatch latency that exceeds the caller's timeout budget,
+  driving the request into context.DeadlineExceeded.
+
+  The runtime classifies deadline-driven aborts as status=timeout /
+  error_class=timeout / retry_hint=retryable per spec §5.9.
+  Operator value: rehearse the timeout vs cancellation distinction —
+  a deadline expiry produces a different error_class than an explicit
+  cancel, even though both end in ctx.Err()-driven abort.
+
+  Latency is set to 30s so a typical local TimeoutBudget (5–15s)
+  will trip; bump locally if your test harness uses a longer budget.
+adapters:
+  git.clone@v1:
+    fault: latency
+    timing: pre_dispatch
+    match:
+      duration: 30s
+expected_outcome:
+  status: timeout
+  error_class: timeout
+  retry_hint: retryable
+persistence: null
