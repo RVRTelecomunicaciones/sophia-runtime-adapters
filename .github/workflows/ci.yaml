@@ -419,10 +419,12 @@ jobs:
       - name: Run canary
         run: make chaos-canary
 
-      - name: Dump diagnostics on failure
-        if: failure()
-        run: make chaos-dump || true
-
+      # NOTE: the canary's t.Cleanup runs DumpDiagnostics BEFORE ComposeDown
+      # when t.Failed() is true (see test/chaos/e2e/breadcrumbs.go), writing
+      # to <repo>/chaos-dump/. Do NOT run `make chaos-dump` here as a second
+      # post-step — by the time GHA evaluates `if: failure()` the compose stack
+      # is already torn down and every probe would 404, overwriting the useful
+      # in-test dump with empty failures.
       - name: Upload diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
@@ -430,6 +432,7 @@ jobs:
           name: chaos-canary-diagnostics
           path: chaos-dump/
           retention-days: 14
+          if-no-files-found: warn
 
   # --------------------------------------------------------------------
   # Phase 2C.2 — load report schema (tolerates pre-first-calibration)
