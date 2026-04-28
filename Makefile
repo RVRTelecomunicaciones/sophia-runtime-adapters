@@ -1,4 +1,4 @@
-.PHONY: all build test test-unit test-contract test-integration test-e2e chaos-integration lint vet fmt cover clean run help sloth-generate test-obs test-rules test-alertmanager test-dashboards test-observability load-up load-down load-baseline load-smoke-local fixture-git-bench chaos-up chaos-up-toxiproxy chaos-down chaos-local chaos-dump chaos-render-rules chaos-render-rules-check chaos-canary
+.PHONY: all build test test-unit test-contract test-integration test-e2e chaos-integration lint vet fmt cover clean run help sloth-generate test-obs test-rules test-alertmanager test-dashboards test-observability load-up load-down load-baseline load-smoke-local fixture-git-bench chaos-up chaos-up-toxiproxy chaos-down chaos-local chaos-dump chaos-render-rules chaos-render-rules-check chaos-canary chaos-e2e-comprehensive
 
 GO              ?= go
 GOLANGCI_LINT   ?= golangci-lint
@@ -193,4 +193,9 @@ chaos-render-rules-check: ## CI gate: idempotent render of test rules
 chaos-canary:             ## Run per-PR canary E2E test
 	$(GO) test -race -count=1 -tags=e2e -timeout=10m \
 	  -run TestChaos_Canary_HttpConnectionReset \
+	  ./test/chaos/e2e/...
+
+chaos-e2e-comprehensive:  ## Run nightly comprehensive E2E test (all 6 profiles + inhibition contract)
+	$(GO) test -race -count=1 -tags=e2e -timeout=30m \
+	  -run TestChaos_Comprehensive \
 	  ./test/chaos/e2e/...
