@@ -19,7 +19,10 @@ services:
   prometheus:
     volumes:
       - ../prometheus/prometheus.chaos.yml:/etc/prometheus/prometheus.yml:ro
-      - ../prometheus/generated/test-slo-rules.yaml:/etc/prometheus/test-slo-rules.yaml:ro
+      # Mount the per-spec rendered test rules directory (one file per
+      # SLO spec — Sloth concatenated under one filename would produce
+      # multiple top-level `groups:` keys, invalid for Prometheus rule_files).
+      - ../prometheus/generated/test:/etc/prometheus/test-rules:ro
 
   alertmanager:
     image: prom/alertmanager:v0.27.0

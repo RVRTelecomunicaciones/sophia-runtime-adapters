@@ -26,7 +26,12 @@ alerting:
         - targets: ["alertmanager:9093"]
 
 rule_files:
-  - /etc/prometheus/test-slo-rules.yaml
+  # Glob each per-spec rendered test rule file. The chaos compose overlay
+  # mounts ops/prometheus/generated/test/ → /etc/prometheus/test-rules/.
+  # Sloth emits one file per input spec (filesystem.yaml, git.yaml,
+  # http.yaml, shell.yaml); each file has its own top-level `groups:`,
+  # so concatenating them under one filename would not be valid.
+  - /etc/prometheus/test-rules/*.yaml
 
 scrape_configs:
   # Runtime metrics via the collector's prometheus exporter.

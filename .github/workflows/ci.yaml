@@ -154,10 +154,10 @@ jobs:
 
           # Exclusions:
           #   - *.test.yaml: hand-written promtool fixtures (sloth never emits these)
-          #   - test-slo-rules.yaml: Phase 2C.3 chaos test rules placeholder
-          #     (rendered from ops/slo/test/ in B6 via `make chaos-render-rules`,
-          #     a separate Sloth invocation outside this idempotency gate)
-          diff -ru --exclude='*.test.yaml' --exclude='test-slo-rules.yaml' ops/prometheus/generated/ /tmp/slo-regen/
+          #   - test: Phase 2C.3 chaos test rules subdirectory (per-spec rendered
+          #     output under ops/prometheus/generated/test/, gated separately by
+          #     `make chaos-render-rules-check` in chaos-canary-e2e job)
+          diff -ru --exclude='*.test.yaml' --exclude='test' ops/prometheus/generated/ /tmp/slo-regen/
 
       - name: promtool check rules (infra + generated SLOs)
         shell: bash
