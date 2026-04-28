@@ -1,0 +1,109 @@
+name: chaos-nightly
+
+# Phase 2C.3 — Bundle 7 — nightly comprehensive chaos run.
+#
+# Runs the comprehensive E2E (test/chaos/e2e/comprehensive_test.go) over all
+# 6 CI profiles plus the inhibition-contract assertion per scenario. PRs are
+# NOT gated on this workflow — triage on failure is human, same-day or next-day
+# (spec §13.4 ¶4).
+
+on:
+  schedule:
+    - cron: "0 7 * * *"        # 07:00 UTC daily
+  workflow_dispatch: {}
+
+# Spec §13.1: workflow-level permissions.
+#   contents: read  → checkout source
+#   issues: write   → `gh issue create` on failure (§13.4)
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  chaos-comprehensive:
+    name: chaos-comprehensive
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache: true
+
+      - name: Install Sloth (pinned)
+        run: |
+          set -euo pipefail
+          VERSION="$(cat ops/slo/.sloth-version)"
+          curl -sSL --fail \
+            "https://github.com/slok/sloth/releases/download/v${VERSION}/sloth-linux-amd64" \
+            -o /usr/local/bin/sloth
+          chmod +x /usr/local/bin/sloth
+
+      - name: chaos-render-rules-check (idempotency)
+        run: make chaos-render-rules-check
+
+      - name: Run comprehensive
+        run: make chaos-e2e-comprehensive
+
+      # NOTE — deviation from plan-literal YAML (docs/superpowers/plans/...
+      # 2026-04-26-phase-2c.3-chaos-hardening.md §Task 7.2):
+      #
+      # The plan listed a `make chaos-dump` post-step. We deliberately omit it.
+      #
+      # The comprehensive test brings the compose stack UP and DOWN PER
+      # SCENARIO (each subtest does ComposeUp + ComposeDown). The per-subtest
+      # `t.Cleanup` runs DumpDiagnostics BEFORE ComposeDown when t.Failed() is
+      # true (see test/chaos/e2e/breadcrumbs.go), writing the failing scenario's
+      # state to `<repo>/chaos-dump/`. By the time the test process exits, NO
+      # compose stack is running.
+      #
+      # Running `make chaos-dump` as a GHA post-step would therefore probe dead
+      # containers, every endpoint would 404, and we'd OVERWRITE the useful
+      # in-test dump with empty failures — same bug fixed in B6 commit e59bcff
+      # (see chaos-canary-e2e in ci.yaml). The in-test cleanup is the source of
+      # truth.
+      #
+      # Upload uses `if: always()` (vs canary's `if: failure()`) so we capture
+      # pass-state diagnostics for nightly trend baselining too.
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chaos-nightly-diagnostics-${{ github.run_id }}
+          path: chaos-dump/
+          retention-days: 90
+          if-no-files-found: warn
+
+      # Spec §13.4 ¶2: auto-issue creation via `gh issue create` directly
+      # (no third-party action). Body includes workflow run link, artifact
+      # name, and a pointer to per-stage breadcrumbs in the artifact.
+      # Spec §13.4 ¶3: this step runs AFTER artifact upload so the artifact
+      # is attached even if `gh issue create` itself fails.
+      - name: Open auto-issue on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          ARTIFACT="chaos-nightly-diagnostics-${{ github.run_id }}"
+          gh issue create \
+            --title "chaos-nightly failed: $(date -u +%Y-%m-%d)" \
+            --label chaos-nightly-fail \
+            --body "$(cat <<EOF
+          chaos-nightly run failed.
+
+          - Workflow run: ${RUN_URL}
+          - Diagnostics artifact: \`${ARTIFACT}\` (90-day retention)
+
+          Per-stage breadcrumbs (Prometheus query snapshots, Alertmanager
+          state, receiver-stub /inspect JSON, runtime container logs) are in
+          the attached artifact. The failing scenario name and stage timeline
+          are in the test logs at the workflow run URL above.
+
+          Triage: human, same-day or next-day. PRs are not blocked by this
+          workflow (spec §13.4 ¶4).
+          EOF
+          )"
