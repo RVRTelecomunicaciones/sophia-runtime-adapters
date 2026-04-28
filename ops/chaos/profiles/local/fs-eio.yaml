@@ -1,0 +1,21 @@
+version: 1
+name: local-fs-eio
+description: |
+  filesystem.read_file@v1 sees a synthesised EIO from the underlying
+  read. EIO is treated as external infrastructure I/O failure, not
+  adapter bug — the adapter does not own the disk; a hardware-level
+  read error classifies as ExternalFailure with unknown retry hint
+  (D2C3.15).
+
+  Local-only counterpart to ci-fs-readfile-eio: same contract, used
+  by operators to rehearse the ExecutionResult diagnostics shape and
+  receipt persistence under disk fault.
+adapters:
+  filesystem.read_file@v1:
+    fault: eio
+    timing: post_dispatch
+expected_outcome:
+  status: failure
+  error_class: external_failure
+  retry_hint: unknown
+persistence: null

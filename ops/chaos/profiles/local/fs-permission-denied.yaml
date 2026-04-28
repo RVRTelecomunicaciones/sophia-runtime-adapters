@@ -1,0 +1,23 @@
+version: 1
+name: local-fs-permission-denied
+description: |
+  filesystem.read_file@v1 returns EACCES — the path is in the
+  allowlist (skill-shared `filesystem-safety` enforces allowlist at
+  validation), but the OS rejected the read. Chaos synthesises the
+  permission_denied raw outcome via the FS adapter's ChaosCapable
+  hook.
+
+  Note the contract distinction: an out-of-allowlist path would have
+  been rejected upstream as ValidationFailure (path hardening lives
+  in the FS adapter's request validation, before chaos dispatch). A
+  permission_denied here means the path was accepted but the kernel
+  said no — that classifies as ExternalFailure.
+adapters:
+  filesystem.read_file@v1:
+    fault: permission_denied
+    timing: post_dispatch
+expected_outcome:
+  status: failure
+  error_class: external_failure
+  retry_hint: non_retryable
+persistence: null
