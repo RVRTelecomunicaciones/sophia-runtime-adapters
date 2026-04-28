@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -58,39 +60,73 @@ func TestChaos_Canary_HttpConnectionReset(t *testing.T) {
 	}
 	require.NoError(t, rc.Clear(context.Background()), "clear receiver-stub ring buffer")
 
-	// EXERCISE — drive ~15s of failed http.request@v1 executions.
-	// Each POST /api/v1/execute with adapter_id=http under the connection_reset
-	// chaos profile returns status=failure, incrementing the error counter that
-	// feeds the SLI query in test-slo-rules.yaml.
+	// EXERCISE — drive failed http.request@v1 executions CONTINUOUSLY for
+	// the full duration of the assertion phase (≈80s).
+	//
+	// Why sustained, not a one-shot burst: the runtime's OTel SDK uses a 30s
+	// PeriodicReader (internal/infrastructure/obs/otel.go), so a 15s burst
+	// counter increments only show up in Prometheus as a single flat plateau —
+	// rate(counter[1m]) over a flat plateau is 0, ratio = 0/0 = NaN, and
+	// no burn-rate alert can ever fire. Sustained traffic across multiple
+	// 30s exports lets rate() see real per-second deltas. This also matches
+	// the production semantics of multi-window burn-rate alerts: they're
+	// designed to fire on sustained failure, not on 15s blips.
 	runtimeURL := "http://localhost:8080/api/v1/execute"
 	startExercise := time.Now()
 
-	for i := 0; i < 30; i++ {
-		correlationID := ulid.Make().String()
-		body, err := json.Marshal(map[string]any{
-			"correlation_id":     correlationID,
-			"adapter_id":         "http",
-			"capability_name":    "request",
-			"capability_version": "v1",
-			// payload is the raw JSON for the HTTP adapter request
-			"payload": json.RawMessage(`{"method":"GET","url":"https://example.invalid/","headers":{},"expected_status":[200]}`),
-			"timeout_budget_ms": 1000,
-		})
-		require.NoError(t, err, "marshal execution request")
+	exerciseCtx, cancelExercise := context.WithCancel(context.Background())
+	defer cancelExercise()
 
-		resp, err := http.Post(runtimeURL, "application/json", bytes.NewReader(body)) //nolint:noctx
-		if err != nil {
-			t.Logf("POST %s error (iteration %d): %v", runtimeURL, i, err)
-		} else {
-			resp.Body.Close()
-			t.Logf("POST %s status=%d (iteration %d)", runtimeURL, resp.StatusCode, i)
+	var requestCount int64
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-exerciseCtx.Done():
+				return
+			case <-ticker.C:
+				correlationID := ulid.Make().String()
+				body, err := json.Marshal(map[string]any{
+					"correlation_id":     correlationID,
+					"adapter_id":         "http",
+					"capability_name":    "request",
+					"capability_version": "v1",
+					"payload":            json.RawMessage(`{"method":"GET","url":"https://example.invalid/","headers":{},"expected_status":[200]}`),
+					"timeout_budget_ms":  1000,
+				})
+				if err != nil {
+					t.Logf("marshal execution request: %v", err)
+					continue
+				}
+				req, err := http.NewRequestWithContext(exerciseCtx, http.MethodPost, runtimeURL, bytes.NewReader(body))
+				if err != nil {
+					t.Logf("build request: %v", err)
+					continue
+				}
+				req.Header.Set("Content-Type", "application/json")
+				resp, err := http.DefaultClient.Do(req)
+				n := atomic.AddInt64(&requestCount, 1)
+				if err != nil {
+					if exerciseCtx.Err() == nil {
+						t.Logf("POST %s error (iteration %d): %v", runtimeURL, n, err)
+					}
+					continue
+				}
+				resp.Body.Close()
+				if n%10 == 0 {
+					t.Logf("POST %s status=%d (iteration %d)", runtimeURL, resp.StatusCode, n)
+				}
+			}
 		}
-		time.Sleep(500 * time.Millisecond)
-	}
+	}()
 
-	t.Logf("exercise phase: %d requests over %s", 30, time.Since(startExercise).Round(time.Millisecond))
-
-	// ASSERT — wait for the alert to fire within budget.
+	// ASSERT — wait for the alert to fire within budget. Exercise keeps
+	// running concurrently so the runtime metric stays monotonically
+	// increasing across multiple OTel periodic exports.
 	sloName := readSLOName(t)
 	t.Logf("expecting sloth_slo=%q", sloName)
 
@@ -109,6 +145,9 @@ func TestChaos_Canary_HttpConnectionReset(t *testing.T) {
 		target,
 		deadline,
 	)
+	cancelExercise()
+	wg.Wait()
+	t.Logf("exercise phase: %d requests over %s", atomic.LoadInt64(&requestCount), time.Since(startExercise).Round(time.Millisecond))
 	require.NoErrorf(t, err,
 		"alert not delivered to receiver-stub; exercise started at %s; "+
 			"check: (1) runtime metrics visible in Prometheus, "+
