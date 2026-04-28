@@ -1,0 +1,21 @@
+version: 1
+name: local-cross-inject-panic-fs
+description: |
+  filesystem.read_file@v1 invoked under chaos.inject_panic — the
+  chaos decorator panics before delegating to the real FS adapter;
+  R4's recoverer maps to AdapterInternalError.
+
+  Cross-cutting panic-recovery contract, fs variant. Operator value:
+  confirms recovery stays uniform on the FS path even though the FS
+  adapter does its own path hardening (filesystem-safety skill) —
+  panic recovery sits above the adapter and catches before any
+  adapter-internal validation.
+adapters:
+  filesystem.read_file@v1:
+    fault: inject_panic
+    timing: pre_dispatch
+expected_outcome:
+  status: failure
+  error_class: adapter_internal_error
+  retry_hint: non_retryable
+persistence: null

@@ -1,0 +1,21 @@
+version: 1
+name: local-cross-inject-panic-http
+description: |
+  http.request@v1 invoked under chaos.inject_panic — the chaos
+  decorator panics before delegating to the real http adapter;
+  R4's recoverer maps to AdapterInternalError.
+
+  Cross-cutting panic-recovery contract, http variant. Together
+  with the shell/git/fs panic profiles this completes the four-corner
+  sanity matrix: every adapter in Phase 1 must produce
+  adapter_internal_error + non_retryable when the decorator panics
+  pre-dispatch, and the runtime must remain up across the sequence.
+adapters:
+  http.request@v1:
+    fault: inject_panic
+    timing: pre_dispatch
+expected_outcome:
+  status: failure
+  error_class: adapter_internal_error
+  retry_hint: non_retryable
+persistence: null

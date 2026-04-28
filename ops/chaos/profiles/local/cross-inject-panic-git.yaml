@@ -1,0 +1,20 @@
+version: 1
+name: local-cross-inject-panic-git
+description: |
+  git.clone@v1 invoked under chaos.inject_panic — the chaos decorator
+  panics before delegating to the real go-git-backed adapter; R4's
+  recoverer maps the recovered panic to AdapterInternalError.
+
+  Cross-cutting panic-recovery contract, git variant. Pair with the
+  shell, fs, and http variants for a four-corner sanity check that
+  the panic-recovery middleware is wired uniformly across the
+  adapter set.
+adapters:
+  git.clone@v1:
+    fault: inject_panic
+    timing: pre_dispatch
+expected_outcome:
+  status: failure
+  error_class: adapter_internal_error
+  retry_hint: non_retryable
+persistence: null
