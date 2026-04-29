@@ -61,6 +61,12 @@ slos:
         labels:
           severity: warning
 
+  # ---- cancellation-rate SLOs (PROVISIONAL — Phase 2C.4 / G) -------------
+  # Note: cancellation `total_query` is UNFILTERED (no status~ clause) by
+  # design — cancellation can displace any status (including partial), so
+  # the denominator is "all executions". This differs from the
+  # *-availability SLOs above which filter to success|failure|timeout.
+
   - name: "shell-exec-cancellation-rate"
     objective: 99.0   # PROVISIONAL — cancellation rate < 1% (G, 2C.4)
     description: "shell.exec@v1 caller-cancellation rate (PROVISIONAL — see file header)"

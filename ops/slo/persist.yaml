@@ -13,7 +13,7 @@ labels:
 slos:
   - name: "persist-availability"
     objective: 99.9   # PROVISIONAL — persist failure rate < 0.1% (G, 2C.4)
-    description: "Receipt persistence reliability across all capabilities (denominator derived per comment in total_query)"
+    description: "Receipt persistence reliability across all capabilities; denominator = execution.total + receipt.persist.failures (see SLI comment for rationale)"
     sli:
       events:
         error_query: |
