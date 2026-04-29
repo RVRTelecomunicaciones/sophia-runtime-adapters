@@ -189,10 +189,25 @@ commit `65bc3d9` for the diagnostic and the fix.
 ## 6. Nightly comprehensive
 
 What runs: `TestChaos_Comprehensive` in
-`test/chaos/e2e/comprehensive_test.go`. 5 active scenarios + 1 skipped
-(`ci-persist-fail`, no test SLO covers persist counter). GHA workflow:
-`.github/workflows/chaos-nightly.yaml` (cron `0 7 * * *` UTC + manual
-dispatch). Job timeout 30 min; suite wall ~15-20 min.
+`test/chaos/e2e/comprehensive_test.go`. 4 active scenarios + 2 skipped:
+
+- `ci-persist-fail` — no test SLO covers
+  `runtime_adapters.receipt.persist.failures`, so no burn-rate alert
+  can fire (omitted at B7 design time).
+- `ci-shell-hang-cancel` — drives 100% `status=cancelled` traffic;
+  the shell availability SLO intentionally excludes `cancelled` from
+  numerator and denominator, so the SLI ratio is undefined and no
+  burn-rate alert can fire. Surfaced by first-nightly run
+  25096750669 (2026-04-29). The chaos profile remains in
+  `ops/chaos/profiles/ci/` because the B3 chaos integration test
+  (`test/chaos/integration/`) covers the classification + receipt +
+  metric contract for cancellation — that's a different layer than
+  alert delivery. A cancellation-rate SLO that would let this
+  scenario rejoin the suite is deferred to Track 2C.4 (operational
+  readiness).
+
+GHA workflow: `.github/workflows/chaos-nightly.yaml` (cron `0 7 * * *`
+UTC + manual dispatch). Job timeout 30 min; suite wall ~15-20 min.
 
 Each scenario:
 
