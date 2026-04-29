@@ -1,0 +1,36 @@
+# Test SLO spec for the chaos comprehensive nightly run.
+# Mirror of ops/slo/persist.yaml with service: "runtime-adapters-chaos-test"
+# to avoid sloth_slo collision when both prod and test rules load in the
+# same Prometheus instance.
+
+version: "prometheus/v1"
+service: "runtime-adapters-chaos-test"
+labels:
+  team: "platform"
+
+slos:
+  - name: "persist-availability"
+    objective: 99.9
+    description: "Receipt persistence reliability (chaos test variant; denominator derived per comment in total_query)"
+    sli:
+      events:
+        error_query: |
+          sum(rate(runtime_adapters_receipt_persist_failures[{{.window}}]))
+        # Denominator derivation: see ops/slo/persist.yaml for full
+        # rationale (D2C4G.1). Same SLI selector logic; this file
+        # only differs in service: label so test rules don't collide
+        # with prod rules in the chaos compose stack.
+        total_query: |
+          (
+            sum(rate(runtime_adapters_execution_total[{{.window}}]))
+            +
+            sum(rate(runtime_adapters_receipt_persist_failures[{{.window}}]))
+          )
+    alerting:
+      name: PersistAvailabilityBurn
+      page_alert:
+        labels:
+          severity: critical
+      ticket_alert:
+        labels:
+          severity: warning

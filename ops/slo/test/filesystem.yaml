@@ -107,3 +107,49 @@ slos:
       ticket_alert:
         labels:
           severity: warning
+
+  # ---- cancellation-rate SLOs (Phase 2C.4 / G chaos test variants) --------
+
+  - name: "filesystem-read-file-cancellation-rate"
+    objective: 99.0
+    description: "filesystem.read_file@v1 caller-cancellation rate (chaos test variant)"
+    labels:
+      capability: "filesystem.read_file@v1"
+    sli:
+      events:
+        error_query: |
+          sum(rate(runtime_adapters_execution_total{capability="filesystem.read_file@v1",status="cancelled"}[{{.window}}]))
+        total_query: |
+          sum(rate(runtime_adapters_execution_total{capability="filesystem.read_file@v1"}[{{.window}}]))
+    alerting:
+      name: FilesystemReadFileCancellationRateBurn
+      labels:
+        capability: "filesystem.read_file@v1"
+      page_alert:
+        labels:
+          severity: critical
+      ticket_alert:
+        labels:
+          severity: warning
+
+  - name: "filesystem-write-file-cancellation-rate"
+    objective: 99.0
+    description: "filesystem.write_file@v1 caller-cancellation rate (chaos test variant)"
+    labels:
+      capability: "filesystem.write_file@v1"
+    sli:
+      events:
+        error_query: |
+          sum(rate(runtime_adapters_execution_total{capability="filesystem.write_file@v1",status="cancelled"}[{{.window}}]))
+        total_query: |
+          sum(rate(runtime_adapters_execution_total{capability="filesystem.write_file@v1"}[{{.window}}]))
+    alerting:
+      name: FilesystemWriteFileCancellationRateBurn
+      labels:
+        capability: "filesystem.write_file@v1"
+      page_alert:
+        labels:
+          severity: critical
+      ticket_alert:
+        labels:
+          severity: warning

@@ -1716,3 +1716,843 @@ groups:
         rate is over expected.'
       title: (ticket) {{$labels.sloth_service}} {{$labels.sloth_slo}} SLO error budget
         burn rate is too fast.
+- name: sloth-slo-sli-recordings-runtime-adapters-chaos-test-git-status-cancellation-rate
+  rules:
+  - record: slo:sli_error:ratio_rate1m
+    expr: |
+      (sum(rate(runtime_adapters_execution_total{capability="git.status@v1",status="cancelled"}[1m]))
+      )
+      /
+      (sum(rate(runtime_adapters_execution_total{capability="git.status@v1"}[1m]))
+      )
+    labels:
+      adapter: git
+      capability: git.status@v1
+      sloth_id: runtime-adapters-chaos-test-git-status-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-status-cancellation-rate
+      sloth_window: 1m
+      team: platform
+  - record: slo:sli_error:ratio_rate2m
+    expr: |
+      (sum(rate(runtime_adapters_execution_total{capability="git.status@v1",status="cancelled"}[2m]))
+      )
+      /
+      (sum(rate(runtime_adapters_execution_total{capability="git.status@v1"}[2m]))
+      )
+    labels:
+      adapter: git
+      capability: git.status@v1
+      sloth_id: runtime-adapters-chaos-test-git-status-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-status-cancellation-rate
+      sloth_window: 2m
+      team: platform
+  - record: slo:sli_error:ratio_rate3m
+    expr: |
+      (sum(rate(runtime_adapters_execution_total{capability="git.status@v1",status="cancelled"}[3m]))
+      )
+      /
+      (sum(rate(runtime_adapters_execution_total{capability="git.status@v1"}[3m]))
+      )
+    labels:
+      adapter: git
+      capability: git.status@v1
+      sloth_id: runtime-adapters-chaos-test-git-status-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-status-cancellation-rate
+      sloth_window: 3m
+      team: platform
+  - record: slo:sli_error:ratio_rate4m
+    expr: |
+      (sum(rate(runtime_adapters_execution_total{capability="git.status@v1",status="cancelled"}[4m]))
+      )
+      /
+      (sum(rate(runtime_adapters_execution_total{capability="git.status@v1"}[4m]))
+      )
+    labels:
+      adapter: git
+      capability: git.status@v1
+      sloth_id: runtime-adapters-chaos-test-git-status-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-status-cancellation-rate
+      sloth_window: 4m
+      team: platform
+  - record: slo:sli_error:ratio_rate5m
+    expr: |
+      sum_over_time(slo:sli_error:ratio_rate1m{sloth_id="runtime-adapters-chaos-test-git-status-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-status-cancellation-rate"}[5m])
+      / ignoring (sloth_window)
+      count_over_time(slo:sli_error:ratio_rate1m{sloth_id="runtime-adapters-chaos-test-git-status-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-status-cancellation-rate"}[5m])
+    labels:
+      adapter: git
+      capability: git.status@v1
+      sloth_id: runtime-adapters-chaos-test-git-status-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-status-cancellation-rate
+      sloth_window: 5m
+      team: platform
+  - record: slo:sli_error:ratio_rate5m
+    expr: |
+      sum_over_time(slo:sli_error:ratio_rate1m{sloth_id="runtime-adapters-chaos-test-git-status-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-status-cancellation-rate"}[5m])
+      / ignoring (sloth_window)
+      count_over_time(slo:sli_error:ratio_rate1m{sloth_id="runtime-adapters-chaos-test-git-status-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-status-cancellation-rate"}[5m])
+    labels:
+      adapter: git
+      capability: git.status@v1
+      sloth_id: runtime-adapters-chaos-test-git-status-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-status-cancellation-rate
+      sloth_window: 5m
+      team: platform
+- name: sloth-slo-meta-recordings-runtime-adapters-chaos-test-git-status-cancellation-rate
+  rules:
+  - record: slo:objective:ratio
+    expr: vector(0.99)
+    labels:
+      adapter: git
+      capability: git.status@v1
+      sloth_id: runtime-adapters-chaos-test-git-status-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-status-cancellation-rate
+      team: platform
+  - record: slo:error_budget:ratio
+    expr: vector(1-0.99)
+    labels:
+      adapter: git
+      capability: git.status@v1
+      sloth_id: runtime-adapters-chaos-test-git-status-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-status-cancellation-rate
+      team: platform
+  - record: slo:time_period:days
+    expr: vector(0.003472222222222222)
+    labels:
+      adapter: git
+      capability: git.status@v1
+      sloth_id: runtime-adapters-chaos-test-git-status-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-status-cancellation-rate
+      team: platform
+  - record: slo:current_burn_rate:ratio
+    expr: |
+      slo:sli_error:ratio_rate1m{sloth_id="runtime-adapters-chaos-test-git-status-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-status-cancellation-rate"}
+      / on(sloth_id, sloth_slo, sloth_service) group_left
+      slo:error_budget:ratio{sloth_id="runtime-adapters-chaos-test-git-status-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-status-cancellation-rate"}
+    labels:
+      adapter: git
+      capability: git.status@v1
+      sloth_id: runtime-adapters-chaos-test-git-status-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-status-cancellation-rate
+      team: platform
+  - record: slo:period_burn_rate:ratio
+    expr: |
+      slo:sli_error:ratio_rate5m{sloth_id="runtime-adapters-chaos-test-git-status-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-status-cancellation-rate"}
+      / on(sloth_id, sloth_slo, sloth_service) group_left
+      slo:error_budget:ratio{sloth_id="runtime-adapters-chaos-test-git-status-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-status-cancellation-rate"}
+    labels:
+      adapter: git
+      capability: git.status@v1
+      sloth_id: runtime-adapters-chaos-test-git-status-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-status-cancellation-rate
+      team: platform
+  - record: slo:period_error_budget_remaining:ratio
+    expr: 1 - slo:period_burn_rate:ratio{sloth_id="runtime-adapters-chaos-test-git-status-cancellation-rate",
+      sloth_service="runtime-adapters-chaos-test", sloth_slo="git-status-cancellation-rate"}
+    labels:
+      adapter: git
+      capability: git.status@v1
+      sloth_id: runtime-adapters-chaos-test-git-status-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-status-cancellation-rate
+      team: platform
+  - record: sloth_slo_info
+    expr: vector(1)
+    labels:
+      adapter: git
+      capability: git.status@v1
+      sloth_id: runtime-adapters-chaos-test-git-status-cancellation-rate
+      sloth_mode: cli-gen-prom
+      sloth_objective: "99"
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-status-cancellation-rate
+      sloth_spec: prometheus/v1
+      sloth_version: 0.16.0
+      team: platform
+- name: sloth-slo-alerts-runtime-adapters-chaos-test-git-status-cancellation-rate
+  rules:
+  - alert: GitStatusCancellationRateBurn
+    expr: |
+      (
+          max(slo:sli_error:ratio_rate1m{sloth_id="runtime-adapters-chaos-test-git-status-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-status-cancellation-rate"} > (0.024999999999999998 * 0.01)) without (sloth_window)
+          and
+          max(slo:sli_error:ratio_rate2m{sloth_id="runtime-adapters-chaos-test-git-status-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-status-cancellation-rate"} > (0.024999999999999998 * 0.01)) without (sloth_window)
+      )
+      or
+      (
+          max(slo:sli_error:ratio_rate2m{sloth_id="runtime-adapters-chaos-test-git-status-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-status-cancellation-rate"} > (0.0625 * 0.01)) without (sloth_window)
+          and
+          max(slo:sli_error:ratio_rate4m{sloth_id="runtime-adapters-chaos-test-git-status-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-status-cancellation-rate"} > (0.0625 * 0.01)) without (sloth_window)
+      )
+    labels:
+      capability: git.status@v1
+      severity: critical
+      sloth_severity: page
+    annotations:
+      summary: '{{$labels.sloth_service}} {{$labels.sloth_slo}} SLO error budget burn
+        rate is over expected.'
+      title: (page) {{$labels.sloth_service}} {{$labels.sloth_slo}} SLO error budget
+        burn rate is too fast.
+  - alert: GitStatusCancellationRateBurn
+    expr: |
+      (
+          max(slo:sli_error:ratio_rate2m{sloth_id="runtime-adapters-chaos-test-git-status-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-status-cancellation-rate"} > (0.125 * 0.01)) without (sloth_window)
+          and
+          max(slo:sli_error:ratio_rate4m{sloth_id="runtime-adapters-chaos-test-git-status-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-status-cancellation-rate"} > (0.125 * 0.01)) without (sloth_window)
+      )
+      or
+      (
+          max(slo:sli_error:ratio_rate3m{sloth_id="runtime-adapters-chaos-test-git-status-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-status-cancellation-rate"} > (0.2 * 0.01)) without (sloth_window)
+          and
+          max(slo:sli_error:ratio_rate5m{sloth_id="runtime-adapters-chaos-test-git-status-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-status-cancellation-rate"} > (0.2 * 0.01)) without (sloth_window)
+      )
+    labels:
+      capability: git.status@v1
+      severity: warning
+      sloth_severity: ticket
+    annotations:
+      summary: '{{$labels.sloth_service}} {{$labels.sloth_slo}} SLO error budget burn
+        rate is over expected.'
+      title: (ticket) {{$labels.sloth_service}} {{$labels.sloth_slo}} SLO error budget
+        burn rate is too fast.
+- name: sloth-slo-sli-recordings-runtime-adapters-chaos-test-git-clone-cancellation-rate
+  rules:
+  - record: slo:sli_error:ratio_rate1m
+    expr: |
+      (sum(rate(runtime_adapters_execution_total{capability="git.clone@v1",status="cancelled"}[1m]))
+      )
+      /
+      (sum(rate(runtime_adapters_execution_total{capability="git.clone@v1"}[1m]))
+      )
+    labels:
+      adapter: git
+      capability: git.clone@v1
+      sloth_id: runtime-adapters-chaos-test-git-clone-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-clone-cancellation-rate
+      sloth_window: 1m
+      team: platform
+  - record: slo:sli_error:ratio_rate2m
+    expr: |
+      (sum(rate(runtime_adapters_execution_total{capability="git.clone@v1",status="cancelled"}[2m]))
+      )
+      /
+      (sum(rate(runtime_adapters_execution_total{capability="git.clone@v1"}[2m]))
+      )
+    labels:
+      adapter: git
+      capability: git.clone@v1
+      sloth_id: runtime-adapters-chaos-test-git-clone-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-clone-cancellation-rate
+      sloth_window: 2m
+      team: platform
+  - record: slo:sli_error:ratio_rate3m
+    expr: |
+      (sum(rate(runtime_adapters_execution_total{capability="git.clone@v1",status="cancelled"}[3m]))
+      )
+      /
+      (sum(rate(runtime_adapters_execution_total{capability="git.clone@v1"}[3m]))
+      )
+    labels:
+      adapter: git
+      capability: git.clone@v1
+      sloth_id: runtime-adapters-chaos-test-git-clone-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-clone-cancellation-rate
+      sloth_window: 3m
+      team: platform
+  - record: slo:sli_error:ratio_rate4m
+    expr: |
+      (sum(rate(runtime_adapters_execution_total{capability="git.clone@v1",status="cancelled"}[4m]))
+      )
+      /
+      (sum(rate(runtime_adapters_execution_total{capability="git.clone@v1"}[4m]))
+      )
+    labels:
+      adapter: git
+      capability: git.clone@v1
+      sloth_id: runtime-adapters-chaos-test-git-clone-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-clone-cancellation-rate
+      sloth_window: 4m
+      team: platform
+  - record: slo:sli_error:ratio_rate5m
+    expr: |
+      sum_over_time(slo:sli_error:ratio_rate1m{sloth_id="runtime-adapters-chaos-test-git-clone-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-clone-cancellation-rate"}[5m])
+      / ignoring (sloth_window)
+      count_over_time(slo:sli_error:ratio_rate1m{sloth_id="runtime-adapters-chaos-test-git-clone-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-clone-cancellation-rate"}[5m])
+    labels:
+      adapter: git
+      capability: git.clone@v1
+      sloth_id: runtime-adapters-chaos-test-git-clone-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-clone-cancellation-rate
+      sloth_window: 5m
+      team: platform
+  - record: slo:sli_error:ratio_rate5m
+    expr: |
+      sum_over_time(slo:sli_error:ratio_rate1m{sloth_id="runtime-adapters-chaos-test-git-clone-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-clone-cancellation-rate"}[5m])
+      / ignoring (sloth_window)
+      count_over_time(slo:sli_error:ratio_rate1m{sloth_id="runtime-adapters-chaos-test-git-clone-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-clone-cancellation-rate"}[5m])
+    labels:
+      adapter: git
+      capability: git.clone@v1
+      sloth_id: runtime-adapters-chaos-test-git-clone-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-clone-cancellation-rate
+      sloth_window: 5m
+      team: platform
+- name: sloth-slo-meta-recordings-runtime-adapters-chaos-test-git-clone-cancellation-rate
+  rules:
+  - record: slo:objective:ratio
+    expr: vector(0.99)
+    labels:
+      adapter: git
+      capability: git.clone@v1
+      sloth_id: runtime-adapters-chaos-test-git-clone-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-clone-cancellation-rate
+      team: platform
+  - record: slo:error_budget:ratio
+    expr: vector(1-0.99)
+    labels:
+      adapter: git
+      capability: git.clone@v1
+      sloth_id: runtime-adapters-chaos-test-git-clone-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-clone-cancellation-rate
+      team: platform
+  - record: slo:time_period:days
+    expr: vector(0.003472222222222222)
+    labels:
+      adapter: git
+      capability: git.clone@v1
+      sloth_id: runtime-adapters-chaos-test-git-clone-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-clone-cancellation-rate
+      team: platform
+  - record: slo:current_burn_rate:ratio
+    expr: |
+      slo:sli_error:ratio_rate1m{sloth_id="runtime-adapters-chaos-test-git-clone-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-clone-cancellation-rate"}
+      / on(sloth_id, sloth_slo, sloth_service) group_left
+      slo:error_budget:ratio{sloth_id="runtime-adapters-chaos-test-git-clone-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-clone-cancellation-rate"}
+    labels:
+      adapter: git
+      capability: git.clone@v1
+      sloth_id: runtime-adapters-chaos-test-git-clone-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-clone-cancellation-rate
+      team: platform
+  - record: slo:period_burn_rate:ratio
+    expr: |
+      slo:sli_error:ratio_rate5m{sloth_id="runtime-adapters-chaos-test-git-clone-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-clone-cancellation-rate"}
+      / on(sloth_id, sloth_slo, sloth_service) group_left
+      slo:error_budget:ratio{sloth_id="runtime-adapters-chaos-test-git-clone-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-clone-cancellation-rate"}
+    labels:
+      adapter: git
+      capability: git.clone@v1
+      sloth_id: runtime-adapters-chaos-test-git-clone-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-clone-cancellation-rate
+      team: platform
+  - record: slo:period_error_budget_remaining:ratio
+    expr: 1 - slo:period_burn_rate:ratio{sloth_id="runtime-adapters-chaos-test-git-clone-cancellation-rate",
+      sloth_service="runtime-adapters-chaos-test", sloth_slo="git-clone-cancellation-rate"}
+    labels:
+      adapter: git
+      capability: git.clone@v1
+      sloth_id: runtime-adapters-chaos-test-git-clone-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-clone-cancellation-rate
+      team: platform
+  - record: sloth_slo_info
+    expr: vector(1)
+    labels:
+      adapter: git
+      capability: git.clone@v1
+      sloth_id: runtime-adapters-chaos-test-git-clone-cancellation-rate
+      sloth_mode: cli-gen-prom
+      sloth_objective: "99"
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-clone-cancellation-rate
+      sloth_spec: prometheus/v1
+      sloth_version: 0.16.0
+      team: platform
+- name: sloth-slo-alerts-runtime-adapters-chaos-test-git-clone-cancellation-rate
+  rules:
+  - alert: GitCloneCancellationRateBurn
+    expr: |
+      (
+          max(slo:sli_error:ratio_rate1m{sloth_id="runtime-adapters-chaos-test-git-clone-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-clone-cancellation-rate"} > (0.024999999999999998 * 0.01)) without (sloth_window)
+          and
+          max(slo:sli_error:ratio_rate2m{sloth_id="runtime-adapters-chaos-test-git-clone-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-clone-cancellation-rate"} > (0.024999999999999998 * 0.01)) without (sloth_window)
+      )
+      or
+      (
+          max(slo:sli_error:ratio_rate2m{sloth_id="runtime-adapters-chaos-test-git-clone-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-clone-cancellation-rate"} > (0.0625 * 0.01)) without (sloth_window)
+          and
+          max(slo:sli_error:ratio_rate4m{sloth_id="runtime-adapters-chaos-test-git-clone-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-clone-cancellation-rate"} > (0.0625 * 0.01)) without (sloth_window)
+      )
+    labels:
+      capability: git.clone@v1
+      severity: critical
+      sloth_severity: page
+    annotations:
+      summary: '{{$labels.sloth_service}} {{$labels.sloth_slo}} SLO error budget burn
+        rate is over expected.'
+      title: (page) {{$labels.sloth_service}} {{$labels.sloth_slo}} SLO error budget
+        burn rate is too fast.
+  - alert: GitCloneCancellationRateBurn
+    expr: |
+      (
+          max(slo:sli_error:ratio_rate2m{sloth_id="runtime-adapters-chaos-test-git-clone-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-clone-cancellation-rate"} > (0.125 * 0.01)) without (sloth_window)
+          and
+          max(slo:sli_error:ratio_rate4m{sloth_id="runtime-adapters-chaos-test-git-clone-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-clone-cancellation-rate"} > (0.125 * 0.01)) without (sloth_window)
+      )
+      or
+      (
+          max(slo:sli_error:ratio_rate3m{sloth_id="runtime-adapters-chaos-test-git-clone-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-clone-cancellation-rate"} > (0.2 * 0.01)) without (sloth_window)
+          and
+          max(slo:sli_error:ratio_rate5m{sloth_id="runtime-adapters-chaos-test-git-clone-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-clone-cancellation-rate"} > (0.2 * 0.01)) without (sloth_window)
+      )
+    labels:
+      capability: git.clone@v1
+      severity: warning
+      sloth_severity: ticket
+    annotations:
+      summary: '{{$labels.sloth_service}} {{$labels.sloth_slo}} SLO error budget burn
+        rate is over expected.'
+      title: (ticket) {{$labels.sloth_service}} {{$labels.sloth_slo}} SLO error budget
+        burn rate is too fast.
+- name: sloth-slo-sli-recordings-runtime-adapters-chaos-test-git-diff-cancellation-rate
+  rules:
+  - record: slo:sli_error:ratio_rate1m
+    expr: |
+      (sum(rate(runtime_adapters_execution_total{capability="git.diff@v1",status="cancelled"}[1m]))
+      )
+      /
+      (sum(rate(runtime_adapters_execution_total{capability="git.diff@v1"}[1m]))
+      )
+    labels:
+      adapter: git
+      capability: git.diff@v1
+      sloth_id: runtime-adapters-chaos-test-git-diff-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-diff-cancellation-rate
+      sloth_window: 1m
+      team: platform
+  - record: slo:sli_error:ratio_rate2m
+    expr: |
+      (sum(rate(runtime_adapters_execution_total{capability="git.diff@v1",status="cancelled"}[2m]))
+      )
+      /
+      (sum(rate(runtime_adapters_execution_total{capability="git.diff@v1"}[2m]))
+      )
+    labels:
+      adapter: git
+      capability: git.diff@v1
+      sloth_id: runtime-adapters-chaos-test-git-diff-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-diff-cancellation-rate
+      sloth_window: 2m
+      team: platform
+  - record: slo:sli_error:ratio_rate3m
+    expr: |
+      (sum(rate(runtime_adapters_execution_total{capability="git.diff@v1",status="cancelled"}[3m]))
+      )
+      /
+      (sum(rate(runtime_adapters_execution_total{capability="git.diff@v1"}[3m]))
+      )
+    labels:
+      adapter: git
+      capability: git.diff@v1
+      sloth_id: runtime-adapters-chaos-test-git-diff-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-diff-cancellation-rate
+      sloth_window: 3m
+      team: platform
+  - record: slo:sli_error:ratio_rate4m
+    expr: |
+      (sum(rate(runtime_adapters_execution_total{capability="git.diff@v1",status="cancelled"}[4m]))
+      )
+      /
+      (sum(rate(runtime_adapters_execution_total{capability="git.diff@v1"}[4m]))
+      )
+    labels:
+      adapter: git
+      capability: git.diff@v1
+      sloth_id: runtime-adapters-chaos-test-git-diff-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-diff-cancellation-rate
+      sloth_window: 4m
+      team: platform
+  - record: slo:sli_error:ratio_rate5m
+    expr: |
+      sum_over_time(slo:sli_error:ratio_rate1m{sloth_id="runtime-adapters-chaos-test-git-diff-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-diff-cancellation-rate"}[5m])
+      / ignoring (sloth_window)
+      count_over_time(slo:sli_error:ratio_rate1m{sloth_id="runtime-adapters-chaos-test-git-diff-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-diff-cancellation-rate"}[5m])
+    labels:
+      adapter: git
+      capability: git.diff@v1
+      sloth_id: runtime-adapters-chaos-test-git-diff-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-diff-cancellation-rate
+      sloth_window: 5m
+      team: platform
+  - record: slo:sli_error:ratio_rate5m
+    expr: |
+      sum_over_time(slo:sli_error:ratio_rate1m{sloth_id="runtime-adapters-chaos-test-git-diff-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-diff-cancellation-rate"}[5m])
+      / ignoring (sloth_window)
+      count_over_time(slo:sli_error:ratio_rate1m{sloth_id="runtime-adapters-chaos-test-git-diff-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-diff-cancellation-rate"}[5m])
+    labels:
+      adapter: git
+      capability: git.diff@v1
+      sloth_id: runtime-adapters-chaos-test-git-diff-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-diff-cancellation-rate
+      sloth_window: 5m
+      team: platform
+- name: sloth-slo-meta-recordings-runtime-adapters-chaos-test-git-diff-cancellation-rate
+  rules:
+  - record: slo:objective:ratio
+    expr: vector(0.99)
+    labels:
+      adapter: git
+      capability: git.diff@v1
+      sloth_id: runtime-adapters-chaos-test-git-diff-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-diff-cancellation-rate
+      team: platform
+  - record: slo:error_budget:ratio
+    expr: vector(1-0.99)
+    labels:
+      adapter: git
+      capability: git.diff@v1
+      sloth_id: runtime-adapters-chaos-test-git-diff-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-diff-cancellation-rate
+      team: platform
+  - record: slo:time_period:days
+    expr: vector(0.003472222222222222)
+    labels:
+      adapter: git
+      capability: git.diff@v1
+      sloth_id: runtime-adapters-chaos-test-git-diff-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-diff-cancellation-rate
+      team: platform
+  - record: slo:current_burn_rate:ratio
+    expr: |
+      slo:sli_error:ratio_rate1m{sloth_id="runtime-adapters-chaos-test-git-diff-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-diff-cancellation-rate"}
+      / on(sloth_id, sloth_slo, sloth_service) group_left
+      slo:error_budget:ratio{sloth_id="runtime-adapters-chaos-test-git-diff-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-diff-cancellation-rate"}
+    labels:
+      adapter: git
+      capability: git.diff@v1
+      sloth_id: runtime-adapters-chaos-test-git-diff-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-diff-cancellation-rate
+      team: platform
+  - record: slo:period_burn_rate:ratio
+    expr: |
+      slo:sli_error:ratio_rate5m{sloth_id="runtime-adapters-chaos-test-git-diff-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-diff-cancellation-rate"}
+      / on(sloth_id, sloth_slo, sloth_service) group_left
+      slo:error_budget:ratio{sloth_id="runtime-adapters-chaos-test-git-diff-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-diff-cancellation-rate"}
+    labels:
+      adapter: git
+      capability: git.diff@v1
+      sloth_id: runtime-adapters-chaos-test-git-diff-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-diff-cancellation-rate
+      team: platform
+  - record: slo:period_error_budget_remaining:ratio
+    expr: 1 - slo:period_burn_rate:ratio{sloth_id="runtime-adapters-chaos-test-git-diff-cancellation-rate",
+      sloth_service="runtime-adapters-chaos-test", sloth_slo="git-diff-cancellation-rate"}
+    labels:
+      adapter: git
+      capability: git.diff@v1
+      sloth_id: runtime-adapters-chaos-test-git-diff-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-diff-cancellation-rate
+      team: platform
+  - record: sloth_slo_info
+    expr: vector(1)
+    labels:
+      adapter: git
+      capability: git.diff@v1
+      sloth_id: runtime-adapters-chaos-test-git-diff-cancellation-rate
+      sloth_mode: cli-gen-prom
+      sloth_objective: "99"
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-diff-cancellation-rate
+      sloth_spec: prometheus/v1
+      sloth_version: 0.16.0
+      team: platform
+- name: sloth-slo-alerts-runtime-adapters-chaos-test-git-diff-cancellation-rate
+  rules:
+  - alert: GitDiffCancellationRateBurn
+    expr: |
+      (
+          max(slo:sli_error:ratio_rate1m{sloth_id="runtime-adapters-chaos-test-git-diff-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-diff-cancellation-rate"} > (0.024999999999999998 * 0.01)) without (sloth_window)
+          and
+          max(slo:sli_error:ratio_rate2m{sloth_id="runtime-adapters-chaos-test-git-diff-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-diff-cancellation-rate"} > (0.024999999999999998 * 0.01)) without (sloth_window)
+      )
+      or
+      (
+          max(slo:sli_error:ratio_rate2m{sloth_id="runtime-adapters-chaos-test-git-diff-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-diff-cancellation-rate"} > (0.0625 * 0.01)) without (sloth_window)
+          and
+          max(slo:sli_error:ratio_rate4m{sloth_id="runtime-adapters-chaos-test-git-diff-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-diff-cancellation-rate"} > (0.0625 * 0.01)) without (sloth_window)
+      )
+    labels:
+      capability: git.diff@v1
+      severity: critical
+      sloth_severity: page
+    annotations:
+      summary: '{{$labels.sloth_service}} {{$labels.sloth_slo}} SLO error budget burn
+        rate is over expected.'
+      title: (page) {{$labels.sloth_service}} {{$labels.sloth_slo}} SLO error budget
+        burn rate is too fast.
+  - alert: GitDiffCancellationRateBurn
+    expr: |
+      (
+          max(slo:sli_error:ratio_rate2m{sloth_id="runtime-adapters-chaos-test-git-diff-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-diff-cancellation-rate"} > (0.125 * 0.01)) without (sloth_window)
+          and
+          max(slo:sli_error:ratio_rate4m{sloth_id="runtime-adapters-chaos-test-git-diff-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-diff-cancellation-rate"} > (0.125 * 0.01)) without (sloth_window)
+      )
+      or
+      (
+          max(slo:sli_error:ratio_rate3m{sloth_id="runtime-adapters-chaos-test-git-diff-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-diff-cancellation-rate"} > (0.2 * 0.01)) without (sloth_window)
+          and
+          max(slo:sli_error:ratio_rate5m{sloth_id="runtime-adapters-chaos-test-git-diff-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-diff-cancellation-rate"} > (0.2 * 0.01)) without (sloth_window)
+      )
+    labels:
+      capability: git.diff@v1
+      severity: warning
+      sloth_severity: ticket
+    annotations:
+      summary: '{{$labels.sloth_service}} {{$labels.sloth_slo}} SLO error budget burn
+        rate is over expected.'
+      title: (ticket) {{$labels.sloth_service}} {{$labels.sloth_slo}} SLO error budget
+        burn rate is too fast.
+- name: sloth-slo-sli-recordings-runtime-adapters-chaos-test-git-commit-cancellation-rate
+  rules:
+  - record: slo:sli_error:ratio_rate1m
+    expr: |
+      (sum(rate(runtime_adapters_execution_total{capability="git.commit@v1",status="cancelled"}[1m]))
+      )
+      /
+      (sum(rate(runtime_adapters_execution_total{capability="git.commit@v1"}[1m]))
+      )
+    labels:
+      adapter: git
+      capability: git.commit@v1
+      sloth_id: runtime-adapters-chaos-test-git-commit-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-commit-cancellation-rate
+      sloth_window: 1m
+      team: platform
+  - record: slo:sli_error:ratio_rate2m
+    expr: |
+      (sum(rate(runtime_adapters_execution_total{capability="git.commit@v1",status="cancelled"}[2m]))
+      )
+      /
+      (sum(rate(runtime_adapters_execution_total{capability="git.commit@v1"}[2m]))
+      )
+    labels:
+      adapter: git
+      capability: git.commit@v1
+      sloth_id: runtime-adapters-chaos-test-git-commit-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-commit-cancellation-rate
+      sloth_window: 2m
+      team: platform
+  - record: slo:sli_error:ratio_rate3m
+    expr: |
+      (sum(rate(runtime_adapters_execution_total{capability="git.commit@v1",status="cancelled"}[3m]))
+      )
+      /
+      (sum(rate(runtime_adapters_execution_total{capability="git.commit@v1"}[3m]))
+      )
+    labels:
+      adapter: git
+      capability: git.commit@v1
+      sloth_id: runtime-adapters-chaos-test-git-commit-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-commit-cancellation-rate
+      sloth_window: 3m
+      team: platform
+  - record: slo:sli_error:ratio_rate4m
+    expr: |
+      (sum(rate(runtime_adapters_execution_total{capability="git.commit@v1",status="cancelled"}[4m]))
+      )
+      /
+      (sum(rate(runtime_adapters_execution_total{capability="git.commit@v1"}[4m]))
+      )
+    labels:
+      adapter: git
+      capability: git.commit@v1
+      sloth_id: runtime-adapters-chaos-test-git-commit-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-commit-cancellation-rate
+      sloth_window: 4m
+      team: platform
+  - record: slo:sli_error:ratio_rate5m
+    expr: |
+      sum_over_time(slo:sli_error:ratio_rate1m{sloth_id="runtime-adapters-chaos-test-git-commit-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-commit-cancellation-rate"}[5m])
+      / ignoring (sloth_window)
+      count_over_time(slo:sli_error:ratio_rate1m{sloth_id="runtime-adapters-chaos-test-git-commit-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-commit-cancellation-rate"}[5m])
+    labels:
+      adapter: git
+      capability: git.commit@v1
+      sloth_id: runtime-adapters-chaos-test-git-commit-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-commit-cancellation-rate
+      sloth_window: 5m
+      team: platform
+  - record: slo:sli_error:ratio_rate5m
+    expr: |
+      sum_over_time(slo:sli_error:ratio_rate1m{sloth_id="runtime-adapters-chaos-test-git-commit-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-commit-cancellation-rate"}[5m])
+      / ignoring (sloth_window)
+      count_over_time(slo:sli_error:ratio_rate1m{sloth_id="runtime-adapters-chaos-test-git-commit-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-commit-cancellation-rate"}[5m])
+    labels:
+      adapter: git
+      capability: git.commit@v1
+      sloth_id: runtime-adapters-chaos-test-git-commit-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-commit-cancellation-rate
+      sloth_window: 5m
+      team: platform
+- name: sloth-slo-meta-recordings-runtime-adapters-chaos-test-git-commit-cancellation-rate
+  rules:
+  - record: slo:objective:ratio
+    expr: vector(0.99)
+    labels:
+      adapter: git
+      capability: git.commit@v1
+      sloth_id: runtime-adapters-chaos-test-git-commit-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-commit-cancellation-rate
+      team: platform
+  - record: slo:error_budget:ratio
+    expr: vector(1-0.99)
+    labels:
+      adapter: git
+      capability: git.commit@v1
+      sloth_id: runtime-adapters-chaos-test-git-commit-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-commit-cancellation-rate
+      team: platform
+  - record: slo:time_period:days
+    expr: vector(0.003472222222222222)
+    labels:
+      adapter: git
+      capability: git.commit@v1
+      sloth_id: runtime-adapters-chaos-test-git-commit-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-commit-cancellation-rate
+      team: platform
+  - record: slo:current_burn_rate:ratio
+    expr: |
+      slo:sli_error:ratio_rate1m{sloth_id="runtime-adapters-chaos-test-git-commit-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-commit-cancellation-rate"}
+      / on(sloth_id, sloth_slo, sloth_service) group_left
+      slo:error_budget:ratio{sloth_id="runtime-adapters-chaos-test-git-commit-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-commit-cancellation-rate"}
+    labels:
+      adapter: git
+      capability: git.commit@v1
+      sloth_id: runtime-adapters-chaos-test-git-commit-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-commit-cancellation-rate
+      team: platform
+  - record: slo:period_burn_rate:ratio
+    expr: |
+      slo:sli_error:ratio_rate5m{sloth_id="runtime-adapters-chaos-test-git-commit-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-commit-cancellation-rate"}
+      / on(sloth_id, sloth_slo, sloth_service) group_left
+      slo:error_budget:ratio{sloth_id="runtime-adapters-chaos-test-git-commit-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-commit-cancellation-rate"}
+    labels:
+      adapter: git
+      capability: git.commit@v1
+      sloth_id: runtime-adapters-chaos-test-git-commit-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-commit-cancellation-rate
+      team: platform
+  - record: slo:period_error_budget_remaining:ratio
+    expr: 1 - slo:period_burn_rate:ratio{sloth_id="runtime-adapters-chaos-test-git-commit-cancellation-rate",
+      sloth_service="runtime-adapters-chaos-test", sloth_slo="git-commit-cancellation-rate"}
+    labels:
+      adapter: git
+      capability: git.commit@v1
+      sloth_id: runtime-adapters-chaos-test-git-commit-cancellation-rate
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-commit-cancellation-rate
+      team: platform
+  - record: sloth_slo_info
+    expr: vector(1)
+    labels:
+      adapter: git
+      capability: git.commit@v1
+      sloth_id: runtime-adapters-chaos-test-git-commit-cancellation-rate
+      sloth_mode: cli-gen-prom
+      sloth_objective: "99"
+      sloth_service: runtime-adapters-chaos-test
+      sloth_slo: git-commit-cancellation-rate
+      sloth_spec: prometheus/v1
+      sloth_version: 0.16.0
+      team: platform
+- name: sloth-slo-alerts-runtime-adapters-chaos-test-git-commit-cancellation-rate
+  rules:
+  - alert: GitCommitCancellationRateBurn
+    expr: |
+      (
+          max(slo:sli_error:ratio_rate1m{sloth_id="runtime-adapters-chaos-test-git-commit-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-commit-cancellation-rate"} > (0.024999999999999998 * 0.01)) without (sloth_window)
+          and
+          max(slo:sli_error:ratio_rate2m{sloth_id="runtime-adapters-chaos-test-git-commit-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-commit-cancellation-rate"} > (0.024999999999999998 * 0.01)) without (sloth_window)
+      )
+      or
+      (
+          max(slo:sli_error:ratio_rate2m{sloth_id="runtime-adapters-chaos-test-git-commit-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-commit-cancellation-rate"} > (0.0625 * 0.01)) without (sloth_window)
+          and
+          max(slo:sli_error:ratio_rate4m{sloth_id="runtime-adapters-chaos-test-git-commit-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-commit-cancellation-rate"} > (0.0625 * 0.01)) without (sloth_window)
+      )
+    labels:
+      capability: git.commit@v1
+      severity: critical
+      sloth_severity: page
+    annotations:
+      summary: '{{$labels.sloth_service}} {{$labels.sloth_slo}} SLO error budget burn
+        rate is over expected.'
+      title: (page) {{$labels.sloth_service}} {{$labels.sloth_slo}} SLO error budget
+        burn rate is too fast.
+  - alert: GitCommitCancellationRateBurn
+    expr: |
+      (
+          max(slo:sli_error:ratio_rate2m{sloth_id="runtime-adapters-chaos-test-git-commit-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-commit-cancellation-rate"} > (0.125 * 0.01)) without (sloth_window)
+          and
+          max(slo:sli_error:ratio_rate4m{sloth_id="runtime-adapters-chaos-test-git-commit-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-commit-cancellation-rate"} > (0.125 * 0.01)) without (sloth_window)
+      )
+      or
+      (
+          max(slo:sli_error:ratio_rate3m{sloth_id="runtime-adapters-chaos-test-git-commit-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-commit-cancellation-rate"} > (0.2 * 0.01)) without (sloth_window)
+          and
+          max(slo:sli_error:ratio_rate5m{sloth_id="runtime-adapters-chaos-test-git-commit-cancellation-rate", sloth_service="runtime-adapters-chaos-test", sloth_slo="git-commit-cancellation-rate"} > (0.2 * 0.01)) without (sloth_window)
+      )
+    labels:
+      capability: git.commit@v1
+      severity: warning
+      sloth_severity: ticket
+    annotations:
+      summary: '{{$labels.sloth_service}} {{$labels.sloth_slo}} SLO error budget burn
+        rate is over expected.'
+      title: (ticket) {{$labels.sloth_service}} {{$labels.sloth_slo}} SLO error budget
+        burn rate is too fast.

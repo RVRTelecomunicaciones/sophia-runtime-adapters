@@ -10,6 +10,12 @@
 # Changing git.status@v1 requires re-running the targeted standalone
 # scenario; changing rough-tier targets requires 2C.4 sustained-suite
 # work.
+# ---
+# 2C.4 / G additions: git-status-cancellation-rate, git-clone-cancellation-rate,
+# git-diff-cancellation-rate, git-commit-cancellation-rate SLO(s) are PROVISIONAL.
+# Cancellation objectives (99.0%) are operator hypotheses, not yet
+# calibrated against real load. Recalibrate with evidence per
+# docs/load-baseline.md when production traffic gives signal.
 
 version: "prometheus/v1"
 service: "runtime-adapters"
@@ -197,6 +203,96 @@ slos:
           sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.commit@v1"}[{{.window}}]))
     alerting:
       name: GitCommitLatencyBurn
+      labels:
+        capability: "git.commit@v1"
+      page_alert:
+        labels:
+          severity: critical
+      ticket_alert:
+        labels:
+          severity: warning
+
+  # ---- cancellation-rate SLOs (PROVISIONAL — Phase 2C.4 / G) -------------
+
+  - name: "git-status-cancellation-rate"
+    objective: 99.0   # PROVISIONAL — cancellation rate < 1% (G, 2C.4)
+    description: "git.status@v1 caller-cancellation rate (PROVISIONAL — see file header)"
+    labels:
+      capability: "git.status@v1"
+    sli:
+      events:
+        error_query: |
+          sum(rate(runtime_adapters_execution_total{capability="git.status@v1",status="cancelled"}[{{.window}}]))
+        total_query: |
+          sum(rate(runtime_adapters_execution_total{capability="git.status@v1"}[{{.window}}]))
+    alerting:
+      name: GitStatusCancellationRateBurn
+      labels:
+        capability: "git.status@v1"
+      page_alert:
+        labels:
+          severity: critical
+      ticket_alert:
+        labels:
+          severity: warning
+
+  - name: "git-clone-cancellation-rate"
+    objective: 99.0   # PROVISIONAL — cancellation rate < 1% (G, 2C.4)
+    description: "git.clone@v1 caller-cancellation rate (PROVISIONAL — see file header)"
+    labels:
+      capability: "git.clone@v1"
+    sli:
+      events:
+        error_query: |
+          sum(rate(runtime_adapters_execution_total{capability="git.clone@v1",status="cancelled"}[{{.window}}]))
+        total_query: |
+          sum(rate(runtime_adapters_execution_total{capability="git.clone@v1"}[{{.window}}]))
+    alerting:
+      name: GitCloneCancellationRateBurn
+      labels:
+        capability: "git.clone@v1"
+      page_alert:
+        labels:
+          severity: critical
+      ticket_alert:
+        labels:
+          severity: warning
+
+  - name: "git-diff-cancellation-rate"
+    objective: 99.0   # PROVISIONAL — cancellation rate < 1% (G, 2C.4)
+    description: "git.diff@v1 caller-cancellation rate (PROVISIONAL — see file header)"
+    labels:
+      capability: "git.diff@v1"
+    sli:
+      events:
+        error_query: |
+          sum(rate(runtime_adapters_execution_total{capability="git.diff@v1",status="cancelled"}[{{.window}}]))
+        total_query: |
+          sum(rate(runtime_adapters_execution_total{capability="git.diff@v1"}[{{.window}}]))
+    alerting:
+      name: GitDiffCancellationRateBurn
+      labels:
+        capability: "git.diff@v1"
+      page_alert:
+        labels:
+          severity: critical
+      ticket_alert:
+        labels:
+          severity: warning
+
+  - name: "git-commit-cancellation-rate"
+    objective: 99.0   # PROVISIONAL — cancellation rate < 1% (G, 2C.4)
+    description: "git.commit@v1 caller-cancellation rate (PROVISIONAL — see file header)"
+    labels:
+      capability: "git.commit@v1"
+    sli:
+      events:
+        error_query: |
+          sum(rate(runtime_adapters_execution_total{capability="git.commit@v1",status="cancelled"}[{{.window}}]))
+        total_query: |
+          sum(rate(runtime_adapters_execution_total{capability="git.commit@v1"}[{{.window}}]))
+    alerting:
+      name: GitCommitCancellationRateBurn
       labels:
         capability: "git.commit@v1"
       page_alert:
