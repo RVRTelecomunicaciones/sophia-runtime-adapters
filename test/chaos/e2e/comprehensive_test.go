@@ -29,11 +29,20 @@ import (
 // inhibition contract (§13.3, D2C1.17): no warning alert with the same
 // (sloth_slo, capability) is delivered alongside the critical.
 //
-// The persist-fail scenario is included for completeness but skipped with
-// a clear note: persist failures are signalled via
-// runtime_adapters.receipt.persist.failures, a counter not covered by any
-// SLO in ops/slo/test/, so no burn-rate alert can fire against it under the
-// current test SLO surface (B6 deliberately omitted persist SLOs).
+// Two scenarios are included in the table for completeness but skipped with
+// clear notes (and therefore do not assert alert delivery):
+//
+//   - ci-persist-fail — persist failures are signalled via
+//     runtime_adapters.receipt.persist.failures, a counter not covered by any
+//     SLO in ops/slo/test/, so no burn-rate alert can fire (B6).
+//
+//   - ci-shell-hang-cancel — drives 100% status=cancelled traffic; the
+//     shell availability SLO intentionally excludes `cancelled` from BOTH
+//     numerator and denominator, so the SLI ratio is undefined and no
+//     burn-rate alert can fire. Surfaced by first-nightly run 25096750669
+//     (2026-04-29). A "cancellation rate" SLO is deferred to Track 2C.4.
+//     Classification + receipt + metric contract for cancellation is still
+//     covered by test/chaos/integration (B3).
 //
 // Compose lifecycle: ComposeUp + ComposeDown PER SCENARIO. docker compose
 // fixes container env at start; the only clean way to swap the chaos
@@ -47,8 +56,8 @@ import (
 //	ci-fs-readfile-eio          → filesystem.read_file@v1 → FilesystemReadFileAvailabilityBurn
 //	ci-git-remote-unreachable   → git.clone@v1            → GitCloneAvailabilityBurn
 //	ci-http-connection-reset    → http.request@v1         → HttpRequestAvailabilityBurn
-//	ci-shell-hang-cancel        → shell.exec@v1           → ShellExecAvailabilityBurn
 //	ci-shell-panic              → shell.exec@v1           → ShellExecAvailabilityBurn
+//	ci-shell-hang-cancel        → SKIPPED (cancelled status outside SLI universe; deferred to 2C.4)
 //	ci-persist-fail             → SKIPPED (no test SLO covers persist counter)
 func TestChaos_Comprehensive(t *testing.T) {
 	for _, sc := range comprehensiveScenarios() {
@@ -135,18 +144,38 @@ func comprehensiveScenarios() []comprehensiveScenario {
 			capability:   "exec",
 			version:      "v1",
 			canonicalCap: "shell.exec@v1",
-			payloadJSON:  `{"command":"true","args":[],"working_dir":"","env":null,"stdin":null}`,
-			// Caller-side budget is irrelevant here — the request POST
-			// body's timeout_budget_ms drives runtime-side context. We
-			// still want a non-zero number; the runtime handler treats
-			// the cancellation as cancelled, not timeout, because the
-			// client closes the connection mid-request via ctx cancel.
-			timeoutMs: 5000,
-			useCancel: true,
-			// 50ms is long enough for the POST to reach the runtime handler
-			// and start executing the shell command; short enough that we're
-			// well below timeoutMs=5000 so the runtime classifies as
-			// cancelled, not timeout.
+			// Skipped per first-nightly run 25096750669 (2026-04-29).
+			// The chaos profile drives 100% of executions to status=cancelled
+			// (caller-side ctx cancellation interpreted by the runtime as a
+			// caller-initiated stop, not runtime unavailability). The shell
+			// availability SLO at ops/slo/test/shell.yaml intentionally
+			// excludes `cancelled` from BOTH numerator and denominator:
+			//
+			//   error_query: sum(rate(... status=~"failure|timeout" ...))
+			//   total_query: sum(rate(... status=~"success|failure|timeout" ...))
+			//
+			// Therefore both rates collapse to the empty vector; SLI ratio
+			// is undefined; no burn-rate alert can ever fire. This is the
+			// SLO designed semantics — cancellations are caller decisions,
+			// not availability signals. The test was incorrectly asserting
+			// that `ShellExecAvailabilityBurn` fires under sustained
+			// cancellation, which the SLO contract forbids.
+			//
+			// Tracking a "cancellation rate" SLO so this scenario can rejoin
+			// the comprehensive suite is deferred to Track 2C.4 (operational
+			// readiness). See docs/chaos.md §6 + the 0.4.x CHANGELOG.
+			//
+			// The profile remains in ops/chaos/profiles/ci/ — the B3 chaos
+			// integration test (test/chaos/integration) still asserts the
+			// classification + receipt + metric contract for cancellation,
+			// which is a different layer than alert delivery.
+			skipReason: "no test SLO covers status=cancelled; ShellExecAvailabilityBurn cannot " +
+				"fire when 100% of executions are cancelled (SLI excludes cancelled from " +
+				"numerator AND denominator by design). Cancellation-rate SLO deferred to 2C.4. " +
+				"Classification + receipt contract still covered by test/chaos/integration.",
+			payloadJSON: `{"command":"true","args":[],"working_dir":"","env":null,"stdin":null}`,
+			timeoutMs:   5000,
+			useCancel:   true,
 			cancelAfter: 50 * time.Millisecond,
 			alertName:   "ShellExecAvailabilityBurn",
 			sloName:     "shell-exec-availability",
