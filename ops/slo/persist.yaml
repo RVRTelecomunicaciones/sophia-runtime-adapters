@@ -25,9 +25,10 @@ slos:
         #                           execute_service.go RecordExecution
         #                           semantics post-B8/B9)
         #   + failed_persists       (receipt.persist.failures counter)
+        #
         # Mathematically EXACT, not approximate. Protected by
         # Test_RecordExecution_OnlyAfterPersistSuccess in
-        # internal/application/services/execute_service_test.go.
+        # internal/application/services/execute_service_test.go (§7 of this spec).
         # If that test ever fails, this denominator is wrong — fix the
         # ordering in execute_service before touching this SLI.
         total_query: |
