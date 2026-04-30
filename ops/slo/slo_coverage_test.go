@@ -32,11 +32,35 @@ type slothSpec struct {
 	} `yaml:"slos"`
 }
 
+// globalSLOs is the allowlist of SLOs that are intentionally not
+// per-capability (no labels.capability declaration). They measure
+// runtime-wide concerns instead. Each entry is the SLO name and a short
+// rationale comment.
+//
+// Adding to this set is a deliberate decision — every other SLO must
+// continue to declare labels.capability so the per-capability coverage
+// checks below remain meaningful.
+var globalSLOs = map[string]string{
+	// persist-availability tracks receipt persistence reliability across
+	// ALL capabilities. Adding capability would inflate cardinality and
+	// require a metric-contract change (D2C4G.3 in Phase 2C.4 / G).
+	"persist-availability": "global runtime-wide receipt persistence (2C.4 / G)",
+}
+
 // TestSloth_CoversAllPhase1Capabilities asserts: for every capability
 // returned by valueobjects.NewPhase1Capabilities() the SLO specs
-// declare BOTH an "-availability" and a "-latency" SLO. Adding a new
-// capability to Phase 1 without a matching SLO breaks this gate — same
-// spirit as VerifyCoversPhase1Catalog in Bundle 4's adapter registry.
+// declare an "-availability", "-latency", AND "-cancellation-rate"
+// SLO. Adding a new capability to Phase 1 without a matching SLO
+// breaks this gate — same spirit as VerifyCoversPhase1Catalog in
+// Bundle 4's adapter registry.
+//
+// Cancellation-rate SLOs were added in Phase 2C.4 / G (per-capability,
+// to provide drill-down operationality when callers cancel a specific
+// capability disproportionately).
+//
+// Globally-scoped SLOs (no capability label) are allowed via the
+// globalSLOs allowlist — they're skipped from the per-capability
+// accounting because they measure runtime-wide concerns.
 func TestSloth_CoversAllPhase1Capabilities(t *testing.T) {
 	caps, err := valueobjects.NewPhase1Capabilities()
 	require.NoError(t, err, "fetch Phase 1 capabilities")
@@ -63,9 +87,18 @@ func TestSloth_CoversAllPhase1Capabilities(t *testing.T) {
 		require.NoError(t, yaml.Unmarshal(data, &spec), "parse %s", f)
 
 		for _, s := range spec.SLOs {
+			// Globally-scoped SLOs (e.g. persist-availability) are
+			// allowed to skip both the labels.capability requirement
+			// and the per-capability accounting. They still must use a
+			// recognised suffix (the switch below), and their presence
+			// in the allowlist is a deliberate per-spec decision.
+			if _, ok := globalSLOs[s.Name]; ok {
+				continue
+			}
+
 			capID := s.Labels.Capability
 			require.NotEmpty(t, capID,
-				"SLO %q in %s missing labels.capability — every SLO must declare it",
+				"SLO %q in %s missing labels.capability — every per-capability SLO must declare it (or be added to globalSLOs allowlist)",
 				s.Name, f)
 
 			if has[capID] == nil {
@@ -76,8 +109,10 @@ func TestSloth_CoversAllPhase1Capabilities(t *testing.T) {
 				has[capID]["availability"] = true
 			case strings.HasSuffix(s.Name, "-latency"):
 				has[capID]["latency"] = true
+			case strings.HasSuffix(s.Name, "-cancellation-rate"):
+				has[capID]["cancellation-rate"] = true
 			default:
-				t.Errorf("SLO name %q in %s does not end with -availability or -latency (naming contract)",
+				t.Errorf("SLO name %q in %s does not end with -availability, -latency, or -cancellation-rate (naming contract)",
 					s.Name, f)
 			}
 		}
@@ -90,6 +125,8 @@ func TestSloth_CoversAllPhase1Capabilities(t *testing.T) {
 				"missing availability SLO for capability %q", id)
 			require.True(t, has[id]["latency"],
 				"missing latency SLO for capability %q", id)
+			require.True(t, has[id]["cancellation-rate"],
+				"missing cancellation-rate SLO for capability %q (added in Phase 2C.4 / G)", id)
 		})
 	}
 }
