@@ -29,7 +29,11 @@ import (
 // inhibition contract (§13.3, D2C1.17): no warning alert with the same
 // (sloth_slo, capability) is delivered alongside the critical.
 //
-// All six CI scenarios are active in the suite as of v0.5.0. The two scenarios that shipped skipped under v0.4.0 (ci-shell-hang-cancel, ci-persist-fail) are now backed by the cancellation-rate and persist-availability SLOs introduced in Phase 2C.4 / G — see docs/superpowers/specs/2026-04-29-phase-2c.4-g-cancellation-persist-slos-design.md.
+// All six CI scenarios are active in the suite as of v0.5.0. The two
+// scenarios that shipped skipped under v0.4.0 (ci-shell-hang-cancel,
+// ci-persist-fail) are now backed by the cancellation-rate and
+// persist-availability SLOs introduced in Phase 2C.4 / G — see
+// docs/superpowers/specs/2026-04-29-phase-2c.4-g-cancellation-persist-slos-design.md.
 //
 // Compose lifecycle: ComposeUp + ComposeDown PER SCENARIO. docker compose
 // fixes container env at start; the only clean way to swap the chaos
@@ -44,8 +48,8 @@ import (
 //	ci-git-remote-unreachable   → git.clone@v1            → GitCloneAvailabilityBurn
 //	ci-http-connection-reset    → http.request@v1         → HttpRequestAvailabilityBurn
 //	ci-shell-panic              → shell.exec@v1           → ShellExecAvailabilityBurn
-//	ci-shell-hang-cancel        → shell.exec@v1             → ShellExecCancellationRateBurn
-//	ci-persist-fail             → http.request@v1 driver    → PersistAvailabilityBurn (global)
+//	ci-shell-hang-cancel        → shell.exec@v1           → ShellExecCancellationRateBurn
+//	ci-persist-fail             → http.request@v1         → PersistAvailabilityBurn (global; http driver)
 func TestChaos_Comprehensive(t *testing.T) {
 	for _, sc := range comprehensiveScenarios() {
 		sc := sc
