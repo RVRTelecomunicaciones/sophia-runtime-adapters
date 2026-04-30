@@ -59,3 +59,25 @@ slos:
       ticket_alert:
         labels:
           severity: warning
+
+  - name: "shell-exec-cancellation-rate"
+    objective: 99.0
+    description: "shell.exec@v1 caller-cancellation rate (chaos test variant)"
+    labels:
+      capability: "shell.exec@v1"
+    sli:
+      events:
+        error_query: |
+          sum(rate(runtime_adapters_execution_total{capability="shell.exec@v1",status="cancelled"}[{{.window}}]))
+        total_query: |
+          sum(rate(runtime_adapters_execution_total{capability="shell.exec@v1"}[{{.window}}]))
+    alerting:
+      name: ShellExecCancellationRateBurn
+      labels:
+        capability: "shell.exec@v1"
+      page_alert:
+        labels:
+          severity: critical
+      ticket_alert:
+        labels:
+          severity: warning

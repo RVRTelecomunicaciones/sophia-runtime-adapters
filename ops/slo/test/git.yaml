@@ -201,3 +201,93 @@ slos:
       ticket_alert:
         labels:
           severity: warning
+
+  # ---- cancellation-rate SLOs (Phase 2C.4 / G chaos test variants) --------
+
+  - name: "git-status-cancellation-rate"
+    objective: 99.0
+    description: "git.status@v1 caller-cancellation rate (chaos test variant)"
+    labels:
+      capability: "git.status@v1"
+    sli:
+      events:
+        error_query: |
+          sum(rate(runtime_adapters_execution_total{capability="git.status@v1",status="cancelled"}[{{.window}}]))
+        total_query: |
+          sum(rate(runtime_adapters_execution_total{capability="git.status@v1"}[{{.window}}]))
+    alerting:
+      name: GitStatusCancellationRateBurn
+      labels:
+        capability: "git.status@v1"
+      page_alert:
+        labels:
+          severity: critical
+      ticket_alert:
+        labels:
+          severity: warning
+
+  - name: "git-clone-cancellation-rate"
+    objective: 99.0
+    description: "git.clone@v1 caller-cancellation rate (chaos test variant)"
+    labels:
+      capability: "git.clone@v1"
+    sli:
+      events:
+        error_query: |
+          sum(rate(runtime_adapters_execution_total{capability="git.clone@v1",status="cancelled"}[{{.window}}]))
+        total_query: |
+          sum(rate(runtime_adapters_execution_total{capability="git.clone@v1"}[{{.window}}]))
+    alerting:
+      name: GitCloneCancellationRateBurn
+      labels:
+        capability: "git.clone@v1"
+      page_alert:
+        labels:
+          severity: critical
+      ticket_alert:
+        labels:
+          severity: warning
+
+  - name: "git-diff-cancellation-rate"
+    objective: 99.0
+    description: "git.diff@v1 caller-cancellation rate (chaos test variant)"
+    labels:
+      capability: "git.diff@v1"
+    sli:
+      events:
+        error_query: |
+          sum(rate(runtime_adapters_execution_total{capability="git.diff@v1",status="cancelled"}[{{.window}}]))
+        total_query: |
+          sum(rate(runtime_adapters_execution_total{capability="git.diff@v1"}[{{.window}}]))
+    alerting:
+      name: GitDiffCancellationRateBurn
+      labels:
+        capability: "git.diff@v1"
+      page_alert:
+        labels:
+          severity: critical
+      ticket_alert:
+        labels:
+          severity: warning
+
+  - name: "git-commit-cancellation-rate"
+    objective: 99.0
+    description: "git.commit@v1 caller-cancellation rate (chaos test variant)"
+    labels:
+      capability: "git.commit@v1"
+    sli:
+      events:
+        error_query: |
+          sum(rate(runtime_adapters_execution_total{capability="git.commit@v1",status="cancelled"}[{{.window}}]))
+        total_query: |
+          sum(rate(runtime_adapters_execution_total{capability="git.commit@v1"}[{{.window}}]))
+    alerting:
+      name: GitCommitCancellationRateBurn
+      labels:
+        capability: "git.commit@v1"
+      page_alert:
+        labels:
+          severity: critical
+      ticket_alert:
+        labels:
+          severity: warning

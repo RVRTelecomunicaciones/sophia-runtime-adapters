@@ -12,6 +12,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 
 	"github.com/sophia-ecosystem/runtime-adapters/internal/application/services"
 	"github.com/sophia-ecosystem/runtime-adapters/internal/domain/execution/entities"
@@ -2023,4 +2025,265 @@ func TestExecuteService_AdapterPanic_IncrementsAdapterPanicsCounter(t *testing.T
 		}
 	}
 	require.True(t, found, "ERROR log with panic_location=adapter_execute must be emitted")
+}
+
+// ---------------------------------------------------------------------------
+// CONTRACT TEST — protects ops/slo/persist.yaml SLI denominator semantics.
+//
+// Test_RecordExecution_OnlyAfterPersistSuccess is a CONTRACT TEST for the
+// metric semantics that ops/slo/persist.yaml depends on.
+//
+// The persist-availability SLI derives its denominator as:
+//
+//	total_persist_attempts =
+//	  execution.total{any status} (= successful persists)
+//	  + receipt.persist.failures  (= failed persists)
+//
+// This is exact ONLY IF execution.total is incremented strictly AFTER a
+// successful persist. If a future refactor reorders execute_service to emit
+// RecordExecution before or in parallel with persist, the denominator goes
+// wrong silently and the SLO produces meaningless ratios.
+//
+// This test forces both branches:
+//
+//	(1) persist succeeds  → execution.total += 1, persist.failures += 0
+//	(2) persist fails     → execution.total += 0, persist.failures += 1
+//
+// If either assertion fails, the SLI in ops/slo/persist.yaml is no longer
+// valid — fix the ordering in execute_service.go BEFORE touching the SLI.
+//
+// Spec: docs/superpowers/specs/2026-04-29-phase-2c.4-g-cancellation-persist-slos-design.md §7
+// Adjustment: A2C4G.1 (the docstring + failure messages must explicitly
+// identify this as a CONTRACT TEST and point at the SLO file).
+func Test_RecordExecution_OnlyAfterPersistSuccess(t *testing.T) {
+	t.Run("persist_succeeds_increments_execution_total_only", func(t *testing.T) {
+		h := newPersistContractHarness(t, persistModeOK)
+		h.executeOne(t)
+
+		snap := h.snapshotMetrics(t)
+		require.Equalf(t, int64(1), snap.executionTotal,
+			"ops/slo/persist.yaml total_query is no longer valid: "+
+				"expected execution.total += 1 after successful persist, got %d. "+
+				"Fix execute_service.go ordering BEFORE touching the SLI. "+
+				"See spec §7 of docs/superpowers/specs/2026-04-29-phase-2c.4-g-cancellation-persist-slos-design.md",
+			snap.executionTotal)
+		require.Equalf(t, int64(0), snap.persistFailures,
+			"ops/slo/persist.yaml total_query is no longer valid: "+
+				"expected persist.failures += 0 after successful persist, got %d.",
+			snap.persistFailures)
+	})
+
+	t.Run("persist_fails_increments_persist_failures_only", func(t *testing.T) {
+		h := newPersistContractHarness(t, persistModeFail)
+		err := h.executeOneExpectingErr(t)
+		require.Error(t, err, "Execute must return error when persist fails")
+
+		snap := h.snapshotMetrics(t)
+		require.Equalf(t, int64(0), snap.executionTotal,
+			"ops/slo/persist.yaml total_query is no longer valid: "+
+				"expected execution.total += 0 when persist fails, got %d. "+
+				"RecordExecution must NEVER fire before persist succeeds. "+
+				"Fix execute_service.go ordering BEFORE touching the SLI. "+
+				"See spec §7 of docs/superpowers/specs/2026-04-29-phase-2c.4-g-cancellation-persist-slos-design.md",
+			snap.executionTotal)
+		require.Equalf(t, int64(1), snap.persistFailures,
+			"ops/slo/persist.yaml total_query is no longer valid: "+
+				"expected persist.failures += 1 when persist fails, got %d.",
+			snap.persistFailures)
+	})
+}
+
+// persistContractMode controls whether the receipt store fails on persist.
+type persistContractMode int
+
+const (
+	persistModeOK persistContractMode = iota
+	persistModeFail
+)
+
+// persistContractHarness wires a manual.Reader-backed MeterProvider to the
+// runtime metric Registry, builds an ExecuteService with the standard test
+// fixture (mirroring newTestService) but with a configurable receipt store
+// (OK = in-memory; FAIL = alwaysFailRepo), and exposes snapshotMetrics().
+//
+// Lifetime: single-use per subtest; no concurrency.
+type persistContractHarness struct {
+	svc    *services.ExecuteService
+	deps   persistContractDeps
+	reader sdkmetric.Reader
+	ctx    context.Context
+}
+
+type persistContractDeps struct {
+	cap       valueobjects.Capability
+	adapterID valueobjects.AdapterID
+	clock     *shared.FakeClock
+	idGen     *entities.FakeIDGen
+}
+
+type persistContractSnapshot struct {
+	executionTotal  int64
+	persistFailures int64
+}
+
+// newPersistContractHarness builds the test fixture with a local manual.Reader
+// MeterProvider (NOT installed as global — tests in this package run in
+// parallel; polluting the global meter would corrupt sibling tests).
+func newPersistContractHarness(t *testing.T, mode persistContractMode) *persistContractHarness {
+	t.Helper()
+
+	clk := &shared.FakeClock{T: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
+
+	aid, err := valueobjects.NewAdapterID("shell")
+	require.NoError(t, err)
+	cap, err := valueobjects.NewCapability(aid, "exec", "v1", false, 5*time.Second)
+	require.NoError(t, err)
+
+	registry, err := valueobjects.NewCapabilityRegistry(cap)
+	require.NoError(t, err)
+
+	normalizer := domainservices.NewResultNormalizer(4096)
+	require.NoError(t, normalizer.Register(cap.Canonical(),
+		func(_ valueobjects.Capability, raw domainservices.AdapterRawOutcome, clk shared.Clock) (entities.ExecutionResult, error) {
+			result, err := entities.NewExecutionResult(
+				valueobjects.StatusSuccess, valueobjects.HintRetryable,
+				"", "", nil, nil, nil, nil, nil, 0, 0, 0, clk.Now(),
+			)
+			return result, err
+		}))
+
+	stub := testdoubles.NewStubAdapter(aid, cap)
+	stub.Program(cap.Canonical(), testdoubles.StubProgram{Raw: &successRaw{}})
+
+	// LOCAL manual-reader-backed MeterProvider — not installed globally.
+	reader := sdkmetric.NewManualReader()
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	reg, err := obs.NewRegistry(mp.Meter("runtime-adapters.contract-test"))
+	require.NoError(t, err)
+
+	var receipts outbound.ReceiptRepository
+	switch mode {
+	case persistModeOK:
+		receipts = testdoubles.NewInMemoryReceiptRepository(clk)
+	case persistModeFail:
+		receipts = &alwaysFailRepo{}
+	default:
+		t.Fatalf("unknown persistContractMode: %d", mode)
+	}
+
+	idemp := testdoubles.NewInMemoryIdempotencyStore(clk)
+	prov, err := entities.NewProvenance(entities.ProvTest, "v0.0.1", "test-host", "runtime-v0.0.1", "")
+	require.NoError(t, err)
+	idGen := &entities.FakeIDGen{IDs: []string{ulid01, ulid02, ulid03, ulid04, ulid05}}
+
+	svc, err := services.NewExecuteService(services.ExecuteServiceConfig{
+		Adapters:    map[string]outbound.Adapter{"shell": stub},
+		Registry:    registry,
+		Metrics:     reg,
+		Normalizer:  normalizer,
+		Receipts:    receipts,
+		Idempotency: idemp,
+		Limiter:     services.NewConcurrencyLimiter(10),
+		Clock:       clk,
+		IDGen:       idGen,
+		MaxTimeout:  30 * time.Second,
+		IdempWindow: 24 * time.Hour,
+		Provenance:  prov,
+	})
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		// Graceful shutdown so the manual reader stops cleanly.
+		_ = mp.Shutdown(context.Background())
+	})
+
+	return &persistContractHarness{
+		svc:    svc,
+		reader: reader,
+		ctx:    context.Background(),
+		deps: persistContractDeps{
+			cap:       cap,
+			adapterID: aid,
+			clock:     clk,
+			idGen:     idGen,
+		},
+	}
+}
+
+// executeOne drives a single request through the service. Asserts no error.
+func (h *persistContractHarness) executeOne(t *testing.T) {
+	t.Helper()
+	req := h.buildRequest(t)
+	_, err := h.svc.Execute(h.ctx, req)
+	require.NoError(t, err, "Execute must succeed when persist OK")
+}
+
+// executeOneExpectingErr drives a single request, returning the error.
+func (h *persistContractHarness) executeOneExpectingErr(t *testing.T) error {
+	t.Helper()
+	req := h.buildRequest(t)
+	_, err := h.svc.Execute(h.ctx, req)
+	return err
+}
+
+func (h *persistContractHarness) buildRequest(t *testing.T) entities.ExecutionRequest {
+	t.Helper()
+	cid, err := shared.NewCorrelationID(ulid13)
+	require.NoError(t, err)
+	pl, err := valueobjects.NewPayload(valueobjects.ContentTypeJSON, []byte(`{"cmd":"ls"}`), 0)
+	require.NoError(t, err)
+	tb, err := valueobjects.NewTimeoutBudget(5000, 0)
+	require.NoError(t, err)
+	req, err := entities.NewExecutionRequest(entities.ExecutionRequestInput{
+		CorrelationID:     cid,
+		AdapterID:         h.deps.adapterID,
+		CapabilityName:    h.deps.cap.Name(),
+		CapabilityVersion: h.deps.cap.Version(),
+		Payload:           pl,
+		TimeoutBudget:     tb,
+	}, h.deps.clock)
+	require.NoError(t, err)
+	return req
+}
+
+// snapshotMetrics flushes the manual reader and walks ScopeMetrics to
+// extract the two counters this contract test cares about (sum across all
+// data points; both counters are scoped to a single execution so the totals
+// are 0 or 1).
+//
+// Defensive: if BOTH counters return 0, fails with a metric-name-drift hint.
+// In a healthy run, exactly one of the two counters is 1 (depending on
+// persistMode); both being 0 means snapshot saw no matching metrics, which
+// most plausibly means the OTel names in metrics.go drifted from the literals
+// matched here.
+func (h *persistContractHarness) snapshotMetrics(t *testing.T) persistContractSnapshot {
+	t.Helper()
+	var rm metricdata.ResourceMetrics
+	require.NoError(t, h.reader.Collect(h.ctx, &rm))
+
+	var snap persistContractSnapshot
+	for _, sm := range rm.ScopeMetrics {
+		for _, m := range sm.Metrics {
+			switch m.Name {
+			case "runtime_adapters.execution.total":
+				if sum, ok := m.Data.(metricdata.Sum[int64]); ok {
+					for _, dp := range sum.DataPoints {
+						snap.executionTotal += dp.Value
+					}
+				}
+			case "runtime_adapters.receipt.persist.failures":
+				if sum, ok := m.Data.(metricdata.Sum[int64]); ok {
+					for _, dp := range sum.DataPoints {
+						snap.persistFailures += dp.Value
+					}
+				}
+			}
+		}
+	}
+	require.Falsef(t, snap.executionTotal == 0 && snap.persistFailures == 0,
+		"contract-test snapshot saw zero metrics — OTel names in "+
+			"internal/infrastructure/obs/metrics.go probably drifted from the "+
+			"literals matched in snapshotMetrics. Realign the strings before "+
+			"trusting any persist-availability SLO derivation.")
+	return snap
 }

@@ -2,6 +2,11 @@
 # Compose envelope: 2 CPU / 2 GiB runtime (ADR 0008).
 # Changing these targets requires re-running `make load-baseline`
 # under the same or a newer-but-declared envelope.
+# ---
+# 2C.4 / G additions: shell-exec-cancellation-rate SLO(s) are PROVISIONAL.
+# Cancellation objectives (99.0%) are operator hypotheses, not yet
+# calibrated against real load. Recalibrate with evidence per
+# docs/load-baseline.md when production traffic gives signal.
 
 version: "prometheus/v1"
 service: "runtime-adapters"
@@ -47,6 +52,34 @@ slos:
           sum(rate(runtime_adapters_execution_duration_seconds_count{capability="shell.exec@v1"}[{{.window}}]))
     alerting:
       name: ShellExecLatencyBurn
+      labels:
+        capability: "shell.exec@v1"
+      page_alert:
+        labels:
+          severity: critical
+      ticket_alert:
+        labels:
+          severity: warning
+
+  # ---- cancellation-rate SLOs (PROVISIONAL — Phase 2C.4 / G) -------------
+  # Note: cancellation `total_query` is UNFILTERED (no status~ clause) by
+  # design — cancellation can displace any status (including partial), so
+  # the denominator is "all executions". This differs from the
+  # *-availability SLOs above which filter to success|failure|timeout.
+
+  - name: "shell-exec-cancellation-rate"
+    objective: 99.0   # PROVISIONAL — cancellation rate < 1% (G, 2C.4)
+    description: "shell.exec@v1 caller-cancellation rate (PROVISIONAL — see file header)"
+    labels:
+      capability: "shell.exec@v1"
+    sli:
+      events:
+        error_query: |
+          sum(rate(runtime_adapters_execution_total{capability="shell.exec@v1",status="cancelled"}[{{.window}}]))
+        total_query: |
+          sum(rate(runtime_adapters_execution_total{capability="shell.exec@v1"}[{{.window}}]))
+    alerting:
+      name: ShellExecCancellationRateBurn
       labels:
         capability: "shell.exec@v1"
       page_alert:

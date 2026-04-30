@@ -1,0 +1,47 @@
+# PROVISIONAL — initial operational hypothesis (Phase 2C.4 sub-project G).
+# Persist-availability objective (99.9%) is an operator hypothesis, not
+# yet calibrated against real-load data. Recalibrate with evidence under
+# the load envelope (ADR 0008, docs/load-baseline.md) when production
+# traffic gives signal.
+# Tracked: 2C.4 sub-project G; closes at v0.5.0.
+
+version: "prometheus/v1"
+service: "runtime-adapters"
+labels:
+  team: "platform"
+
+slos:
+  - name: "persist-availability"
+    objective: 99.9   # PROVISIONAL — persist failure rate < 0.1% (G, 2C.4)
+    description: "Receipt persistence reliability across all capabilities; denominator = execution.total + receipt.persist.failures (see SLI comment for rationale)"
+    sli:
+      events:
+        error_query: |
+          sum(rate(runtime_adapters_receipt_persist_failures[{{.window}}]))
+        # Denominator derivation (D2C4G.1):
+        #   total_persist_attempts =
+        #     successful_persists  (every execution.total fires AFTER a
+        #                           successful persist per
+        #                           execute_service.go RecordExecution
+        #                           semantics post-B8/B9)
+        #   + failed_persists       (receipt.persist.failures counter)
+        #
+        # Mathematically EXACT, not approximate. Protected by
+        # Test_RecordExecution_OnlyAfterPersistSuccess in
+        # internal/application/services/execute_service_test.go (§7 of this spec).
+        # If that test ever fails, this denominator is wrong — fix the
+        # ordering in execute_service before touching this SLI.
+        total_query: |
+          (
+            sum(rate(runtime_adapters_execution_total[{{.window}}]))
+            +
+            sum(rate(runtime_adapters_receipt_persist_failures[{{.window}}]))
+          )
+    alerting:
+      name: PersistAvailabilityBurn
+      page_alert:
+        labels:
+          severity: critical
+      ticket_alert:
+        labels:
+          severity: warning
