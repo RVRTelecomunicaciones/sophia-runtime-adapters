@@ -4,6 +4,30 @@ All notable changes to `runtime-adapters` will be documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] — 2026-04-30
+
+Phase 2C.4 sub-project G — cancellation-rate + persist-availability SLOs. First sub-project of the operational-readiness track. Adds 8 per-Phase-1-capability cancellation-rate SLOs and 1 global persist-availability SLO. Re-enables the two chaos scenarios skipped at `v0.4.0` (`ci-shell-hang-cancel`, `ci-persist-fail`); nightly comprehensive returns to 6/6 active. No runtime Go code changes; no metric contract changes; no alertmanager changes. Spec-complete against `docs/superpowers/specs/2026-04-29-phase-2c.4-g-cancellation-persist-slos-design.md`.
+
+### Added
+
+- 8 cancellation-rate SLOs in `ops/slo/{shell,git,filesystem,http}.yaml` — one per Phase 1 capability. PROVISIONAL initial objective: 99.0% (cancellation rate <1%). Burn-rate alerts: `ShellExecCancellationRateBurn`, `GitStatusCancellationRateBurn`, `GitCloneCancellationRateBurn`, `GitDiffCancellationRateBurn`, `GitCommitCancellationRateBurn`, `FilesystemReadFileCancellationRateBurn`, `FilesystemWriteFileCancellationRateBurn`, `HttpRequestCancellationRateBurn`.
+- 1 persist-availability SLO in `ops/slo/persist.yaml` (NEW file). Global, no `capability` label. PROVISIONAL initial objective: 99.9% (persist failure rate <0.1%). Burn-rate alert: `PersistAvailabilityBurn`. SLI denominator derived from `runtime_adapters_execution_total + runtime_adapters_receipt_persist_failures`, exact via the RecordExecution-after-persist invariant established post-B8/B9.
+- Test SLO mirrors under `ops/slo/test/` for the chaos canary stack (`service: "runtime-adapters-chaos-test"`, 5m period).
+- Sloth-rendered recording rules + alerts under `ops/prometheus/generated/` (prod) and `ops/prometheus/generated/test/` (test).
+- `Test_RecordExecution_OnlyAfterPersistSuccess` contract test in `internal/application/services/execute_service_test.go` — protects the persist SLI denominator derivation against future refactors of `execute_service.go` that would silently invalidate the SLO math. Failure messages explicitly point at the SLI file. (A2C4G.1.)
+- `globalSLOs` allowlist in `ops/slo/slo_coverage_test.go` — explicit, named exception path for runtime-wide SLOs that intentionally lack `labels.capability`. `persist-availability` is the first entry.
+
+### Changed
+
+- `test/chaos/e2e/comprehensive_test.go` — `ci-shell-hang-cancel` and `ci-persist-fail` rows un-skipped. The first now expects `ShellExecCancellationRateBurn`; the second expects `PersistAvailabilityBurn` (with `canonicalCap: ""` because the SLO is global). File-header doc updated to "All six CI scenarios are active as of v0.5.0".
+- `ops/slo/slo_coverage_test.go` — naming-contract switch now accepts `-cancellation-rate` suffix; per-capability coverage check now requires `-cancellation-rate` SLO for every Phase 1 capability (in addition to the existing availability + latency).
+
+### Notes
+
+- Initial objectives ship PROVISIONAL — operator hypotheses, not yet calibrated against real load. Recalibration with evidence is a follow-up if production signal demands. (NG1.)
+- No metric contract change. The existing inhibition rule `equal: ['sloth_slo', 'capability']` in `ops/alertmanager/alertmanager.yaml` is unchanged — it already handles both labeled and unlabeled SLOs correctly because Alertmanager treats absent capability on both source and target as equal.
+- Real receivers (PagerDuty, Slack, Linear) for the new alerts ship with sub-project A+B (`v0.8.0`).
+
 ## [0.4.0] — 2026-04-28
 
 Phase 2C.3 — chaos + minimal hardening. Adds a deliberate fault-injection layer that compiles into the production binary as opt-in code gated at runtime by `RUNTIME_CHAOS_ENABLED` plus `RUNTIME_ENV != "production"` (R17 fail-closed). Adapters opt into chaos via a new `ChaosCapable` interface; the wrapper is identity unless config + env authorise. Six CI fault profiles plus ~24 local-only exploratory profiles cover shell, git, filesystem, http, and cross-cutting (panic, persist, pool-exhaustion) failure modes. Two-tier CI: per-PR canary (single profile, label-precise + tiered 60s/90s budget) plus nightly comprehensive (five active scenarios + inhibition contract). Two reactive bundles (B8 + B9) closed gaps surfaced by the chaos suite during development. Spec-complete against `docs/superpowers/specs/2026-04-26-phase-2c.3-chaos-hardening-design.md`.
