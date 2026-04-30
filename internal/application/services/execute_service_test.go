@@ -2057,36 +2057,36 @@ func TestExecuteService_AdapterPanic_IncrementsAdapterPanicsCounter(t *testing.T
 // identify this as a CONTRACT TEST and point at the SLO file).
 func Test_RecordExecution_OnlyAfterPersistSuccess(t *testing.T) {
 	t.Run("persist_succeeds_increments_execution_total_only", func(t *testing.T) {
-		h := newPersistContractHarness(t, persistMode_OK)
+		h := newPersistContractHarness(t, persistModeOK)
 		h.executeOne(t)
 
 		snap := h.snapshotMetrics(t)
-		require.Equal(t, int64(1), snap.executionTotal,
+		require.Equalf(t, int64(1), snap.executionTotal,
 			"ops/slo/persist.yaml total_query is no longer valid: "+
 				"expected execution.total += 1 after successful persist, got %d. "+
 				"Fix execute_service.go ordering BEFORE touching the SLI. "+
 				"See spec §7 of docs/superpowers/specs/2026-04-29-phase-2c.4-g-cancellation-persist-slos-design.md",
 			snap.executionTotal)
-		require.Equal(t, int64(0), snap.persistFailures,
+		require.Equalf(t, int64(0), snap.persistFailures,
 			"ops/slo/persist.yaml total_query is no longer valid: "+
 				"expected persist.failures += 0 after successful persist, got %d.",
 			snap.persistFailures)
 	})
 
 	t.Run("persist_fails_increments_persist_failures_only", func(t *testing.T) {
-		h := newPersistContractHarness(t, persistMode_FAIL)
+		h := newPersistContractHarness(t, persistModeFail)
 		err := h.executeOneExpectingErr(t)
 		require.Error(t, err, "Execute must return error when persist fails")
 
 		snap := h.snapshotMetrics(t)
-		require.Equal(t, int64(0), snap.executionTotal,
+		require.Equalf(t, int64(0), snap.executionTotal,
 			"ops/slo/persist.yaml total_query is no longer valid: "+
 				"expected execution.total += 0 when persist fails, got %d. "+
 				"RecordExecution must NEVER fire before persist succeeds. "+
 				"Fix execute_service.go ordering BEFORE touching the SLI. "+
 				"See spec §7 of docs/superpowers/specs/2026-04-29-phase-2c.4-g-cancellation-persist-slos-design.md",
 			snap.executionTotal)
-		require.Equal(t, int64(1), snap.persistFailures,
+		require.Equalf(t, int64(1), snap.persistFailures,
 			"ops/slo/persist.yaml total_query is no longer valid: "+
 				"expected persist.failures += 1 when persist fails, got %d.",
 			snap.persistFailures)
@@ -2097,8 +2097,8 @@ func Test_RecordExecution_OnlyAfterPersistSuccess(t *testing.T) {
 type persistContractMode int
 
 const (
-	persistMode_OK persistContractMode = iota
-	persistMode_FAIL
+	persistModeOK persistContractMode = iota
+	persistModeFail
 )
 
 // persistContractHarness wires a manual.Reader-backed MeterProvider to the
@@ -2115,13 +2115,10 @@ type persistContractHarness struct {
 }
 
 type persistContractDeps struct {
-	cap        valueobjects.Capability
-	adapterID  valueobjects.AdapterID
-	clock      *shared.FakeClock
-	idGen      *entities.FakeIDGen
-	stub       *testdoubles.StubAdapter
-	idemp      *testdoubles.InMemoryIdempotencyStore
-	provenance entities.Provenance
+	cap       valueobjects.Capability
+	adapterID valueobjects.AdapterID
+	clock     *shared.FakeClock
+	idGen     *entities.FakeIDGen
 }
 
 type persistContractSnapshot struct {
@@ -2166,9 +2163,9 @@ func newPersistContractHarness(t *testing.T, mode persistContractMode) *persistC
 
 	var receipts outbound.ReceiptRepository
 	switch mode {
-	case persistMode_OK:
+	case persistModeOK:
 		receipts = testdoubles.NewInMemoryReceiptRepository(clk)
-	case persistMode_FAIL:
+	case persistModeFail:
 		receipts = &alwaysFailRepo{}
 	default:
 		t.Fatalf("unknown persistContractMode: %d", mode)
@@ -2205,13 +2202,10 @@ func newPersistContractHarness(t *testing.T, mode persistContractMode) *persistC
 		reader: reader,
 		ctx:    context.Background(),
 		deps: persistContractDeps{
-			cap:        cap,
-			adapterID:  aid,
-			clock:      clk,
-			idGen:      idGen,
-			stub:       stub,
-			idemp:      idemp,
-			provenance: prov,
+			cap:       cap,
+			adapterID: aid,
+			clock:     clk,
+			idGen:     idGen,
 		},
 	}
 }
@@ -2256,6 +2250,12 @@ func (h *persistContractHarness) buildRequest(t *testing.T) entities.ExecutionRe
 // extract the two counters this contract test cares about (sum across all
 // data points; both counters are scoped to a single execution so the totals
 // are 0 or 1).
+//
+// Defensive: if BOTH counters return 0, fails with a metric-name-drift hint.
+// In a healthy run, exactly one of the two counters is 1 (depending on
+// persistMode); both being 0 means snapshot saw no matching metrics, which
+// most plausibly means the OTel names in metrics.go drifted from the literals
+// matched here.
 func (h *persistContractHarness) snapshotMetrics(t *testing.T) persistContractSnapshot {
 	t.Helper()
 	var rm metricdata.ResourceMetrics
@@ -2280,5 +2280,10 @@ func (h *persistContractHarness) snapshotMetrics(t *testing.T) persistContractSn
 			}
 		}
 	}
+	require.Falsef(t, snap.executionTotal == 0 && snap.persistFailures == 0,
+		"contract-test snapshot saw zero metrics — OTel names in "+
+			"internal/infrastructure/obs/metrics.go probably drifted from the "+
+			"literals matched in snapshotMetrics. Realign the strings before "+
+			"trusting any persist-availability SLO derivation.")
 	return snap
 }
