@@ -29,20 +29,7 @@ import (
 // inhibition contract (§13.3, D2C1.17): no warning alert with the same
 // (sloth_slo, capability) is delivered alongside the critical.
 //
-// Two scenarios are included in the table for completeness but skipped with
-// clear notes (and therefore do not assert alert delivery):
-//
-//   - ci-persist-fail — persist failures are signalled via
-//     runtime_adapters.receipt.persist.failures, a counter not covered by any
-//     SLO in ops/slo/test/, so no burn-rate alert can fire (B6).
-//
-//   - ci-shell-hang-cancel — drives 100% status=cancelled traffic; the
-//     shell availability SLO intentionally excludes `cancelled` from BOTH
-//     numerator and denominator, so the SLI ratio is undefined and no
-//     burn-rate alert can fire. Surfaced by first-nightly run 25096750669
-//     (2026-04-29). A "cancellation rate" SLO is deferred to Track 2C.4.
-//     Classification + receipt + metric contract for cancellation is still
-//     covered by test/chaos/integration (B3).
+// All six CI scenarios are active in the suite as of v0.5.0. The two scenarios that shipped skipped under v0.4.0 (ci-shell-hang-cancel, ci-persist-fail) are now backed by the cancellation-rate and persist-availability SLOs introduced in Phase 2C.4 / G — see docs/superpowers/specs/2026-04-29-phase-2c.4-g-cancellation-persist-slos-design.md.
 //
 // Compose lifecycle: ComposeUp + ComposeDown PER SCENARIO. docker compose
 // fixes container env at start; the only clean way to swap the chaos
@@ -57,8 +44,8 @@ import (
 //	ci-git-remote-unreachable   → git.clone@v1            → GitCloneAvailabilityBurn
 //	ci-http-connection-reset    → http.request@v1         → HttpRequestAvailabilityBurn
 //	ci-shell-panic              → shell.exec@v1           → ShellExecAvailabilityBurn
-//	ci-shell-hang-cancel        → SKIPPED (cancelled status outside SLI universe; deferred to 2C.4)
-//	ci-persist-fail             → SKIPPED (no test SLO covers persist counter)
+//	ci-shell-hang-cancel        → shell.exec@v1             → ShellExecCancellationRateBurn
+//	ci-persist-fail             → http.request@v1 driver    → PersistAvailabilityBurn (global)
 func TestChaos_Comprehensive(t *testing.T) {
 	for _, sc := range comprehensiveScenarios() {
 		sc := sc
@@ -144,41 +131,16 @@ func comprehensiveScenarios() []comprehensiveScenario {
 			capability:   "exec",
 			version:      "v1",
 			canonicalCap: "shell.exec@v1",
-			// Skipped per first-nightly run 25096750669 (2026-04-29).
-			// The chaos profile drives 100% of executions to status=cancelled
-			// (caller-side ctx cancellation interpreted by the runtime as a
-			// caller-initiated stop, not runtime unavailability). The shell
-			// availability SLO at ops/slo/test/shell.yaml intentionally
-			// excludes `cancelled` from BOTH numerator and denominator:
-			//
-			//   error_query: sum(rate(... status=~"failure|timeout" ...))
-			//   total_query: sum(rate(... status=~"success|failure|timeout" ...))
-			//
-			// Therefore both rates collapse to the empty vector; SLI ratio
-			// is undefined; no burn-rate alert can ever fire. This is the
-			// SLO designed semantics — cancellations are caller decisions,
-			// not availability signals. The test was incorrectly asserting
-			// that `ShellExecAvailabilityBurn` fires under sustained
-			// cancellation, which the SLO contract forbids.
-			//
-			// Tracking a "cancellation rate" SLO so this scenario can rejoin
-			// the comprehensive suite is deferred to Track 2C.4 (operational
-			// readiness). See docs/chaos.md §6 + the 0.4.x CHANGELOG.
-			//
-			// The profile remains in ops/chaos/profiles/ci/ — the B3 chaos
-			// integration test (test/chaos/integration) still asserts the
-			// classification + receipt + metric contract for cancellation,
-			// which is a different layer than alert delivery.
-			skipReason: "no test SLO covers status=cancelled; ShellExecAvailabilityBurn cannot " +
-				"fire when 100% of executions are cancelled (SLI excludes cancelled from " +
-				"numerator AND denominator by design). Cancellation-rate SLO deferred to 2C.4. " +
-				"Classification + receipt contract still covered by test/chaos/integration.",
-			payloadJSON: `{"command":"true","args":[],"working_dir":"","env":null,"stdin":null}`,
-			timeoutMs:   5000,
-			useCancel:   true,
+			payloadJSON:  `{"command":"true","args":[],"working_dir":"","env":null,"stdin":null}`,
+			timeoutMs:    5000,
+			useCancel:    true,
+			// 50ms is long enough for the POST to reach the runtime handler
+			// and start executing the shell command; short enough that we're
+			// well below timeoutMs=5000 so the runtime classifies as
+			// cancelled, not timeout.
 			cancelAfter: 50 * time.Millisecond,
-			alertName:   "ShellExecAvailabilityBurn",
-			sloName:     "shell-exec-availability",
+			alertName:   "ShellExecCancellationRateBurn",
+			sloName:     "shell-exec-cancellation-rate",
 			specFile:    "shell.yaml",
 		},
 		{
@@ -195,18 +157,17 @@ func comprehensiveScenarios() []comprehensiveScenario {
 			specFile:     "shell.yaml",
 		},
 		{
-			name:        "persist-fail",
-			profileFile: "ci-persist-fail.yaml",
-			// persist failures bypass runtime_adapters_execution_total
-			// (the metric increments only after a successful persist, see
-			// execute_service.go). The receipt.persist.failures counter
-			// IS incremented but no SLO in ops/slo/test/ targets it, so
-			// no burn-rate alert can fire against this signal under the
-			// current test rule surface. Document and skip.
-			skipReason: "no test SLO covers runtime_adapters.receipt.persist.failures; " +
-				"adding a persist-failure SLO is tracked separately. " +
-				"The chaos integration test (test/chaos/integration) " +
-				"exercises the 5xx + counter contract directly.",
+			name:         "persist-fail",
+			profileFile:  "ci-persist-fail.yaml",
+			adapterID:    "http",
+			capability:   "request",
+			version:      "v1",
+			canonicalCap: "", // persist SLO is global; capability label intentionally empty
+			payloadJSON:  `{"method":"GET","url":"https://example.invalid/","headers":{},"expected_status":[200]}`,
+			timeoutMs:    1000,
+			alertName:    "PersistAvailabilityBurn",
+			sloName:      "persist-availability",
+			specFile:     "persist.yaml",
 		},
 	}
 }
