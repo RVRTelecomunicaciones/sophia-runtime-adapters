@@ -8,13 +8,13 @@ groups:
   rules:
   - record: slo:sli_error:ratio_rate1m
     expr: |
-      (sum(rate(runtime_adapters_receipt_persist_failures[1m])) or vector(0)
+      (sum(rate(runtime_adapters_receipt_persist_failures_total[1m])) or vector(0)
       )
       /
       ((
         (sum(rate(runtime_adapters_execution_total[1m])) or vector(0))
         +
-        (sum(rate(runtime_adapters_receipt_persist_failures[1m])) or vector(0))
+        (sum(rate(runtime_adapters_receipt_persist_failures_total[1m])) or vector(0))
       )
       )
     labels:
@@ -25,13 +25,13 @@ groups:
       team: platform
   - record: slo:sli_error:ratio_rate2m
     expr: |
-      (sum(rate(runtime_adapters_receipt_persist_failures[2m])) or vector(0)
+      (sum(rate(runtime_adapters_receipt_persist_failures_total[2m])) or vector(0)
       )
       /
       ((
         (sum(rate(runtime_adapters_execution_total[2m])) or vector(0))
         +
-        (sum(rate(runtime_adapters_receipt_persist_failures[2m])) or vector(0))
+        (sum(rate(runtime_adapters_receipt_persist_failures_total[2m])) or vector(0))
       )
       )
     labels:
@@ -42,13 +42,13 @@ groups:
       team: platform
   - record: slo:sli_error:ratio_rate3m
     expr: |
-      (sum(rate(runtime_adapters_receipt_persist_failures[3m])) or vector(0)
+      (sum(rate(runtime_adapters_receipt_persist_failures_total[3m])) or vector(0)
       )
       /
       ((
         (sum(rate(runtime_adapters_execution_total[3m])) or vector(0))
         +
-        (sum(rate(runtime_adapters_receipt_persist_failures[3m])) or vector(0))
+        (sum(rate(runtime_adapters_receipt_persist_failures_total[3m])) or vector(0))
       )
       )
     labels:
@@ -59,13 +59,13 @@ groups:
       team: platform
   - record: slo:sli_error:ratio_rate4m
     expr: |
-      (sum(rate(runtime_adapters_receipt_persist_failures[4m])) or vector(0)
+      (sum(rate(runtime_adapters_receipt_persist_failures_total[4m])) or vector(0)
       )
       /
       ((
         (sum(rate(runtime_adapters_execution_total[4m])) or vector(0))
         +
-        (sum(rate(runtime_adapters_receipt_persist_failures[4m])) or vector(0))
+        (sum(rate(runtime_adapters_receipt_persist_failures_total[4m])) or vector(0))
       )
       )
     labels:

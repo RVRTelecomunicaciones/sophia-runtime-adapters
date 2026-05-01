@@ -14,14 +14,19 @@ slos:
     description: "Receipt persistence reliability (chaos test variant; denominator derived per comment in total_query)"
     sli:
       events:
-        # `or vector(0)` wrappers — see ops/slo/persist.yaml for full
-        # rationale. Required because PromQL `vec_a + vec_b` collapses
-        # to empty when one operand has no series, which is exactly the
-        # state under sustained persist failure (execution.total never
-        # increments per Test_RecordExecution_OnlyAfterPersistSuccess).
-        # Surfaced by manual nightly run 25174853836 (2026-04-30); B3 fix.
+        # Two PromQL footguns guarded here — see ops/slo/persist.yaml for
+        # full rationale:
+        # (1) `_total` suffix: OTel Collector contrib appends `_total` to
+        #     counters that don't end in `_total`, so the exposed Prom
+        #     name is runtime_adapters_receipt_persist_failures_total
+        #     (B4 fix; surfaced by manual nightly 25210210809 2026-05-01).
+        # (2) `or vector(0)`: required because PromQL `+` collapses to
+        #     empty when one operand has no series — exactly the state
+        #     under sustained persist failure where execution.total has
+        #     no data points (B3 fix; surfaced by manual nightly
+        #     25174853836 2026-04-30).
         error_query: |
-          sum(rate(runtime_adapters_receipt_persist_failures[{{.window}}])) or vector(0)
+          sum(rate(runtime_adapters_receipt_persist_failures_total[{{.window}}])) or vector(0)
         # Denominator derivation: see ops/slo/persist.yaml for full
         # rationale (D2C4G.1) + the empty-vector fix from B3. Same SLI
         # selector logic as prod; this file only differs in service:
@@ -31,7 +36,7 @@ slos:
           (
             (sum(rate(runtime_adapters_execution_total[{{.window}}])) or vector(0))
             +
-            (sum(rate(runtime_adapters_receipt_persist_failures[{{.window}}])) or vector(0))
+            (sum(rate(runtime_adapters_receipt_persist_failures_total[{{.window}}])) or vector(0))
           )
     alerting:
       name: PersistAvailabilityBurn
