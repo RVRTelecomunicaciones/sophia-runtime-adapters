@@ -290,7 +290,7 @@ For each sub-project, in order:
 
 | Sub-project | Tag | Status | Date |
 |---|---|---|---|
-| G | `v0.5.0` | not started | — |
+| G | `v0.5.0` | closed | 2026-05-01 |
 | E | `v0.6.0` | not started | — |
 | F | `v0.7.0` | not started | — |
 | A+B | `v0.8.0` | not started | — |
