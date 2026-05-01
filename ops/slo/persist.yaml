@@ -16,42 +16,52 @@ slos:
     description: "Receipt persistence reliability across all capabilities; denominator = execution.total + receipt.persist.failures (see SLI comment for rationale)"
     sli:
       events:
-        # `or vector(0)` ensures the operand is well-defined when the
-        # source counter has zero series. Without it, under 100% persist
-        # failure runtime_adapters_receipt_persist_failures has data but
-        # the rate() over an empty range can still vanish at the boundary;
-        # safer to be explicit. Also keeps the SLI legible in idle periods.
+        # Two PromQL footguns in a row are guarded here:
+        #
+        # (1) `_total` suffix on the persist counter. The OTel name is
+        #     `runtime_adapters.receipt.persist.failures` (no `.total`).
+        #     The OTel Collector contrib prometheus exporter has
+        #     `add_metric_suffixes: true` by default (we don't override),
+        #     so it appends `_total` to counters that don't already end
+        #     in `_total`. The exposed Prom name is therefore
+        #     `runtime_adapters_receipt_persist_failures_total`.
+        #     `runtime_adapters_execution_total` already has `_total` in
+        #     its OTel name (`runtime_adapters.execution.total`), so the
+        #     exporter does NOT double-suffix it. Mismatched selector
+        #     names silently return empty vectors — surfaced by the
+        #     manual nightly run 25210210809 (G closure post-B3,
+        #     2026-05-01); fixed in B4.
+        #     NOTE: ops/grafana/dashboards/runtime-overview.json:493
+        #     uses the un-suffixed name and is currently broken (it
+        #     just has not been exercised under real persist-fail load).
+        #     Out of scope for B4; track as a follow-up dashboard fix.
+        #
+        # (2) `or vector(0)` ensures each operand is well-defined when
+        #     the source counter has zero series. Without it, under 100%
+        #     persist failure execution.total has no series at all (the
+        #     contract test `Test_RecordExecution_OnlyAfterPersistSuccess`
+        #     protects this invariant). The unguarded `+` would collapse
+        #     the denominator to empty and the SLI rate1m would emit
+        #     nothing. Surfaced by manual nightly 25174853836; fixed in B3.
         error_query: |
-          sum(rate(runtime_adapters_receipt_persist_failures[{{.window}}])) or vector(0)
+          sum(rate(runtime_adapters_receipt_persist_failures_total[{{.window}}])) or vector(0)
         # Denominator derivation (D2C4G.1):
         #   total_persist_attempts =
         #     successful_persists  (every execution.total fires AFTER a
         #                           successful persist per
         #                           execute_service.go RecordExecution
         #                           semantics post-B8/B9)
-        #   + failed_persists       (receipt.persist.failures counter)
-        #
-        # Mathematically exact, BUT PromQL `vec_a + vec_b` returns the
-        # intersection of label sets — when one operand has no series at
-        # all, the addition collapses to the empty vector and the SLI
-        # rate1m emits nothing. That's exactly what happens under 100%
-        # persist failure: execution.total has no series (the contract
-        # test `Test_RecordExecution_OnlyAfterPersistSuccess` protects
-        # this invariant) so the unguarded sum was empty. The `or vector(0)`
-        # wrappers force each operand to a one-element vector with value 0
-        # when its source is empty, restoring the addition. Surfaced by
-        # the manual nightly run 25174853836 (G closure validation,
-        # 2026-04-30); fixed in B3.
+        #   + failed_persists       (receipt.persist.failures_total counter)
         #
         # Protected by Test_RecordExecution_OnlyAfterPersistSuccess in
-        # internal/application/services/execute_service_test.go (§7 of this spec).
-        # If that test ever fails, this denominator is wrong — fix the
-        # ordering in execute_service before touching this SLI.
+        # internal/application/services/execute_service_test.go (§7 of this
+        # spec). If that test ever fails, this denominator is wrong — fix
+        # the ordering in execute_service before touching this SLI.
         total_query: |
           (
             (sum(rate(runtime_adapters_execution_total[{{.window}}])) or vector(0))
             +
-            (sum(rate(runtime_adapters_receipt_persist_failures[{{.window}}])) or vector(0))
+            (sum(rate(runtime_adapters_receipt_persist_failures_total[{{.window}}])) or vector(0))
           )
     alerting:
       name: PersistAvailabilityBurn
