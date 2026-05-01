@@ -14,17 +14,24 @@ slos:
     description: "Receipt persistence reliability (chaos test variant; denominator derived per comment in total_query)"
     sli:
       events:
+        # `or vector(0)` wrappers — see ops/slo/persist.yaml for full
+        # rationale. Required because PromQL `vec_a + vec_b` collapses
+        # to empty when one operand has no series, which is exactly the
+        # state under sustained persist failure (execution.total never
+        # increments per Test_RecordExecution_OnlyAfterPersistSuccess).
+        # Surfaced by manual nightly run 25174853836 (2026-04-30); B3 fix.
         error_query: |
-          sum(rate(runtime_adapters_receipt_persist_failures[{{.window}}]))
+          sum(rate(runtime_adapters_receipt_persist_failures[{{.window}}])) or vector(0)
         # Denominator derivation: see ops/slo/persist.yaml for full
-        # rationale (D2C4G.1). Same SLI selector logic; this file
-        # only differs in service: label so test rules don't collide
-        # with prod rules in the chaos compose stack.
+        # rationale (D2C4G.1) + the empty-vector fix from B3. Same SLI
+        # selector logic as prod; this file only differs in service:
+        # label so test rules don't collide with prod rules in the
+        # chaos compose stack.
         total_query: |
           (
-            sum(rate(runtime_adapters_execution_total[{{.window}}]))
+            (sum(rate(runtime_adapters_execution_total[{{.window}}])) or vector(0))
             +
-            sum(rate(runtime_adapters_receipt_persist_failures[{{.window}}]))
+            (sum(rate(runtime_adapters_receipt_persist_failures[{{.window}}])) or vector(0))
           )
     alerting:
       name: PersistAvailabilityBurn
