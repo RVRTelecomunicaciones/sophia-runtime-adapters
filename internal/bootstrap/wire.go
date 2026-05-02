@@ -44,7 +44,11 @@ import (
 type Runtime struct {
 	Server   *nethttp.Server
 	Pool     *pgxpool.Pool
-	Shutdown func(ctx context.Context) error // idempotent; tears down HTTP → OTel → pool in order
+	Shutdown func(ctx context.Context) error // idempotent; tears down HTTP → pool collector → OTel → pool in order
+	// PoolCollector is the pgxpool stats observable (Phase 2C.4 / E).
+	// Held here so Shutdown can unregister its OTel callback before
+	// pool.Close().
+	PoolCollector *obs.PgxPoolCollector
 	// ExecSvc and QuerySvc are the inbound service handles wired at
 	// bootstrap. Exposed for the in-process SDK peer (test/chaos/integration)
 	// and any other consumer that needs direct service access without going
@@ -84,9 +88,26 @@ func BuildRuntime(ctx context.Context, cfg config.Config) (*Runtime, error) {
 		return nil, fmt.Errorf("pgxpool.New: %w", err)
 	}
 	if err := pg.Migrate(ctx, pool); err != nil {
+		// poolCollector is not yet declared at this point — pre-step-3.5.
 		pool.Close()
 		_ = otelShutdown(ctx)
 		return nil, fmt.Errorf("apply migrations: %w", err)
+	}
+
+	// 3.5 — pgx pool stats collector (Phase 2C.4 / E).
+	// Wired AFTER migrations succeed so the first observable callback
+	// sees a stable pool. The collector is held on Runtime so the
+	// shutdown closure can unregister its callback BEFORE pool.Close()
+	// — keeping the SDK from retaining a callback over a torn pool.
+	poolCollector, err := obs.NewPgxPoolCollector(
+		otel.Meter("runtime-adapters"),
+		func() obs.PoolStatSnapshot { return obs.SnapshotFromPgx(pool.Stat()) },
+	)
+	if err != nil {
+		_ = poolCollector.Close()
+		pool.Close()
+		_ = otelShutdown(ctx)
+		return nil, fmt.Errorf("pgx pool collector: %w", err)
 	}
 
 	// 4. Outbound repos (T48 / T49).
@@ -96,12 +117,14 @@ func BuildRuntime(ctx context.Context, cfg config.Config) (*Runtime, error) {
 	var receiptRepo outbound.ReceiptRepository
 	receiptRepo, err = pg.NewReceiptRepositoryPG(pool)
 	if err != nil {
+		_ = poolCollector.Close()
 		pool.Close()
 		_ = otelShutdown(ctx)
 		return nil, fmt.Errorf("receipt repository: %w", err)
 	}
 	idempStore, err := pg.NewIdempotencyStorePG(pool)
 	if err != nil {
+		_ = poolCollector.Close()
 		pool.Close()
 		_ = otelShutdown(ctx)
 		return nil, fmt.Errorf("idempotency store: %w", err)
@@ -110,12 +133,14 @@ func BuildRuntime(ctx context.Context, cfg config.Config) (*Runtime, error) {
 	// 5. Domain registry + normalizer.
 	caps, err := valueobjects.NewPhase1Capabilities()
 	if err != nil {
+		_ = poolCollector.Close()
 		pool.Close()
 		_ = otelShutdown(ctx)
 		return nil, fmt.Errorf("phase 1 capabilities: %w", err)
 	}
 	registry, err := valueobjects.NewCapabilityRegistry(caps...)
 	if err != nil {
+		_ = poolCollector.Close()
 		pool.Close()
 		_ = otelShutdown(ctx)
 		return nil, fmt.Errorf("capability registry: %w", err)
@@ -129,6 +154,7 @@ func BuildRuntime(ctx context.Context, cfg config.Config) (*Runtime, error) {
 	// partial.signal from a single choke-point.
 	metricsRegistry, err := obs.NewRegistry(otel.Meter("runtime-adapters"))
 	if err != nil {
+		_ = poolCollector.Close()
 		pool.Close()
 		_ = otelShutdown(ctx)
 		return nil, fmt.Errorf("metrics registry: %w", err)
@@ -138,11 +164,13 @@ func BuildRuntime(ctx context.Context, cfg config.Config) (*Runtime, error) {
 	clk := shared.RealClock{}
 	adapters, err := registration.RegisterAllPhase1(normalizer, adapterConfig(cfg), clk)
 	if err != nil {
+		_ = poolCollector.Close()
 		pool.Close()
 		_ = otelShutdown(ctx)
 		return nil, fmt.Errorf("register adapters: %w", err)
 	}
 	if err := registration.VerifyCoversPhase1Catalog(normalizer); err != nil {
+		_ = poolCollector.Close()
 		pool.Close()
 		_ = otelShutdown(ctx)
 		return nil, fmt.Errorf("verify catalog: %w", err)
@@ -157,12 +185,14 @@ func BuildRuntime(ctx context.Context, cfg config.Config) (*Runtime, error) {
 	chaosCat := chaos.NewCatalogFromCapabilities(caps)
 	chaosCfg, err := chaos.LoadConfig(cfg.Chaos, cfg.Env, chaosCat)
 	if err != nil {
+		_ = poolCollector.Close()
 		pool.Close()
 		_ = otelShutdown(ctx)
 		return nil, fmt.Errorf("chaos config: %w", err)
 	}
 	adapters, wrappedReceiptRepo, err := chaos.MaybeWrapAdaptersWithChaos(adapters, receiptRepo, chaosCfg, clk)
 	if err != nil {
+		_ = poolCollector.Close()
 		pool.Close()
 		_ = otelShutdown(ctx)
 		return nil, fmt.Errorf("chaos wrap: %w", err)
@@ -179,6 +209,7 @@ func BuildRuntime(ctx context.Context, cfg config.Config) (*Runtime, error) {
 		"",
 	)
 	if err != nil {
+		_ = poolCollector.Close()
 		pool.Close()
 		_ = otelShutdown(ctx)
 		return nil, fmt.Errorf("provenance baseline: %w", err)
@@ -206,6 +237,7 @@ func BuildRuntime(ctx context.Context, cfg config.Config) (*Runtime, error) {
 		Provenance:  prov,
 	})
 	if err != nil {
+		_ = poolCollector.Close()
 		pool.Close()
 		_ = otelShutdown(ctx)
 		return nil, fmt.Errorf("execute service: %w", err)
@@ -216,6 +248,7 @@ func BuildRuntime(ctx context.Context, cfg config.Config) (*Runtime, error) {
 		RuntimeVersion: cfg.RuntimeVersion,
 	})
 	if err != nil {
+		_ = poolCollector.Close()
 		pool.Close()
 		_ = otelShutdown(ctx)
 		return nil, fmt.Errorf("query service: %w", err)
@@ -239,14 +272,20 @@ func BuildRuntime(ctx context.Context, cfg config.Config) (*Runtime, error) {
 		//  1. HTTP server first — stops accepting new requests and
 		//     drains in-flight handlers; any handler still holding a
 		//     pool connection gets to finish cleanly.
-		//  2. OTel second — flushes any spans/metrics generated during
-		//     the handler drain before closing exporters.
-		//  3. Pool last — by now no handler needs it; closing earlier
+		//  2. Pool collector — unregister the OTel observable callback
+		//     so the SDK doesn't try to read pool.Stat() after the
+		//     pool closes (Phase 2C.4 / E).
+		//  3. OTel — flushes any spans/metrics generated during the
+		//     handler drain before closing exporters.
+		//  4. Pool last — by now no handler needs it; closing earlier
 		//     would abort in-flight receipts mid-persist (A4.3).
 		// Errors are collected but the sequence is always completed.
 		var firstErr error
 		if err := server.Shutdown(ctx); err != nil && firstErr == nil {
 			firstErr = fmt.Errorf("http shutdown: %w", err)
+		}
+		if err := poolCollector.Close(); err != nil && firstErr == nil {
+			firstErr = fmt.Errorf("pool collector shutdown: %w", err)
 		}
 		if err := otelShutdown(ctx); err != nil && firstErr == nil {
 			firstErr = fmt.Errorf("otel shutdown: %w", err)
@@ -256,11 +295,12 @@ func BuildRuntime(ctx context.Context, cfg config.Config) (*Runtime, error) {
 	}
 
 	return &Runtime{
-		Server:   server,
-		Pool:     pool,
-		Shutdown: shutdown,
-		ExecSvc:  execSvc,
-		QuerySvc: querySvc,
+		Server:        server,
+		Pool:          pool,
+		Shutdown:      shutdown,
+		PoolCollector: poolCollector,
+		ExecSvc:       execSvc,
+		QuerySvc:      querySvc,
 	}, nil
 }
 
