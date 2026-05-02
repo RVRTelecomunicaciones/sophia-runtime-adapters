@@ -1,0 +1,35 @@
+{
+  "generated_at":      "2026-05-02T15:51:19Z",
+  "report":            "ops/slo/calibration-reports/2026-05-02-baseline-v1.md",
+  "git_sha":           "ae99f1c68776d3810b6d2067e930b1599fd011fb",
+  "git_author":        "Russell",
+  "run_duration":      "55.00357397916667 min",
+  "host": {
+    "machine":         "Apple M1 Pro",
+    "os":              "Darwin 25.2.0",
+    "cpu_count":       "8",
+    "ram":             "16.0 GiB"
+  },
+  "docker": {
+    "server_version":  "29.0.1",
+    "compose_version": "2.40.3-desktop.1"
+  },
+  "tool_versions": {
+    "k6":              "0.58.0",
+    "sloth":           "0.16.0",
+    "promtool":        "3.11.2",
+    "collector":       "0.106.1",
+    "go":              "1.26.2"
+  },
+  "envelope": {
+    "runtime_adapters_cpus":  "2.0",
+    "runtime_adapters_mem":   "2g",
+    "mem_reservation":        "1g",
+    "cgroup_verification_raw": {
+  "NanoCpus": 2000000000,
+  "Memory": 2147483648,
+  "MemoryReservation": 1073741824
+}
+  },
+  "metrics_pipeline": "runtime -> OTLP gRPC -> otel-collector (prometheus exporter :8889) <- scrape (5s) <- prometheus"
+}

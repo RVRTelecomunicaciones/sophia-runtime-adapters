@@ -146,11 +146,17 @@ done
 # ---- git.status clean/dirty split evidence ------------------------------
 
 echo "-- extracting git-status clean vs dirty split --"
+# Phase 2C.4 / F: k6 emits the per-tree threshold metrics with the
+# FULL tag set (capability + tree), not just the tree label. The
+# previous selector `http_req_duration{tree:small-repo}` returned
+# null because no metric with only that label exists in the summary.
+# Use the full capability+tree key — the same string k6 produces in
+# handleSummary when the threshold filter is `{capability:...,tree:...}`.
 jq '{
     aggregate:  .metrics.http_req_duration,
     by_tree: {
-        small_repo: (.metrics["http_req_duration{tree:small-repo}"] // null),
-        dirty_tree: (.metrics["http_req_duration{tree:dirty-tree}"] // null)
+        small_repo: (.metrics["http_req_duration{capability:git.status@v1,tree:small-repo}"] // null),
+        dirty_tree: (.metrics["http_req_duration{capability:git.status@v1,tree:dirty-tree}"] // null)
     }
 }' "$EVIDENCE_ROOT/$EVIDENCE_DIR/summary.json" \
     > "$EVIDENCE_ROOT/$EVIDENCE_DIR/git-status-smoke-split.json"

@@ -252,7 +252,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.status@v1"}[5m]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.status@v1",le="0.25"}[5m]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.status@v1",le="0.1"}[5m]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.status@v1"}[5m]))
@@ -269,7 +269,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.status@v1"}[30m]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.status@v1",le="0.25"}[30m]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.status@v1",le="0.1"}[30m]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.status@v1"}[30m]))
@@ -286,7 +286,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.status@v1"}[1h]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.status@v1",le="0.25"}[1h]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.status@v1",le="0.1"}[1h]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.status@v1"}[1h]))
@@ -303,7 +303,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.status@v1"}[2h]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.status@v1",le="0.25"}[2h]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.status@v1",le="0.1"}[2h]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.status@v1"}[2h]))
@@ -320,7 +320,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.status@v1"}[6h]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.status@v1",le="0.25"}[6h]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.status@v1",le="0.1"}[6h]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.status@v1"}[6h]))
@@ -337,7 +337,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.status@v1"}[1d]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.status@v1",le="0.25"}[1d]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.status@v1",le="0.1"}[1d]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.status@v1"}[1d]))
@@ -354,7 +354,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.status@v1"}[3d]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.status@v1",le="0.25"}[3d]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.status@v1",le="0.1"}[3d]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.status@v1"}[3d]))
@@ -750,7 +750,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.clone@v1"}[5m]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.clone@v1",le="30"}[5m]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.clone@v1",le="1"}[5m]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.clone@v1"}[5m]))
@@ -767,7 +767,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.clone@v1"}[30m]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.clone@v1",le="30"}[30m]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.clone@v1",le="1"}[30m]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.clone@v1"}[30m]))
@@ -784,7 +784,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.clone@v1"}[1h]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.clone@v1",le="30"}[1h]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.clone@v1",le="1"}[1h]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.clone@v1"}[1h]))
@@ -801,7 +801,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.clone@v1"}[2h]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.clone@v1",le="30"}[2h]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.clone@v1",le="1"}[2h]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.clone@v1"}[2h]))
@@ -818,7 +818,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.clone@v1"}[6h]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.clone@v1",le="30"}[6h]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.clone@v1",le="1"}[6h]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.clone@v1"}[6h]))
@@ -835,7 +835,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.clone@v1"}[1d]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.clone@v1",le="30"}[1d]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.clone@v1",le="1"}[1d]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.clone@v1"}[1d]))
@@ -852,7 +852,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.clone@v1"}[3d]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.clone@v1",le="30"}[3d]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.clone@v1",le="1"}[3d]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.clone@v1"}[3d]))
@@ -1248,7 +1248,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.diff@v1"}[5m]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.diff@v1",le="3"}[5m]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.diff@v1",le="0.5"}[5m]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.diff@v1"}[5m]))
@@ -1265,7 +1265,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.diff@v1"}[30m]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.diff@v1",le="3"}[30m]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.diff@v1",le="0.5"}[30m]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.diff@v1"}[30m]))
@@ -1282,7 +1282,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.diff@v1"}[1h]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.diff@v1",le="3"}[1h]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.diff@v1",le="0.5"}[1h]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.diff@v1"}[1h]))
@@ -1299,7 +1299,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.diff@v1"}[2h]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.diff@v1",le="3"}[2h]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.diff@v1",le="0.5"}[2h]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.diff@v1"}[2h]))
@@ -1316,7 +1316,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.diff@v1"}[6h]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.diff@v1",le="3"}[6h]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.diff@v1",le="0.5"}[6h]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.diff@v1"}[6h]))
@@ -1333,7 +1333,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.diff@v1"}[1d]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.diff@v1",le="3"}[1d]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.diff@v1",le="0.5"}[1d]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.diff@v1"}[1d]))
@@ -1350,7 +1350,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.diff@v1"}[3d]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.diff@v1",le="3"}[3d]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.diff@v1",le="0.5"}[3d]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.diff@v1"}[3d]))
@@ -1746,7 +1746,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.commit@v1"}[5m]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.commit@v1",le="2"}[5m]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.commit@v1",le="0.5"}[5m]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.commit@v1"}[5m]))
@@ -1763,7 +1763,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.commit@v1"}[30m]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.commit@v1",le="2"}[30m]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.commit@v1",le="0.5"}[30m]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.commit@v1"}[30m]))
@@ -1780,7 +1780,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.commit@v1"}[1h]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.commit@v1",le="2"}[1h]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.commit@v1",le="0.5"}[1h]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.commit@v1"}[1h]))
@@ -1797,7 +1797,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.commit@v1"}[2h]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.commit@v1",le="2"}[2h]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.commit@v1",le="0.5"}[2h]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.commit@v1"}[2h]))
@@ -1814,7 +1814,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.commit@v1"}[6h]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.commit@v1",le="2"}[6h]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.commit@v1",le="0.5"}[6h]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.commit@v1"}[6h]))
@@ -1831,7 +1831,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.commit@v1"}[1d]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.commit@v1",le="2"}[1d]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.commit@v1",le="0.5"}[1d]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.commit@v1"}[1d]))
@@ -1848,7 +1848,7 @@ groups:
     expr: |
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.commit@v1"}[3d]))
       -
-      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.commit@v1",le="2"}[3d]))
+      sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.commit@v1",le="0.5"}[3d]))
       )
       /
       (sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.commit@v1"}[3d]))
