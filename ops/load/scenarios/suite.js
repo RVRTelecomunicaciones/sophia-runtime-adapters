@@ -16,10 +16,19 @@
 // handleSummary(data) writes /summaries/summary.json (mounted volume)
 // as the SOLE machine-readable output (D2C2.17 / A2C2.26).
 
-import exec from 'k6/execution';
+import exec     from 'k6/execution';
+import http     from 'k6/http';
+import encoding from 'k6/encoding';
 
 // Re-export each scenario's default function under a unique name so
 // we can register them under different exec: hooks without collision.
+//
+// Phase 2C.4 / F (B1.5 fix bundled into B2): the rough-tier helpers
+// `baseURL`, `defaultHeaders`, `newCorrelationID`, `newIdempotencyKey`
+// are imported because gitCommit() now performs the full
+// clone -> filesystem.write_file -> git.commit chain inline (was
+// previously a stub — see commit history for context). Without
+// these, suite.js could not produce real git.commit measurements.
 import { executeRequest,
          payloadForShellExec,
          payloadForFilesystemRead,
@@ -28,7 +37,11 @@ import { executeRequest,
          payloadForGitStatus,
          payloadForGitClone,
          payloadForGitDiff,
-         payloadForGitCommit } from '../lib/common.js';
+         payloadForGitCommit,
+         baseURL,
+         defaultHeaders,
+         newCorrelationID,
+         newIdempotencyKey } from '../lib/common.js';
 
 // ---- exec functions per capability --------------------------------------
 
@@ -70,16 +83,54 @@ export function gitDiff() {
         { capability: 'git.diff@v1' });
 }
 
+// gitCommit performs the same chain as git_rough.js's commitScenario:
+// clone small-repo -> filesystem.write_file -> git.commit. The third
+// call is the measurement; the first two are setup so the runtime
+// has a dirty working tree to commit. Phase 2C.4 / F replaced the
+// previous stub (which produced non-existent-path failures and
+// therefore zero useful data for git.commit@v1 calibration).
+//
+// Per-iteration unique workdir prevents cross-iteration contamination.
+// Cleanup is delegated to `make load-down` via compose `down -v`
+// (the workdir is inside the runtime container's writable layer —
+// ephemeral by container lifetime).
 export function gitCommit() {
-    // STUB pending Bundle 4 (git fixtures + git_rough.js).
-    // git.commit@v1 needs a clone+edit workdir; that workdir is
-    // provisioned by git_rough.js's commitScenario which chains
-    // clone -> filesystem.write_file -> git.commit. Bundle 3
-    // ships only the wire skeleton — running suite.js today
-    // produces non-existent-path failures for git.commit
-    // iterations (no thresholds gate these, so the suite still
-    // completes; data is informational only until Bundle 4).
-    const workdir = `/tmp/bench-git-commit-${exec.vu.idInTest}`;
+    const iter    = exec.scenario.iterationInTest;
+    const workdir = `/tmp/bench-git-commit-${exec.vu.idInTest}-${iter}`;
+
+    // 1. Clone small-repo (file://) to a fresh path.
+    const cloneBody = JSON.stringify({
+        correlation_id:     newCorrelationID(),
+        adapter_id:         'git',
+        capability_name:    'clone',
+        capability_version: 'v1',
+        payload: {
+            repo_url:         'file:///bench/git/small-repo',
+            destination_path: workdir,
+            ref:              'HEAD',
+        },
+        timeout_budget_ms:  30000,
+        idempotency_key:    newIdempotencyKey(),
+    });
+    http.post(`${baseURL}/api/v1/execute`, cloneBody, { headers: defaultHeaders });
+
+    // 2. Apply a deterministic edit so the working tree is dirty.
+    const writeBody = JSON.stringify({
+        correlation_id:     newCorrelationID(),
+        adapter_id:         'filesystem',
+        capability_name:    'write_file',
+        capability_version: 'v1',
+        payload: {
+            path:      `${workdir}/bench-edit.txt`,
+            data:      encoding.b64encode(`bench iter ${iter}\n`),
+            overwrite: true,
+        },
+        timeout_budget_ms:  10000,
+        idempotency_key:    newIdempotencyKey(),
+    });
+    http.post(`${baseURL}/api/v1/execute`, writeBody, { headers: defaultHeaders });
+
+    // 3. Commit — this is the measurement call.
     executeRequest('git.commit@v1', payloadForGitCommit(workdir),
         { capability: 'git.commit@v1' });
 }
@@ -104,8 +155,11 @@ const T_HTTP         = '25m30s';  // 3 * CORE_SLOT
 const T_GIT_STATUS_SMOKE   = '34m';      // 4 * CORE_SLOT
 const T_GIT_STATUS_SAT     = '35m35s';   // 90s smoke + 5s gap (rough tier — small overlap with smoke graceful drain is tolerated)
 const T_GIT_ROUGH_CLONE    = '38m35s';   // + 3m saturation_lite
-const T_GIT_ROUGH_DIFF     = '43m45s';   // + 5m clone maxDuration + 10s gap
-const T_GIT_ROUGH_COMMIT   = '45m';      // + 1m diff + 15s gap
+// Phase 2C.4 / F bumps clone maxDuration 5m → 15m (60 iter, sustained
+// for confident p99). Diff/commit start times pushed by +10m as a
+// result. Total suite wall time grows from ~45m to ~57m.
+const T_GIT_ROUGH_DIFF     = '53m45s';   // + 15m clone maxDuration + 10s gap
+const T_GIT_ROUGH_COMMIT   = '55m';      // + 1m diff + 15s gap
 
 // ---- options -------------------------------------------------------------
 
@@ -209,10 +263,13 @@ export const options = {
             tags: { capability: 'git.status@v1', tier: 'smoke' },
         },
 
-        // ---- git rough tier (observation only, no thresholds) ----
+        // ---- git rough tier (observation only — see thresholds below) ----
+        // Phase 2C.4 / F bumps clone iter 20 → 60 and commit iter 10 → 30
+        // for confident p99 (D2C4F.2). Diff stays at 5 rps × 1m
+        // (constant-arrival-rate already provides sufficient N).
         git_clone_rough: {
             executor: 'per-vu-iterations',
-            vus: 1, iterations: 20, maxDuration: '5m',
+            vus: 1, iterations: 60, maxDuration: '15m',
             exec: 'gitClone', startTime: T_GIT_ROUGH_CLONE,
             tags: { capability: 'git.clone@v1', tier: 'rough' },
         },
@@ -225,7 +282,7 @@ export const options = {
         },
         git_commit_rough: {
             executor: 'per-vu-iterations',
-            vus: 1, iterations: 10, maxDuration: '4m',
+            vus: 1, iterations: 30, maxDuration: '6m',
             exec: 'gitCommit', startTime: T_GIT_ROUGH_COMMIT,
             tags: { capability: 'git.commit@v1', tier: 'rough' },
         },
@@ -236,7 +293,42 @@ export const options = {
         'http_req_duration{phase:baseline,capability:filesystem.read_file@v1}':   ['p(99)<500'],
         'http_req_duration{phase:baseline,capability:filesystem.write_file@v1}':  ['p(99)<1000'],
         'http_req_duration{phase:baseline,capability:http.request@v1}':            ['p(99)<10000'],
-        // No thresholds for saturation or rough; those are observational.
+
+        // Phase 2C.4 / F (B1 + B1.5) — observation-only / instrumentation
+        // thresholds. These are NOT SLO targets. Their primary function
+        // is to force k6 to emit filtered sub-metrics in handleSummary
+        // keyed by the `capability` and `tree` tags. Without a threshold
+        // reference, k6's summary does NOT include per-tag p50/p95/p99
+        // breakdowns — generate-report.sh then cannot extract per-cap
+        // observed values for the rough tier or the per-tree split for
+        // git.status (lesson from the 2026-04-25 baseline-v2 run, where
+        // rough-tier and tree-split sections shipped empty for exactly
+        // this reason).
+        //
+        // Values are deliberately ~10× expected p99 (per-tree ~25× the
+        // current SMOKE_CALIBRATED git.status p99 of ~50ms) — high
+        // enough to NEVER fail under normal conditions. They CAN fail
+        // if performance catastrophically regresses, which is intentional:
+        // the run would surface a pre-existing regression rather than
+        // silently produce a calibration baseline against degraded behavior.
+        //
+        // The runtime SLO for each capability stays a SINGLE
+        // capability-keyed SLO (no `tree` label on the runtime metric —
+        // R16 unchanged). Per-tree split is k6-side only and informs
+        // the threshold decision but does not surface as a runtime label.
+        // See spec §4.1 + §4.2 + D2C4F.5 + D2C4F.6 + A2C4F.1.
+
+        // git rough tier — observation-only.
+        'http_req_duration{capability:git.clone@v1,tier:rough}':  ['p(99)<60000'],
+        'http_req_failed{capability:git.clone@v1,tier:rough}':    ['rate<1'],
+        'http_req_duration{capability:git.diff@v1,tier:rough}':   ['p(99)<10000'],
+        'http_req_failed{capability:git.diff@v1,tier:rough}':     ['rate<1'],
+        'http_req_duration{capability:git.commit@v1,tier:rough}': ['p(99)<10000'],
+        'http_req_failed{capability:git.commit@v1,tier:rough}':   ['rate<1'],
+
+        // git.status per-tree split (k6-side observation).
+        'http_req_duration{capability:git.status@v1,tree:small-repo}': ['p(99)<5000'],
+        'http_req_duration{capability:git.status@v1,tree:dirty-tree}': ['p(99)<5000'],
     },
     summaryTrendStats: ['min', 'avg', 'p(50)', 'p(95)', 'p(99)', 'max', 'count'],
 };
