@@ -136,10 +136,16 @@ func (c *PgxPoolCollector) observe(_ context.Context, o metric.Observer) error {
 	return nil
 }
 
-// Close unregisters the callback. Safe to call multiple times.
-// Bootstrap calls this before pool.Close() so the SDK does not retain
-// a callback that closes over a torn pool.
+// Close unregisters the callback. Safe to call multiple times AND on a
+// nil receiver — bootstrap error paths may invoke this before the
+// collector is fully constructed (e.g., a partial-init path where the
+// constructor returned nil + an error). Bootstrap calls this before
+// pool.Close() so the SDK does not retain a callback that closes over
+// a torn pool.
 func (c *PgxPoolCollector) Close() error {
+	if c == nil {
+		return nil
+	}
 	if c.registration == nil {
 		return nil
 	}

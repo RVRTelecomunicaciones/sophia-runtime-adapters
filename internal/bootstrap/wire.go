@@ -88,6 +88,7 @@ func BuildRuntime(ctx context.Context, cfg config.Config) (*Runtime, error) {
 		return nil, fmt.Errorf("pgxpool.New: %w", err)
 	}
 	if err := pg.Migrate(ctx, pool); err != nil {
+		// poolCollector is not yet declared at this point — pre-step-3.5.
 		pool.Close()
 		_ = otelShutdown(ctx)
 		return nil, fmt.Errorf("apply migrations: %w", err)
@@ -103,6 +104,7 @@ func BuildRuntime(ctx context.Context, cfg config.Config) (*Runtime, error) {
 		func() obs.PoolStatSnapshot { return obs.SnapshotFromPgx(pool.Stat()) },
 	)
 	if err != nil {
+		_ = poolCollector.Close()
 		pool.Close()
 		_ = otelShutdown(ctx)
 		return nil, fmt.Errorf("pgx pool collector: %w", err)
@@ -115,12 +117,14 @@ func BuildRuntime(ctx context.Context, cfg config.Config) (*Runtime, error) {
 	var receiptRepo outbound.ReceiptRepository
 	receiptRepo, err = pg.NewReceiptRepositoryPG(pool)
 	if err != nil {
+		_ = poolCollector.Close()
 		pool.Close()
 		_ = otelShutdown(ctx)
 		return nil, fmt.Errorf("receipt repository: %w", err)
 	}
 	idempStore, err := pg.NewIdempotencyStorePG(pool)
 	if err != nil {
+		_ = poolCollector.Close()
 		pool.Close()
 		_ = otelShutdown(ctx)
 		return nil, fmt.Errorf("idempotency store: %w", err)
@@ -129,12 +133,14 @@ func BuildRuntime(ctx context.Context, cfg config.Config) (*Runtime, error) {
 	// 5. Domain registry + normalizer.
 	caps, err := valueobjects.NewPhase1Capabilities()
 	if err != nil {
+		_ = poolCollector.Close()
 		pool.Close()
 		_ = otelShutdown(ctx)
 		return nil, fmt.Errorf("phase 1 capabilities: %w", err)
 	}
 	registry, err := valueobjects.NewCapabilityRegistry(caps...)
 	if err != nil {
+		_ = poolCollector.Close()
 		pool.Close()
 		_ = otelShutdown(ctx)
 		return nil, fmt.Errorf("capability registry: %w", err)
@@ -148,6 +154,7 @@ func BuildRuntime(ctx context.Context, cfg config.Config) (*Runtime, error) {
 	// partial.signal from a single choke-point.
 	metricsRegistry, err := obs.NewRegistry(otel.Meter("runtime-adapters"))
 	if err != nil {
+		_ = poolCollector.Close()
 		pool.Close()
 		_ = otelShutdown(ctx)
 		return nil, fmt.Errorf("metrics registry: %w", err)
@@ -157,11 +164,13 @@ func BuildRuntime(ctx context.Context, cfg config.Config) (*Runtime, error) {
 	clk := shared.RealClock{}
 	adapters, err := registration.RegisterAllPhase1(normalizer, adapterConfig(cfg), clk)
 	if err != nil {
+		_ = poolCollector.Close()
 		pool.Close()
 		_ = otelShutdown(ctx)
 		return nil, fmt.Errorf("register adapters: %w", err)
 	}
 	if err := registration.VerifyCoversPhase1Catalog(normalizer); err != nil {
+		_ = poolCollector.Close()
 		pool.Close()
 		_ = otelShutdown(ctx)
 		return nil, fmt.Errorf("verify catalog: %w", err)
@@ -176,12 +185,14 @@ func BuildRuntime(ctx context.Context, cfg config.Config) (*Runtime, error) {
 	chaosCat := chaos.NewCatalogFromCapabilities(caps)
 	chaosCfg, err := chaos.LoadConfig(cfg.Chaos, cfg.Env, chaosCat)
 	if err != nil {
+		_ = poolCollector.Close()
 		pool.Close()
 		_ = otelShutdown(ctx)
 		return nil, fmt.Errorf("chaos config: %w", err)
 	}
 	adapters, wrappedReceiptRepo, err := chaos.MaybeWrapAdaptersWithChaos(adapters, receiptRepo, chaosCfg, clk)
 	if err != nil {
+		_ = poolCollector.Close()
 		pool.Close()
 		_ = otelShutdown(ctx)
 		return nil, fmt.Errorf("chaos wrap: %w", err)
@@ -198,6 +209,7 @@ func BuildRuntime(ctx context.Context, cfg config.Config) (*Runtime, error) {
 		"",
 	)
 	if err != nil {
+		_ = poolCollector.Close()
 		pool.Close()
 		_ = otelShutdown(ctx)
 		return nil, fmt.Errorf("provenance baseline: %w", err)
@@ -225,6 +237,7 @@ func BuildRuntime(ctx context.Context, cfg config.Config) (*Runtime, error) {
 		Provenance:  prov,
 	})
 	if err != nil {
+		_ = poolCollector.Close()
 		pool.Close()
 		_ = otelShutdown(ctx)
 		return nil, fmt.Errorf("execute service: %w", err)
@@ -235,6 +248,7 @@ func BuildRuntime(ctx context.Context, cfg config.Config) (*Runtime, error) {
 		RuntimeVersion: cfg.RuntimeVersion,
 	})
 	if err != nil {
+		_ = poolCollector.Close()
 		pool.Close()
 		_ = otelShutdown(ctx)
 		return nil, fmt.Errorf("query service: %w", err)
