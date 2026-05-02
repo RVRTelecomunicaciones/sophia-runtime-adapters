@@ -4,9 +4,11 @@
 // recalibrate targets in 2C.2. Report documents ranges but the YAML
 // stays PROVISIONAL / ROUGH (D2C2.9 for clone).
 //
-// No thresholds. Scenarios are short and shape-preserving, not
-// measurement-grade. Their purpose is "run the adapter once under
-// bench-like conditions, document what we saw, no target decision".
+// Thresholds present are observation-only (instrumentation, not
+// gates) — see the `thresholds:` block below. Scenarios are
+// shape-preserving, not target-deciding. Their purpose is "run the
+// adapter under bench-like conditions, document what we saw, no
+// target decision in 2C.2".
 
 import exec     from 'k6/execution';
 import http     from 'k6/http';
