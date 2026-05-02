@@ -37,6 +37,22 @@ export const options = {
         // Reflects PROVISIONAL target (p99<2s). Relaxed during smoke.
         'http_req_duration{phase:smoke,capability:git.status@v1}': ['p(99)<2000'],
         'http_req_failed{phase:smoke,capability:git.status@v1}':    ['rate<0.01'],
+        // F (2C.4) per-tree instrumentation thresholds. NOT SLO
+        // targets — their function is to force k6 to emit filtered
+        // sub-metrics tagged by `tree=small-repo|dirty-tree` so the
+        // calibration report can analyze whether dirty trees are
+        // materially slower than clean ones. The runtime SLO for
+        // git.status@v1 stays a SINGLE capability-keyed SLO (no
+        // `tree` label on the runtime metric — R16 unchanged); the
+        // per-tree split informs the threshold decision but does not
+        // surface as a runtime label. See spec §4.2 + D2C4F.5.
+        //
+        // Loose values (~25× current SMOKE_CALIBRATED p99 of ~50ms)
+        // — these CAN fail if a tree-shape regression appears,
+        // deliberately surfacing degradation rather than calibrating
+        // against it.
+        'http_req_duration{capability:git.status@v1,tree:small-repo}': ['p(99)<5000'],
+        'http_req_duration{capability:git.status@v1,tree:dirty-tree}': ['p(99)<5000'],
     },
     summaryTrendStats: ['min', 'avg', 'p(50)', 'p(95)', 'p(99)', 'max', 'count'],
 };
