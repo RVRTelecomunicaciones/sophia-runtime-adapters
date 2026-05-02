@@ -23,12 +23,13 @@ import { executeRequest,
 export const options = {
     scenarios: {
         git_clone: {
-            // Sequential 1 VU; clones are heavy. 20 iters or 5m cap.
-            // file:// only (D2C2.9); local path banned because git detects
+            // Sequential 1 VU; clones are heavy. F (2C.4) bumps
+            // iterations 20 → 60 for confident p99 (D2C4F.2). file://
+            // only (D2C2.9); local path banned because git detects
             // local FS and uses hardlinks, giving artificially cheap
             // latency that doesn't represent real adapter behavior.
             executor: 'per-vu-iterations',
-            vus: 1, iterations: 20, maxDuration: '5m',
+            vus: 1, iterations: 60, maxDuration: '15m',
             exec: 'cloneScenario', startTime: '0s',
             tags: { capability: 'git.clone@v1', tier: 'rough' },
         },
@@ -36,18 +37,45 @@ export const options = {
             executor: 'constant-arrival-rate',
             rate: 5, timeUnit: '1s', duration: '1m',
             preAllocatedVUs: 10, maxVUs: 20, gracefulStop: '10s',
-            exec: 'diffScenario', startTime: '5m10s',
+            // Reschedule to follow bumped clone (was '5m10s').
+            exec: 'diffScenario', startTime: '15m10s',
             tags: { capability: 'git.diff@v1', tier: 'rough' },
         },
         git_commit: {
-            // Sequential 1 VU; commits mutate a tmpfs copy per iteration.
+            // Sequential 1 VU; commits mutate a tmpfs copy per
+            // iteration. F (2C.4) bumps iterations 10 → 30 for
+            // confident p99 (D2C4F.2).
             executor: 'per-vu-iterations',
-            vus: 1, iterations: 10, maxDuration: '4m',
-            exec: 'commitScenario', startTime: '6m25s',
+            vus: 1, iterations: 30, maxDuration: '6m',
+            // Reschedule to follow bumped clone + diff (was '6m25s').
+            exec: 'commitScenario', startTime: '16m20s',
             tags: { capability: 'git.commit@v1', tier: 'rough' },
         },
     },
-    // NO thresholds — rough tier does not gate on anything.
+    // F (2C.4) — observation-only / instrumentation thresholds.
+    //
+    // These thresholds are NOT SLO targets — their primary function
+    // is to force k6 to emit filtered sub-metrics in handleSummary
+    // keyed by the `capability` and `tier` tags. Without a threshold
+    // reference, k6's summary does NOT include per-tag p50/p95/p99
+    // breakdowns, which means the calibration-report generator
+    // cannot extract per-capability observed values (lesson from
+    // ops/slo/calibration-reports/2026-04-25-baseline-v2.md:155).
+    //
+    // Values are deliberately ~10× expected p99 — high enough to
+    // NEVER fail under normal conditions. They CAN fail if
+    // performance catastrophically regresses (e.g., diff p99 jumps
+    // from sub-100ms to >10s), and that is intentional: the run
+    // would surface a pre-existing regression rather than silently
+    // produce a calibration baseline against degraded behavior.
+    thresholds: {
+        'http_req_duration{capability:git.clone@v1,tier:rough}':  ['p(99)<60000'],
+        'http_req_failed{capability:git.clone@v1,tier:rough}':    ['rate<1'],
+        'http_req_duration{capability:git.diff@v1,tier:rough}':   ['p(99)<10000'],
+        'http_req_failed{capability:git.diff@v1,tier:rough}':     ['rate<1'],
+        'http_req_duration{capability:git.commit@v1,tier:rough}': ['p(99)<10000'],
+        'http_req_failed{capability:git.commit@v1,tier:rough}':   ['rate<1'],
+    },
     summaryTrendStats: ['min', 'avg', 'p(50)', 'p(95)', 'p(99)', 'max', 'count'],
 };
 
