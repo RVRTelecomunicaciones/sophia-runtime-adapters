@@ -39,7 +39,7 @@ slos:
 
   - name: "git-status-latency"
     objective: 99.0
-    description: "99% of git.status@v1 successful executions complete under 250ms (chaos canary)"
+    description: "99% of git.status@v1 successful executions complete under 100ms (chaos canary)"
     labels:
       capability: "git.status@v1"
     sli:
@@ -47,7 +47,7 @@ slos:
         error_query: |
           sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.status@v1"}[{{.window}}]))
           -
-          sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.status@v1",le="0.25"}[{{.window}}]))
+          sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.status@v1",le="0.1"}[{{.window}}]))
         total_query: |
           sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.status@v1"}[{{.window}}]))
     alerting:
@@ -86,7 +86,7 @@ slos:
 
   - name: "git-clone-latency"
     objective: 99.0
-    description: "99% of git.clone@v1 successful executions complete under 30s (chaos canary)"
+    description: "99% of git.clone@v1 successful executions complete under 1s (chaos canary)"
     labels:
       capability: "git.clone@v1"
     sli:
@@ -94,7 +94,7 @@ slos:
         error_query: |
           sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.clone@v1"}[{{.window}}]))
           -
-          sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.clone@v1",le="30"}[{{.window}}]))
+          sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.clone@v1",le="1"}[{{.window}}]))
         total_query: |
           sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.clone@v1"}[{{.window}}]))
     alerting:
@@ -133,7 +133,7 @@ slos:
 
   - name: "git-diff-latency"
     objective: 99.0
-    description: "99% of git.diff@v1 successful executions complete under 3s (chaos canary)"
+    description: "99% of git.diff@v1 successful executions complete under 500ms (chaos canary)"
     labels:
       capability: "git.diff@v1"
     sli:
@@ -141,7 +141,7 @@ slos:
         error_query: |
           sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.diff@v1"}[{{.window}}]))
           -
-          sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.diff@v1",le="3"}[{{.window}}]))
+          sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.diff@v1",le="0.5"}[{{.window}}]))
         total_query: |
           sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.diff@v1"}[{{.window}}]))
     alerting:
@@ -180,7 +180,7 @@ slos:
 
   - name: "git-commit-latency"
     objective: 99.0
-    description: "99% of git.commit@v1 successful executions complete under 2s (chaos canary)"
+    description: "99% of git.commit@v1 successful executions complete under 500ms (chaos canary)"
     labels:
       capability: "git.commit@v1"
     sli:
@@ -188,7 +188,7 @@ slos:
         error_query: |
           sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.commit@v1"}[{{.window}}]))
           -
-          sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.commit@v1",le="2"}[{{.window}}]))
+          sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.commit@v1",le="0.5"}[{{.window}}]))
         total_query: |
           sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.commit@v1"}[{{.window}}]))
     alerting:

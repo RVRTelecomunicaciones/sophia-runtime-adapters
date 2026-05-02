@@ -33,7 +33,7 @@ Phase 2C.4 sub-project F — sustained git calibration + per-tree git.status thr
 - **R3 unchanged** — no new histogram buckets. New `le` values (`0.1`, `0.5`, `1`) all use existing buckets in `obs.DurationBuckets`.
 - **B1's wiring miss (B1.5 retrospective):** the original B1 PR (commit `20af7f8`, merged as `c5131a7`) modified `git_rough.js` and `git_status.js` only. The first B2 baseline run on 2026-05-02 surfaced that those files are NOT the entrypoint k6 honors — `make load-baseline` runs `suite.js`, which has its own self-contained `options.scenarios` + `thresholds:` blocks. k6 only honors `options` from the entrypoint file; per-scenario `options` from imported files are NOT inherited. The B1.5 fix applies the same B1 changes to suite.js. Spec §1.1 documents this as a binding lesson for future load-test work in this repo.
 - **Cancellation-rate SLOs untouched** (4 git capabilities × 1 SLO each, added in G 2C.4). They remain PROVISIONAL operator hypotheses pending production cancellation telemetry; bench evidence not relevant to them.
-- **Core tier confirmed** — observed p99 13.77 / 10.53 / 13.07 / 11.58 ms for shell.exec / fs.read / fs.write / http.request, well within existing CALIBRATED targets. No core YAML changes proposed.
+- **Core tier confirmed** — observed p99 13.69 / 15.91 / 12.69 / 11.85 ms for shell.exec / fs.read / fs.write / http.request, well within existing CALIBRATED targets. No core YAML changes proposed.
 
 ## [0.6.0] — 2026-05-01
 

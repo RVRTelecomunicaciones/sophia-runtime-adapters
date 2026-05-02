@@ -2,7 +2,9 @@
 //
 // Single entrypoint for the full baseline run. Composes all core 4
 // scenarios + git tiered scenarios sequentially. Total runtime
-// ~42–45 min (core ~32m + git ~12.5–13.5m) — see §5.6 table.
+// ~55–63 min for k6 + ~2 min generate-report (core ~32m + git
+// ~23–29m post-2C.4/F bumps) — see §5.6 table for the per-scenario
+// budget. Plan for ~1h end-to-end when running `make load-baseline`.
 //
 // Sequential by design: concurrent runs would cross-contaminate
 // capability measurements on a 2-CPU runtime container.
@@ -157,7 +159,9 @@ const T_GIT_STATUS_SAT     = '35m35s';   // 90s smoke + 5s gap (rough tier — s
 const T_GIT_ROUGH_CLONE    = '38m35s';   // + 3m saturation_lite
 // Phase 2C.4 / F bumps clone maxDuration 5m → 15m (60 iter, sustained
 // for confident p99). Diff/commit start times pushed by +10m as a
-// result. Total suite wall time grows from ~45m to ~57m.
+// result. Total suite wall time grows from ~45m to ~61m (k6) +
+// ~2m (generate-report) = ~63m end-to-end. Aligns with CHANGELOG
+// 0.7.0 + spec §1.1 retrospective.
 const T_GIT_ROUGH_DIFF     = '53m45s';   // + 15m clone maxDuration + 10s gap
 const T_GIT_ROUGH_COMMIT   = '55m';      // + 1m diff + 15s gap
 
@@ -305,9 +309,14 @@ export const options = {
         // rough-tier and tree-split sections shipped empty for exactly
         // this reason).
         //
-        // Values are deliberately ~10× expected p99 (per-tree ~25× the
-        // current SMOKE_CALIBRATED git.status p99 of ~50ms) — high
-        // enough to NEVER fail under normal conditions. They CAN fail
+        // Values are deliberately far above expected p99 — pre-B2 the
+        // estimates were ~10× for rough caps and ~25× for git.status
+        // (against an estimated ~50ms baseline). Post-B2 the real
+        // numbers are much lower (clone 6.1ms, diff 20.4ms, commit
+        // ≤9.0ms, status worst-tree 16.4ms), so the actual margin
+        // these thresholds carry over observed p99 is 300×–10000×.
+        // Intentionally generous: high enough to NEVER fail under
+        // normal conditions. They CAN fail
         // if performance catastrophically regresses, which is intentional:
         // the run would surface a pre-existing regression rather than
         // silently produce a calibration baseline against degraded behavior.
