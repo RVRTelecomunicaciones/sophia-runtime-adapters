@@ -4,6 +4,35 @@ All notable changes to `runtime-adapters` will be documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] — 2026-05-01
+
+Phase 2C.4 sub-project E — pgx pool Prometheus collector. Second sub-project of the operational-readiness track. Wires `pgxpool.Pool.Stat()` to 6 OTel observable instruments under `runtime_adapters.pgx_pool.*`, hand-rolled with zero new dependencies. Unblocks the dormant `PoolIdleZero` alert from 2C.1: its selector switches from the placeholder `pgx_pool_idle_conns` to the actual exposed `runtime_adapters_pgx_pool_idle_conns`. Spec-complete against `docs/superpowers/specs/2026-05-01-phase-2c.4-e-pgx-pool-collector-design.md`.
+
+### Added
+
+- `internal/infrastructure/obs/pgxpool_collector.go` — `PgxPoolCollector` + `PoolStatSnapshot` + `PoolStatProvider` + `SnapshotFromPgx`. Six instruments under `runtime_adapters.pgx_pool.*`:
+  - Gauges: `idle_conns`, `max_conns`, `total_conns`, `acquired_conns`.
+  - Counters: `acquire_count` (Prom: `..._total`), `empty_acquire_count` (Prom: `..._total`).
+  All zero-label (R16). One `RegisterCallback` shares one `Stat()` snapshot across all 6 instruments per export tick (no torn read).
+- `internal/infrastructure/obs/pgxpool_collector_test.go` — two unit tests:
+  - `TestPgxPoolCollector_AllSixMetricsObservedFromSingleSnapshot` (P2 contract)
+  - `TestPgxPoolCollector_CounterIsCumulativeMonotonicNotDelta` (P3 + D2C4E.5 contract: counter values pass through unchanged from `pgxpool.Stat()`; rate computation happens at Prom query time)
+- Bootstrap wiring at step 3.5 in `internal/bootstrap/wire.go`. Collector held on `Runtime.PoolCollector` so the shutdown closure can unregister its callback before `pool.Close()`. Every error path in `BuildRuntime` after step 3.5 also calls `_ = poolCollector.Close()` before `pool.Close()` so the SDK never holds a callback over a torn pool — uniform with the shutdown ordering invariant.
+
+### Changed
+
+- `ops/prometheus/rules/infra_pool.yaml` — `PoolIdleZero` selector switches from `pgx_pool_idle_conns` to `runtime_adapters_pgx_pool_idle_conns`. The `DORMANT IN PRODUCTION (2C.1)` comment block is replaced with a one-line back-pointer to the new collector source file. Rule semantics (`min_over_time(... [1m]) == 0`, `for: 1m`, `severity: warning`) are unchanged.
+- `Runtime` struct in `internal/bootstrap/wire.go` gains a `PoolCollector *obs.PgxPoolCollector` field. Shutdown closure adds a step (`poolCollector.Close()`) between HTTP shutdown and OTel shutdown so the SDK never holds a callback over a torn pool.
+
+### Notes
+
+- No new dependencies. The collector uses `go.opentelemetry.io/otel/metric` (already imported) and `github.com/jackc/pgx/v5/pgxpool` (already imported).
+- No metric-contract change beyond the 6 new instrument registrations. R3 ports stable; R16 cardinality bounded (zero labels on all 6 instruments).
+- `runtime_adapters.pool.connections.acquired.duration` histogram (added in 2C.1) is unchanged. `acquire_count` is a cumulative count of acquires, complementary to (not duplicated by) the histogram which records acquire latency distributions.
+- The 6 deferred `Stat()` fields (`ConstructingConns`, `CanceledAcquireCount`, `NewConnsCount`, `MaxIdleDestroyCount`, `MaxLifetimeDestroyCount`, `AcquireDuration`) are explicit non-goals (NG1). Add as a follow-up bundle if dashboards or future SLOs demand.
+- Smoke verification under the 2C.2 load envelope is recorded inline here as a one-time check, not a recurring CI gate (D2C4E.8). After this PR merges, an operator can drive saturation via `make load-baseline` against a deliberately under-provisioned pool and confirm `runtime_adapters_pgx_pool_idle_conns` is queryable in Prom and that `PoolIdleZero` fires within ~1 minute of sustained zero-idle. The roadmap §G exit criterion is satisfied by collector wiring + alert rule connection; ongoing verification of saturation behavior is operations.
+- Real receivers (PagerDuty, Slack, Linear) for `PoolIdleZero` ship with sub-project A+B (`v0.8.0`); for now the alert routes to `null-receiver`.
+
 ## [0.5.0] — 2026-04-30
 
 Phase 2C.4 sub-project G — cancellation-rate + persist-availability SLOs. First sub-project of the operational-readiness track. Adds 8 per-Phase-1-capability cancellation-rate SLOs and 1 global persist-availability SLO. Re-enables the two chaos scenarios skipped at `v0.4.0` (`ci-shell-hang-cancel`, `ci-persist-fail`); nightly comprehensive returns to 6/6 active. No runtime Go code changes; no metric contract changes; no alertmanager changes. Spec-complete against `docs/superpowers/specs/2026-04-29-phase-2c.4-g-cancellation-persist-slos-design.md`.
