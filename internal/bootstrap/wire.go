@@ -44,7 +44,11 @@ import (
 type Runtime struct {
 	Server   *nethttp.Server
 	Pool     *pgxpool.Pool
-	Shutdown func(ctx context.Context) error // idempotent; tears down HTTP → OTel → pool in order
+	Shutdown func(ctx context.Context) error // idempotent; tears down HTTP → pool collector → OTel → pool in order
+	// PoolCollector is the pgxpool stats observable (Phase 2C.4 / E).
+	// Held here so Shutdown can unregister its OTel callback before
+	// pool.Close().
+	PoolCollector *obs.PgxPoolCollector
 	// ExecSvc and QuerySvc are the inbound service handles wired at
 	// bootstrap. Exposed for the in-process SDK peer (test/chaos/integration)
 	// and any other consumer that needs direct service access without going
@@ -87,6 +91,21 @@ func BuildRuntime(ctx context.Context, cfg config.Config) (*Runtime, error) {
 		pool.Close()
 		_ = otelShutdown(ctx)
 		return nil, fmt.Errorf("apply migrations: %w", err)
+	}
+
+	// 3.5 — pgx pool stats collector (Phase 2C.4 / E).
+	// Wired AFTER migrations succeed so the first observable callback
+	// sees a stable pool. The collector is held on Runtime so the
+	// shutdown closure can unregister its callback BEFORE pool.Close()
+	// — keeping the SDK from retaining a callback over a torn pool.
+	poolCollector, err := obs.NewPgxPoolCollector(
+		otel.Meter("runtime-adapters"),
+		func() obs.PoolStatSnapshot { return obs.SnapshotFromPgx(pool.Stat()) },
+	)
+	if err != nil {
+		pool.Close()
+		_ = otelShutdown(ctx)
+		return nil, fmt.Errorf("pgx pool collector: %w", err)
 	}
 
 	// 4. Outbound repos (T48 / T49).
@@ -239,14 +258,20 @@ func BuildRuntime(ctx context.Context, cfg config.Config) (*Runtime, error) {
 		//  1. HTTP server first — stops accepting new requests and
 		//     drains in-flight handlers; any handler still holding a
 		//     pool connection gets to finish cleanly.
-		//  2. OTel second — flushes any spans/metrics generated during
-		//     the handler drain before closing exporters.
-		//  3. Pool last — by now no handler needs it; closing earlier
+		//  2. Pool collector — unregister the OTel observable callback
+		//     so the SDK doesn't try to read pool.Stat() after the
+		//     pool closes (Phase 2C.4 / E).
+		//  3. OTel — flushes any spans/metrics generated during the
+		//     handler drain before closing exporters.
+		//  4. Pool last — by now no handler needs it; closing earlier
 		//     would abort in-flight receipts mid-persist (A4.3).
 		// Errors are collected but the sequence is always completed.
 		var firstErr error
 		if err := server.Shutdown(ctx); err != nil && firstErr == nil {
 			firstErr = fmt.Errorf("http shutdown: %w", err)
+		}
+		if err := poolCollector.Close(); err != nil && firstErr == nil {
+			firstErr = fmt.Errorf("pool collector shutdown: %w", err)
 		}
 		if err := otelShutdown(ctx); err != nil && firstErr == nil {
 			firstErr = fmt.Errorf("otel shutdown: %w", err)
@@ -256,11 +281,12 @@ func BuildRuntime(ctx context.Context, cfg config.Config) (*Runtime, error) {
 	}
 
 	return &Runtime{
-		Server:   server,
-		Pool:     pool,
-		Shutdown: shutdown,
-		ExecSvc:  execSvc,
-		QuerySvc: querySvc,
+		Server:        server,
+		Pool:          pool,
+		Shutdown:      shutdown,
+		PoolCollector: poolCollector,
+		ExecSvc:       execSvc,
+		QuerySvc:      querySvc,
 	}, nil
 }
 
