@@ -79,9 +79,10 @@ receivers:
           <{{ .ExternalURL }}|View in Alertmanager>
         send_resolved: true
 
-  # ops-warnings: posts to Slack #ops (B1). Linear webhook ships in
-  # B2 (D2C4AB.3 + D2C4AB.17 bundle plan). Slack credential read from
-  # mounted secret file.
+  # ops-warnings: posts to Slack #ops AND to Linear via the webhook
+  # adapter (B2 wires the webhook). Slack credential read from
+  # mounted secret file (A2C4AB.4). Linear webhook URL is the
+  # cluster-internal compose DNS — NOT a credential, stays inline.
   - name: ops-warnings
     slack_configs:
       - api_url_file: /run/secrets/slack_ops_webhook_url
@@ -92,6 +93,10 @@ receivers:
           *Summary:* {{ .CommonAnnotations.summary }}
           <{{ .ExternalURL }}|View in Alertmanager>
         send_resolved: true
+    webhook_configs:
+      - url: 'http://linear-webhook:9095/webhook'
+        send_resolved: true
+        max_alerts: 0   # send all in group, no truncation
 
 inhibit_rules:
   - source_matchers: [ 'severity="critical"' ]

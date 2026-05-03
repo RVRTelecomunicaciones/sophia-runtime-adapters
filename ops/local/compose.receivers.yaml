@@ -64,6 +64,38 @@ services:
     networks:
       - runtime-load
 
+  # linear-webhook: Linear ticket sync for severity=warning (D2C4AB.4).
+  # Separate binary, separate container, separate port from
+  # runtime-adapters — preserves the boundary between decision and
+  # execution per CLAUDE.md D1.1 / D1.2. The runtime never imports
+  # this adapter; alertmanager calls it via webhook_configs in
+  # ops-warnings (alertmanager.yaml).
+  #
+  # No healthcheck: distroless/static base lacks wget/nc/curl. The
+  # smoke target probes /healthz from the test host directly.
+  # CI never starts this service against production credentials —
+  # Layers 1+2+3+4 of the 4-layer guardrail block that path.
+  linear-webhook:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      target: linear-webhook-adapter
+    cpus: "0.5"
+    mem_limit: 256m
+    environment:
+      LINEAR_API_TOKEN:               "${LINEAR_TEST_API_TOKEN:-}"
+      LINEAR_TEAM_ID:                 "${LINEAR_TEST_TEAM_ID:-}"
+      LINEAR_API_URL:                 "${LINEAR_API_URL:-https://api.linear.app/graphql}"
+      LINEAR_TENANT_TYPE:             "${LINEAR_TENANT_TYPE:-test}"
+      LINEAR_RECOMMENT_MIN_INTERVAL:  "${LINEAR_RECOMMENT_MIN_INTERVAL:-15m}"
+      LISTEN_ADDR:                    ":9095"
+      RUNTIME_TENANT:                 "${RUNTIME_TENANT:-test}"
+      CI:                             "${CI:-}"
+    ports:
+      - "9095:9095"
+    networks:
+      - runtime-load
+
 # Credentials for the real receivers. Source files live under
 # ./.secrets/ (gitignored) and are populated from .env by `make
 # secrets-write`. Alertmanager v0.27.0 auto-trims trailing whitespace

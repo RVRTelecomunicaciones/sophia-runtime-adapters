@@ -236,10 +236,17 @@ func TestAlertmanager_OpsWarningsHasSlackAndWebhook(t *testing.T) {
 		"ops-warnings must have exactly 1 slack_configs entry (D2C4AB.3)")
 	require.Empty(t, rec.PagerDutyConfigs,
 		"ops-warnings must NOT have pagerduty_configs (warnings do not page; D2C4AB.3)")
-	// B1: webhook_configs = 0 (Linear adapter ships in B2). B2 changes
-	// this assertion to require.Len(rec.WebhookConfigs, 1).
-	require.Empty(t, rec.WebhookConfigs,
-		"ops-warnings must have 0 webhook_configs in B1 (Linear webhook lands in B2)")
+	// B2: webhook_configs = 1 — points at the linear-webhook adapter
+	// service on port 9095 (D2C4AB.3 + D2C4AB.4).
+	require.Len(t, rec.WebhookConfigs, 1,
+		"ops-warnings must have exactly 1 webhook_configs entry pointing at linear-webhook (D2C4AB.3)")
+	require.NotEmpty(t, rec.WebhookConfigs[0]["url"],
+		"webhook_configs[0].url must be set")
+	url, _ := rec.WebhookConfigs[0]["url"].(string)
+	require.Contains(t, url, "linear-webhook",
+		"webhook_configs[0].url must contain 'linear-webhook' (compose service DNS), got %q", url)
+	require.Contains(t, url, ":9095",
+		"webhook_configs[0].url must reference port 9095, got %q", url)
 }
 
 // --- helpers ---
