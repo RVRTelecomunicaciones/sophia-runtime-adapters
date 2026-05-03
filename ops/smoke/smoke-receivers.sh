@@ -78,7 +78,42 @@ require_cmd() {
 
 # --- phase functions (filled in by tasks 3.3-3.9) ---
 
-preflight()  { :; }
+# preflight verifies env vars + binaries are present and the
+# alertmanager + linear-webhook services are reachable. Exits
+# non-zero if anything is missing — the smoke MUST NOT proceed
+# against a half-configured stack (would emit false negatives).
+preflight() {
+    log_info "preflight: checking env vars + tooling"
+    require_env \
+        PAGERDUTY_TEST_API_TOKEN \
+        PAGERDUTY_TEST_SERVICE_ID \
+        SLACK_TEST_BOT_TOKEN \
+        SLACK_TEST_INCIDENTS_CHANNEL_ID \
+        SLACK_TEST_OPS_CHANNEL_ID \
+        LINEAR_TEST_API_TOKEN \
+        LINEAR_TEST_TEAM_ID
+    require_cmd amtool
+    require_cmd curl
+    require_cmd jq
+
+    log_info "preflight: probing alertmanager at $AM_URL"
+    if ! curl -sSf -o /dev/null --max-time 5 "$AM_URL/-/ready"; then
+        log_err "preflight: alertmanager not ready at $AM_URL/-/ready"
+        return 1
+    fi
+
+    # Linear webhook adapter health probe — assumes the service is
+    # reachable on the smoke host. In a compose stack the smoke runs
+    # on the host and the service is published on :9095.
+    local lw_url="${LINEAR_WEBHOOK_URL:-http://localhost:9095}"
+    log_info "preflight: probing linear-webhook at $lw_url"
+    if ! curl -sSf -o /dev/null --max-time 5 "$lw_url/healthz"; then
+        log_err "preflight: linear-webhook not ready at $lw_url/healthz"
+        return 1
+    fi
+
+    log_info "preflight: OK"
+}
 inject()     { :; }
 wait_phase() { :; }
 verify_pos() { :; }
