@@ -79,7 +79,7 @@ func (c *LinearGraphQLClient) do(ctx context.Context, req gqlRequest, out interf
 
 	resp, err := c.http.Do(httpReq)
 	if err != nil {
-		return fmt.Errorf("%w: transport: %v", application.ErrLinearClient5xx, err)
+		return fmt.Errorf("%w: transport: %w", application.ErrLinearClient5xx, err)
 	}
 	defer func() { _, _ = io.Copy(io.Discard, resp.Body); _ = resp.Body.Close() }()
 
@@ -92,18 +92,18 @@ func (c *LinearGraphQLClient) do(ctx context.Context, req gqlRequest, out interf
 
 	respBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("%w: read body: %v", application.ErrLinearClient5xx, err)
+		return fmt.Errorf("%w: read body: %w", application.ErrLinearClient5xx, err)
 	}
 	var env gqlResponse
 	if err := json.Unmarshal(respBytes, &env); err != nil {
-		return fmt.Errorf("%w: decode envelope: %v", application.ErrLinearClient4xx, err)
+		return fmt.Errorf("%w: decode envelope: %w", application.ErrLinearClient4xx, err)
 	}
 	if len(env.Errors) > 0 {
 		return fmt.Errorf("%w: graphql errors: %s", application.ErrLinearClient4xx, env.Errors[0].Message)
 	}
 	if out != nil && len(env.Data) > 0 {
 		if err := json.Unmarshal(env.Data, out); err != nil {
-			return fmt.Errorf("%w: decode data: %v", application.ErrLinearClient4xx, err)
+			return fmt.Errorf("%w: decode data: %w", application.ErrLinearClient4xx, err)
 		}
 	}
 	return nil
@@ -181,11 +181,11 @@ func (c *LinearGraphQLClient) CreateIssue(ctx context.Context, in ports.CreateIs
 	}`
 	vars := map[string]interface{}{
 		"input": map[string]interface{}{
-			"teamId":     in.TeamID,
-			"title":      in.Title,
+			"teamId":      in.TeamID,
+			"title":       in.Title,
 			"description": in.Body,
-			"priority":   in.Priority,
-			"labelIds":   labelIDs,
+			"priority":    in.Priority,
+			"labelIds":    labelIDs,
 		},
 	}
 	var raw struct {

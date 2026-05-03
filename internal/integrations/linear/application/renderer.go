@@ -33,8 +33,9 @@ type RenderInput struct {
 // BuildTitle renders the Linear issue title per spec §7.4.
 //
 // Format:
-//   "[CRIT] <alertname>" or "[WARN] <alertname>" if capability empty
-//   "[CRIT] <alertname> — <capability>" or "[WARN] <alertname> — <capability>" if capability present
+//
+//	"[CRIT] <alertname>" or "[WARN] <alertname>" if capability empty
+//	"[CRIT] <alertname> — <capability>" or "[WARN] <alertname> — <capability>" if capability present
 //
 // The em-dash (—) separator matches the spec exactly. Linear titles
 // have no length limit relevant here (~256 char max in practice).
@@ -51,10 +52,10 @@ func BuildTitle(sev domain.Severity, alertname, capability string) string {
 
 // BuildLabels returns the set of label NAMES applied at issue
 // creation per spec §7.4. Order:
-//   1. domain.DedupLabelConst ("alert-managed") — constant marker
-//   2. domain.DedupLabel(groupKey)              — per-grouping dedup key
-//   3. "severity:<critical|warning>"
-//   4. "capability:<value>"                     — only if capability != ""
+//  1. domain.DedupLabelConst ("alert-managed") — constant marker
+//  2. domain.DedupLabel(groupKey)              — per-grouping dedup key
+//  3. "severity:<critical|warning>"
+//  4. "capability:<value>"                     — only if capability != ""
 func BuildLabels(sev domain.Severity, capability, groupKey string) []string {
 	out := []string{
 		domain.DedupLabelConst,

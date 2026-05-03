@@ -116,7 +116,9 @@ func TestGraphQL_GraphQLErrorsField_ReturnsErrLinearClient4xx(t *testing.T) {
 
 func TestGraphQL_AddCommentAndArchive_ReturnNilOnSuccess(t *testing.T) {
 	_, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-		var req struct{ Query string `json:"query"` }
+		var req struct {
+			Query string `json:"query"`
+		}
 		_ = json.NewDecoder(r.Body).Decode(&req)
 		// Both mutations return success:true.
 		_, _ = io.WriteString(w, `{"data":{"commentCreate":{"success":true},"issueArchive":{"success":true},"issueUpdate":{"success":true,"issue":{"id":"i","title":"T","createdAt":"2026-05-02T12:00:00Z","state":{"name":"In Progress"},"labels":{"nodes":[]}}}}}`)

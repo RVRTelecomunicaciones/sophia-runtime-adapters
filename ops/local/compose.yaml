@@ -89,6 +89,7 @@ services:
     build:
       context: ../..             # repo root, so Dockerfile at ./Dockerfile is found
       dockerfile: Dockerfile
+      target: runtime-adapters   # multi-stage: explicitly select; LAST stage default would be linear-webhook-adapter
     cpus: "2.0"
     mem_limit: 2g
     mem_reservation: 1g

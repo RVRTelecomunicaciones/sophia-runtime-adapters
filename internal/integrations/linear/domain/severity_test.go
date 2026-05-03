@@ -34,7 +34,7 @@ func TestParseSeverity(t *testing.T) {
 	}{
 		{"critical", domain.SeverityCritical, false},
 		{"warning", domain.SeverityWarning, false},
-		{"info", "", true},  // info is silenced upstream — adapter must reject
+		{"info", "", true}, // info is silenced upstream — adapter must reject
 		{"", "", true},
 		{"CRITICAL", "", true}, // case-sensitive
 		{"unknown", "", true},

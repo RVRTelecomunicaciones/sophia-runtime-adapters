@@ -464,6 +464,9 @@ jobs:
   secret-scan:
     name: secret-scan (gitleaks, Layer 1)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read    # gitleaks-action lists PR commits via the GH API
     steps:
       - uses: actions/checkout@v4
         with:

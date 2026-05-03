@@ -36,8 +36,9 @@ func ParseSeverity(s string) (Severity, error) {
 
 // LinearPriority returns the Linear issue priority that maps to
 // this severity per D2C4AB.10:
-//   critical → P1 (Urgent)  — Linear int code 1
-//   warning  → P3 (Medium)  — Linear int code 3
+//
+//	critical → P1 (Urgent)  — Linear int code 1
+//	warning  → P3 (Medium)  — Linear int code 3
 func (s Severity) LinearPriority() int {
 	switch s {
 	case SeverityCritical:
