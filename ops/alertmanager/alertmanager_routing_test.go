@@ -38,7 +38,10 @@ type amConfig struct {
 		} `yaml:"routes"`
 	} `yaml:"route"`
 	Receivers []struct {
-		Name string `yaml:"name"`
+		Name             string                   `yaml:"name"`
+		PagerDutyConfigs []map[string]interface{} `yaml:"pagerduty_configs"`
+		SlackConfigs     []map[string]interface{} `yaml:"slack_configs"`
+		WebhookConfigs   []map[string]interface{} `yaml:"webhook_configs"`
 	} `yaml:"receivers"`
 	InhibitRules []struct {
 		SourceMatchers []string `yaml:"source_matchers"`
@@ -179,6 +182,33 @@ func TestAlertmanager_MatcherLabelsExistUpstream(t *testing.T) {
 				"inhibit_rules.equal label %q is not emitted by any upstream rule", eq)
 		}
 	}
+}
+
+// TestAlertmanager_OpsCriticalHasPagerDutyAndSlack verifies the
+// ops-critical receiver fans out to BOTH PagerDuty (paging the
+// on-call) AND Slack #incidents (team visibility). Both fire in
+// parallel — see D2C4AB.2 + A2C4AB.1.
+func TestAlertmanager_OpsCriticalHasPagerDutyAndSlack(t *testing.T) {
+	cfg := loadAM(t)
+	var rec *struct {
+		Name             string                   `yaml:"name"`
+		PagerDutyConfigs []map[string]interface{} `yaml:"pagerduty_configs"`
+		SlackConfigs     []map[string]interface{} `yaml:"slack_configs"`
+		WebhookConfigs   []map[string]interface{} `yaml:"webhook_configs"`
+	}
+	for i := range cfg.Receivers {
+		if cfg.Receivers[i].Name == "ops-critical" {
+			rec = &cfg.Receivers[i]
+			break
+		}
+	}
+	require.NotNil(t, rec, "ops-critical receiver must be declared")
+	require.Len(t, rec.PagerDutyConfigs, 1,
+		"ops-critical must have exactly 1 pagerduty_configs entry (D2C4AB.2)")
+	require.Len(t, rec.SlackConfigs, 1,
+		"ops-critical must have exactly 1 slack_configs entry (A2C4AB.1 — Slack mandatory)")
+	require.Empty(t, rec.WebhookConfigs,
+		"ops-critical must NOT have webhook_configs (Linear is warning-tier only, D2C4AB.3)")
 }
 
 // --- helpers ---
