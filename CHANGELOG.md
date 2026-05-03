@@ -4,6 +4,47 @@ All notable changes to `runtime-adapters` will be documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] — 2026-05-02
+
+Phase 2C.4 sub-project A+B — real alert receivers (PagerDuty + Slack + Linear). Fourth sub-project of the operational-readiness track. Replaces the `null-receiver` placeholders added in Phase 2C.1 with real receivers — critical alerts page on-call via PagerDuty Events API v2 + post to Slack `#incidents` (parallel fire), warnings post to Slack `#ops` + open/update/close Linear issues via a dedicated webhook adapter. `severity=info` remains silenced at the routing root (I-AB.1). Ships `make smoke-receivers` end-to-end smoke target + 4-layer CI guardrail (gitleaks + env-var-guard + bootstrap mode lock + tenant fingerprinting). Code is test-tenant-ready (D2C4AB.18) — production adoption is a purely operational milestone (which env vars are loaded in prod deploy), no further code changes needed. Spec-complete against `docs/superpowers/specs/2026-05-02-phase-2c.4-a-b-design.md`.
+
+### Added
+
+- `cmd/linear-webhook-adapter/` — new Go binary in the same module as runtime-adapters; separate process, separate container (port 9095), independent lifecycle (D2C4AB.4 + I-AB.6). Stateless, no local persistence (I-AB.4 / I-AB.7). Decoupled from runtime-adapters by process boundary so a Linear API retry storm cannot kill the runtime (I-AB.9).
+- `internal/integrations/linear/` — hexagonal layout (D2C4AB.5):
+  - `domain/severity.go` — `Severity` type with `LinearPriority()` mapping (critical→P1, warning→P3 per D2C4AB.10) + `ParseSeverity` rejecting info / unknown values (I-AB.1 enforcement at the type boundary).
+  - `domain/issue.go` — `Issue` projection + `IssueState` enum (`Open` vs `Cancelled` per D2C4AB.8).
+  - `domain/dedup.go` — `DedupLabel(groupKey)` returns `alert:<first-12-hex-chars-of-sha256>` per D2C4AB.7. Collision probability ~3.5e-15 per pair, negligible at our cardinality bound.
+  - `ports/linear_client.go` — `LinearAPIClient` interface (FindIssuesByLabel, CreateIssue, UpdateIssue, AddComment, ArchiveIssue) + `CreateIssueInput` POJO.
+  - `application/renderer.go` — `BuildTitle`, `BuildBody`, `BuildLabels` per spec §7.4. Title `[CRIT|WARN] <alertname> [— <capability>]`. Body Markdown with debug HTML-comment metadata block (debug only — matching uses the LABEL not the comment per A2C4AB.3.3).
+  - `application/lifecycle.go` — firing/resolved branching engine + anti-spam (D2C4AB.9) per spec §7.5. Firing-no-existing → CreateIssue; firing-existing → UpdateIssue body + maybe AddComment if RecommentMinInterval elapsed; resolved-existing → AddComment + ArchiveIssue (Cancelled state); resolved-no-existing → no-op + 200 OK (A2C4AB.3.5 race-condition safe).
+  - `application/webhook_handler.go` — HTTP handler with §7.6 status mapping: 200 normal, 400 bad input, 500 Linear 4xx or generic, 502 Linear 5xx, 405 non-POST.
+  - `infrastructure/linear_graphql_client.go` — concrete `LinearAPIClient` against `https://api.linear.app/graphql` via net/http. Status mapping: HTTP 5xx/transport → `ErrLinearClient5xx`; HTTP 4xx or non-empty `errors[]` or `success=false` → `ErrLinearClient4xx`.
+- `ops/alertmanager/alertmanager.yaml` — new `ops-critical` receiver (`pagerduty_configs` + `slack_configs` for `#incidents`) and `ops-warnings` receiver (`slack_configs` for `#ops` + `webhook_configs` for `http://linear-webhook:9095/webhook`). Both fire backends in parallel — Alertmanager dispatcher independence keeps a Slack outage from blocking PagerDuty (and vice versa). The 2 sub-route receiver references switch from `null-receiver` to the new names; `null-receiver` definition stays as the silenced sink for `severity=info`. Routing tree (group_by, timing, inhibit_rules) UNCHANGED from 2C.1 per D2C4AB.1.
+- `ops/alertmanager/alertmanager_routing_test.go` — 2 new tests (`TestAlertmanager_OpsCriticalHasPagerDutyAndSlack`, `TestAlertmanager_OpsWarningsHasSlackAndWebhook`). `TestAlertmanager_AllRouteReceiversDeclared` tightened to require explicit ops-critical / ops-warnings mapping. `amConfig` schema extended with `pagerduty_configs` / `slack_configs` / `webhook_configs` for receiver-shape assertions.
+- `Dockerfile` — multi-stage build with `runtime-adapters` and `linear-webhook-adapter` targets (D2C4AB.6). One shared `build` stage compiles both binaries; one runtime stage per binary selects via `--target`.
+- `ops/local/compose.yaml` — new `alertmanager` and `linear-webhook` services under the `receivers` profile (NOT in default `up` — preserves the load-baseline measurement envelope unchanged per ADR 0008). Operators bring them up explicitly via `docker compose --profile receivers up`.
+- `ops/smoke/smoke-receivers.sh` (~250 LOC) + `make smoke-receivers` — end-to-end smoke target per spec §8. Injects 3 alerts (critical, warning, info) via `amtool alert add` (D2C4AB.11), waits 90s for grouping windows, verifies positive routing per receiver via PD/Slack/Linear API queries (D2C4AB.12), verifies negative for info (D2C4AB.13 + I-AB.10), runs fail-soft cleanup (D2C4AB.14). Operator-driven, NOT a CI gate (D2C4AB.15).
+- `.github/workflows/ci.yaml` — 2 new jobs: `secret-scan` using `gitleaks/gitleaks-action@v2` (Layer 1) + `env-var-guard` rejecting `^(PROD_|.*_PROD_|.*_PRODUCTION_)` env var names (Layer 2). Both run on every PR + push to main (D2C4AB.16 + I-AB.2).
+- `internal/bootstrap/wire.go` step 0 — Layer 3 runtime-side bootstrap mode lock. Aborts `BuildRuntime` if `CI=true && RUNTIME_TENANT != test`; pre-empts logger / OTel / pool / adapter construction so a misconfigured CI run never opens prod resources (D2C4AB.16 + spec §9.3).
+- `cmd/linear-webhook-adapter/main.go` — Layer 3 (adapter side) `enforceModeLock` + Layer 4 (adapter side) `enforceTenantFingerprint` (logs `team_id`, aborts if `LINEAR_TENANT_TYPE != test` under CI). Spec §7.8 + §9.3-9.4.
+- `docs/test-tenant.md` — reproducible setup guide for PagerDuty test service, Slack bot user + channels, Linear test workspace + labels. Includes env summary template, run instructions, manual cleanup procedure, rotation policy. Spec §11 + D2C4AB.18.
+- `.env.example` — new file documenting all 12 test-tenant env vars across the 3 bundles. Convention: test-tenant vars omit `PROD_` prefix/infix; production vars use `PROD_` (rejected by Layer 2). I-AB.2 + I-AB.5.
+
+### Changed
+
+- `ops/alertmanager/alertmanager.yaml` — `severity=critical` sub-route receiver `null-receiver` → `ops-critical`; `severity=warning` sub-route receiver `null-receiver` → `ops-warnings`. Root receiver remains `null-receiver` (info silencing — I-AB.1). Routing tree shape, group_by, inhibit_rules, timing UNCHANGED.
+
+### Notes
+
+- **No runtime adapter contract change** — runtime-adapters does NOT import the Linear adapter; the boundary between decision (governance) and execution (runtime) per CLAUDE.md D1.1/D1.2 is preserved. Linear adapter is **ops infrastructure**, not adapter execution. R1 "runtime does not decide" unchanged.
+- **No metric-contract change** — runtime metrics namespace `runtime_adapters_*` is unchanged. R16 cardinality whitelist unchanged. Webhook adapter metrics (if added later) live under a separate `linear_webhook_adapter_*` namespace; deferred — not in v0.8.0 closure criteria.
+- **No new dependencies in runtime-adapters** — the Linear adapter uses only stdlib (`net/http`, `encoding/json`, `crypto/sha256`, `log/slog`). No GraphQL client library, no Linear SDK.
+- **Production adoption is operational** — v0.8.0 ships test-tenant-ready (D2C4AB.18). Rolling out to production = setting prod env vars in the prod deploy environment (vault / AWS Secrets Manager / 1Password Connect per the operator's choice). NO code changes needed for prod adoption.
+- **Smoke target is operator-driven** (D2C4AB.15) — not gated in CI for v0.8.0. Matches the operator-driven pattern of `make load-baseline` from 2C.2. CI integration of smoke is deferred follow-up if it becomes valuable.
+- **Anti-spam ships time-elapsed branch only** — the alert-set-change and severity-flip branches of D2C4AB.9 require adapter-side state which I-AB.7 forbids. Time-elapsed alone caps re-comment frequency to 1 per `LINEAR_RECOMMENT_MIN_INTERVAL` per issue (default 15m), which dominates spam scenarios in practice.
+- **Healthcheck on linear-webhook compose service is best-effort** — distroless/static lacks wget/nc/curl, so no in-container probe. The smoke target probes `/healthz` from the test host directly. If a stricter healthcheck is needed, a Go-binary internal health client is a follow-up.
+
 ## [0.7.0] — 2026-05-02
 
 Phase 2C.4 sub-project F — sustained git calibration + per-tree git.status thresholds. Third sub-project of the operational-readiness track. Closes the calibration deuda from 2C.2: all 4 git capabilities (`git.status@v1`, `git.clone@v1`, `git.diff@v1`, `git.commit@v1`) move out of PROVISIONAL/ROUGH, with `git.status@v1` promoted to CALIBRATED on per-tree evidence and the rough tier moved to SMOKE_CALIBRATED with tighter `le` values derived from the observed adapter floor + workload-tail allowance. No runtime Go code changes; no metric contract changes (R3 buckets frozen, R16 cardinality unchanged — the per-tree split is k6-side only). Spec-complete against `docs/superpowers/specs/2026-05-01-phase-2c.4-f-sustained-git-calibration-design.md`.
