@@ -347,7 +347,72 @@ verify_neg() {
         log_info "verify_neg: Linear PASS — no SmokeTestInfo issue"
     fi
 }
-cleanup()    { :; }
+# cleanup runs after verification (positive + negative). Each step
+# is fail-soft per D2C4AB.14 — logs warning, continues. Cleanup is
+# housekeeping; it does NOT contribute to the PASS/FAIL contract.
+cleanup() {
+    log_info "cleanup: best-effort housekeeping (fail-soft)"
+
+    # 1) PagerDuty: resolve the test incident if captured.
+    if [ -n "${SMOKE_PD_INCIDENT_ID:-}" ]; then
+        log_info "cleanup: resolving PagerDuty incident $SMOKE_PD_INCIDENT_ID"
+        curl -sS --max-time 10 -X PUT \
+            -H "Authorization: Token token=${PAGERDUTY_TEST_API_TOKEN}" \
+            -H "Accept: application/vnd.pagerduty+json;version=2" \
+            -H "Content-Type: application/json" \
+            -H "From: smoke-receivers@runtime-adapters" \
+            -d '{"incident":{"type":"incident_reference","status":"resolved","resolution":"smoke-receivers cleanup"}}' \
+            "https://api.pagerduty.com/incidents/${SMOKE_PD_INCIDENT_ID}" \
+            >/dev/null 2>&1 || log_warn "cleanup: PagerDuty resolve failed (non-blocking)"
+    fi
+
+    # 2) Slack: chat.delete the test messages (requires bot scope chat:write).
+    if [ -n "${SMOKE_SLACK_INCIDENTS_TS:-}" ]; then
+        log_info "cleanup: deleting Slack #incidents msg ts=$SMOKE_SLACK_INCIDENTS_TS"
+        curl -sS --max-time 10 -X POST \
+            -H "Authorization: Bearer ${SLACK_TEST_BOT_TOKEN}" \
+            -H "Content-Type: application/json; charset=utf-8" \
+            -d "{\"channel\":\"$SLACK_TEST_INCIDENTS_CHANNEL_ID\",\"ts\":\"$SMOKE_SLACK_INCIDENTS_TS\"}" \
+            "https://slack.com/api/chat.delete" \
+            >/dev/null 2>&1 || log_warn "cleanup: Slack #incidents delete failed (non-blocking)"
+    fi
+    if [ -n "${SMOKE_SLACK_OPS_TS:-}" ]; then
+        log_info "cleanup: deleting Slack #ops msg ts=$SMOKE_SLACK_OPS_TS"
+        curl -sS --max-time 10 -X POST \
+            -H "Authorization: Bearer ${SLACK_TEST_BOT_TOKEN}" \
+            -H "Content-Type: application/json; charset=utf-8" \
+            -d "{\"channel\":\"$SLACK_TEST_OPS_CHANNEL_ID\",\"ts\":\"$SMOKE_SLACK_OPS_TS\"}" \
+            "https://slack.com/api/chat.delete" \
+            >/dev/null 2>&1 || log_warn "cleanup: Slack #ops delete failed (non-blocking)"
+    fi
+
+    # 3) Linear: archive the test issue.
+    if [ -n "${SMOKE_LINEAR_ISSUE_ID:-}" ]; then
+        log_info "cleanup: archiving Linear issue $SMOKE_LINEAR_ISSUE_ID"
+        local archive_query
+        archive_query=$(jq -nc \
+            --arg id "$SMOKE_LINEAR_ISSUE_ID" \
+            '{query:"mutation A($id: String!){ issueArchive(id: $id){ success } }",variables:{id:$id}}')
+        curl -sS --max-time 10 -X POST \
+            -H "Authorization: ${LINEAR_TEST_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data "$archive_query" \
+            "$LINEAR_API_URL" >/dev/null 2>&1 \
+            || log_warn "cleanup: Linear archive failed (non-blocking)"
+    fi
+
+    # 4) Alertmanager: silence the SmokeTest* alerts for 5min so
+    #    repeat firings during cleanup races don't re-page.
+    log_info "cleanup: silencing SmokeTest* alertnames for 5m"
+    amtool --alertmanager.url="$AM_URL" silence add \
+        "alertname=~SmokeTest.*" \
+        --duration=5m \
+        --comment="smoke-receivers cleanup" \
+        --author="smoke-receivers" \
+        >/dev/null 2>&1 || log_warn "cleanup: amtool silence add failed (non-blocking)"
+
+    log_info "cleanup: done"
+}
 report()     { :; }
 
 main() {
