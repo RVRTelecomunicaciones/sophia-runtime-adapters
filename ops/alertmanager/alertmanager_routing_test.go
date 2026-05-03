@@ -211,6 +211,37 @@ func TestAlertmanager_OpsCriticalHasPagerDutyAndSlack(t *testing.T) {
 		"ops-critical must NOT have webhook_configs (Linear is warning-tier only, D2C4AB.3)")
 }
 
+// TestAlertmanager_OpsWarningsHasSlackAndWebhook verifies the
+// ops-warnings receiver fans out to Slack #ops (B1) and the Linear
+// webhook adapter (B2). In B1 the expected webhook count is 0 —
+// the Linear adapter ships in B2; this test is updated to expect 1
+// once B2 lands the webhook_configs entry. Per D2C4AB.3 +
+// D2C4AB.17 bundle plan.
+func TestAlertmanager_OpsWarningsHasSlackAndWebhook(t *testing.T) {
+	cfg := loadAM(t)
+	var rec *struct {
+		Name             string                   `yaml:"name"`
+		PagerDutyConfigs []map[string]interface{} `yaml:"pagerduty_configs"`
+		SlackConfigs     []map[string]interface{} `yaml:"slack_configs"`
+		WebhookConfigs   []map[string]interface{} `yaml:"webhook_configs"`
+	}
+	for i := range cfg.Receivers {
+		if cfg.Receivers[i].Name == "ops-warnings" {
+			rec = &cfg.Receivers[i]
+			break
+		}
+	}
+	require.NotNil(t, rec, "ops-warnings receiver must be declared")
+	require.Len(t, rec.SlackConfigs, 1,
+		"ops-warnings must have exactly 1 slack_configs entry (D2C4AB.3)")
+	require.Empty(t, rec.PagerDutyConfigs,
+		"ops-warnings must NOT have pagerduty_configs (warnings do not page; D2C4AB.3)")
+	// B1: webhook_configs = 0 (Linear adapter ships in B2). B2 changes
+	// this assertion to require.Len(rec.WebhookConfigs, 1).
+	require.Empty(t, rec.WebhookConfigs,
+		"ops-warnings must have 0 webhook_configs in B1 (Linear webhook lands in B2)")
+}
+
 // --- helpers ---
 
 func loadAM(t *testing.T) amConfig {
