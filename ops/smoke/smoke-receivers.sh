@@ -298,7 +298,55 @@ verify_pos_linear() {
         export SMOKE_LINEAR_ISSUE_ID="$match"
     fi
 }
-verify_neg() { :; }
+# verify_neg confirms the SmokeTestInfo alert reached NONE of the
+# 4 destinations. Per D2C4AB.13 + I-AB.1 + I-AB.10. Without this,
+# a regression that lets info severity leak past the routing root
+# would pass the smoke silently.
+verify_neg() {
+    log_info "verify_neg: confirming SmokeTestInfo did NOT leak to any receiver"
+
+    # PD: same query as verify_pos_pagerduty; assert NO match for SmokeTestInfo.
+    local resp
+    resp=$(curl -sSf --max-time 10 \
+        -H "Authorization: Token token=${PAGERDUTY_TEST_API_TOKEN}" \
+        -H "Accept: application/vnd.pagerduty+json;version=2" \
+        "https://api.pagerduty.com/incidents?service_ids%5B%5D=${PAGERDUTY_TEST_SERVICE_ID}&statuses%5B%5D=triggered" \
+        || echo "")
+    if printf '%s' "$resp" | jq -e '.incidents[]? | select(.title | contains("SmokeTestInfo"))' >/dev/null 2>&1; then
+        fail_test "verify_neg: SmokeTestInfo LEAKED to PagerDuty (I-AB.1 violation)"
+    else
+        log_info "verify_neg: PagerDuty PASS — no SmokeTestInfo incident"
+    fi
+
+    # Slack #incidents: assert no message containing SmokeTestInfo.
+    if slack_history_contains "$SLACK_TEST_INCIDENTS_CHANNEL_ID" "SmokeTestInfo" >/dev/null; then
+        fail_test "verify_neg: SmokeTestInfo LEAKED to Slack #incidents (I-AB.1 violation)"
+    else
+        log_info "verify_neg: Slack #incidents PASS — no SmokeTestInfo message"
+    fi
+
+    # Slack #ops: same assertion.
+    if slack_history_contains "$SLACK_TEST_OPS_CHANNEL_ID" "SmokeTestInfo" >/dev/null; then
+        fail_test "verify_neg: SmokeTestInfo LEAKED to Slack #ops (I-AB.1 violation)"
+    else
+        log_info "verify_neg: Slack #ops PASS — no SmokeTestInfo message"
+    fi
+
+    # Linear: same query as verify_pos_linear; assert no SmokeTestInfo match.
+    local linear_query linear_resp
+    linear_query=$(jq -nc \
+        '{query:"query F { issues(filter: { labels: { name: { eq: \"alert-managed\" } }, title: { containsIgnoreCase: \"SmokeTestInfo\" } }){ nodes { id title } } }"}')
+    linear_resp=$(curl -sSf --max-time 10 \
+        -H "Authorization: ${LINEAR_TEST_API_TOKEN}" \
+        -H "Content-Type: application/json" \
+        --data "$linear_query" \
+        "$LINEAR_API_URL" || echo "")
+    if printf '%s' "$linear_resp" | jq -e '.data.issues.nodes[]? | select(.title | contains("SmokeTestInfo"))' >/dev/null 2>&1; then
+        fail_test "verify_neg: SmokeTestInfo LEAKED to Linear (I-AB.1 violation)"
+    else
+        log_info "verify_neg: Linear PASS — no SmokeTestInfo issue"
+    fi
+}
 cleanup()    { :; }
 report()     { :; }
 
