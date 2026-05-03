@@ -38,7 +38,10 @@ type amConfig struct {
 		} `yaml:"routes"`
 	} `yaml:"route"`
 	Receivers []struct {
-		Name string `yaml:"name"`
+		Name             string                   `yaml:"name"`
+		PagerDutyConfigs []map[string]interface{} `yaml:"pagerduty_configs"`
+		SlackConfigs     []map[string]interface{} `yaml:"slack_configs"`
+		WebhookConfigs   []map[string]interface{} `yaml:"webhook_configs"`
 	} `yaml:"receivers"`
 	InhibitRules []struct {
 		SourceMatchers []string `yaml:"source_matchers"`
@@ -64,11 +67,29 @@ func TestAlertmanager_AllRouteReceiversDeclared(t *testing.T) {
 	for _, r := range cfg.Receivers {
 		names[r.Name] = true
 	}
-	require.True(t, names[cfg.Route.Receiver],
-		"root route receiver %q not declared", cfg.Route.Receiver)
+	// Root receiver: null-receiver remains the silenced sink for severity=info
+	// (I-AB.1). Sub-route receivers: ops-critical (severity=critical) and
+	// ops-warnings (severity=warning) replace the 2C.1 null-receiver
+	// placeholders (D2C4AB.2 / D2C4AB.3).
+	require.Equal(t, "null-receiver", cfg.Route.Receiver,
+		"root route receiver must remain null-receiver for info silencing (I-AB.1)")
+	require.True(t, names["null-receiver"], "null-receiver must be declared")
+	require.True(t, names["ops-critical"], "ops-critical receiver must be declared (D2C4AB.2)")
+	require.True(t, names["ops-warnings"], "ops-warnings receiver must be declared (D2C4AB.3)")
+
+	// Sub-route severity → receiver mapping must match the spec.
+	wantBySeverity := map[string]string{
+		`severity="critical"`: "ops-critical",
+		`severity="warning"`:  "ops-warnings",
+	}
 	for _, r := range cfg.Route.Routes {
 		require.True(t, names[r.Receiver],
 			"sub-route receiver %q not declared", r.Receiver)
+		require.NotEmpty(t, r.Matchers, "sub-route must have matchers")
+		want, ok := wantBySeverity[r.Matchers[0]]
+		require.True(t, ok, "unexpected sub-route matcher %q", r.Matchers[0])
+		require.Equal(t, want, r.Receiver,
+			"sub-route %q must point to receiver %q", r.Matchers[0], want)
 	}
 }
 
@@ -161,6 +182,64 @@ func TestAlertmanager_MatcherLabelsExistUpstream(t *testing.T) {
 				"inhibit_rules.equal label %q is not emitted by any upstream rule", eq)
 		}
 	}
+}
+
+// TestAlertmanager_OpsCriticalHasPagerDutyAndSlack verifies the
+// ops-critical receiver fans out to BOTH PagerDuty (paging the
+// on-call) AND Slack #incidents (team visibility). Both fire in
+// parallel — see D2C4AB.2 + A2C4AB.1.
+func TestAlertmanager_OpsCriticalHasPagerDutyAndSlack(t *testing.T) {
+	cfg := loadAM(t)
+	var rec *struct {
+		Name             string                   `yaml:"name"`
+		PagerDutyConfigs []map[string]interface{} `yaml:"pagerduty_configs"`
+		SlackConfigs     []map[string]interface{} `yaml:"slack_configs"`
+		WebhookConfigs   []map[string]interface{} `yaml:"webhook_configs"`
+	}
+	for i := range cfg.Receivers {
+		if cfg.Receivers[i].Name == "ops-critical" {
+			rec = &cfg.Receivers[i]
+			break
+		}
+	}
+	require.NotNil(t, rec, "ops-critical receiver must be declared")
+	require.Len(t, rec.PagerDutyConfigs, 1,
+		"ops-critical must have exactly 1 pagerduty_configs entry (D2C4AB.2)")
+	require.Len(t, rec.SlackConfigs, 1,
+		"ops-critical must have exactly 1 slack_configs entry (A2C4AB.1 — Slack mandatory)")
+	require.Empty(t, rec.WebhookConfigs,
+		"ops-critical must NOT have webhook_configs (Linear is warning-tier only, D2C4AB.3)")
+}
+
+// TestAlertmanager_OpsWarningsHasSlackAndWebhook verifies the
+// ops-warnings receiver fans out to Slack #ops (B1) and the Linear
+// webhook adapter (B2). In B1 the expected webhook count is 0 —
+// the Linear adapter ships in B2; this test is updated to expect 1
+// once B2 lands the webhook_configs entry. Per D2C4AB.3 +
+// D2C4AB.17 bundle plan.
+func TestAlertmanager_OpsWarningsHasSlackAndWebhook(t *testing.T) {
+	cfg := loadAM(t)
+	var rec *struct {
+		Name             string                   `yaml:"name"`
+		PagerDutyConfigs []map[string]interface{} `yaml:"pagerduty_configs"`
+		SlackConfigs     []map[string]interface{} `yaml:"slack_configs"`
+		WebhookConfigs   []map[string]interface{} `yaml:"webhook_configs"`
+	}
+	for i := range cfg.Receivers {
+		if cfg.Receivers[i].Name == "ops-warnings" {
+			rec = &cfg.Receivers[i]
+			break
+		}
+	}
+	require.NotNil(t, rec, "ops-warnings receiver must be declared")
+	require.Len(t, rec.SlackConfigs, 1,
+		"ops-warnings must have exactly 1 slack_configs entry (D2C4AB.3)")
+	require.Empty(t, rec.PagerDutyConfigs,
+		"ops-warnings must NOT have pagerduty_configs (warnings do not page; D2C4AB.3)")
+	// B1: webhook_configs = 0 (Linear adapter ships in B2). B2 changes
+	// this assertion to require.Len(rec.WebhookConfigs, 1).
+	require.Empty(t, rec.WebhookConfigs,
+		"ops-warnings must have 0 webhook_configs in B1 (Linear webhook lands in B2)")
 }
 
 // --- helpers ---

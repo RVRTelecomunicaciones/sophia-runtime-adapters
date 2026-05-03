@@ -217,6 +217,18 @@ services:
     depends_on:
       runtime-adapters: { condition: service_started }
 
+  # Phase 2C.4 / A+B B1: alertmanager service + secrets block live in
+  # ops/local/compose.receivers.yaml as a separate overlay. They are
+  # NOT in this base compose because the chaos overlay
+  # (compose.chaos.yaml) defines its own alertmanager + adds
+  # `depends_on: alertmanager` to runtime-adapters. Profile-gating
+  # the base alertmanager would poison the merged service definition
+  # (the chaos overlay's depends_on would resolve to a service excluded
+  # by the profile filter). Separating into overlays avoids the
+  # collision. See ops/local/compose.receivers.yaml header for the
+  # full rationale, or `make receivers-up` to bring the receivers
+  # stack online.
+
 networks:
   runtime-load:
     driver: bridge

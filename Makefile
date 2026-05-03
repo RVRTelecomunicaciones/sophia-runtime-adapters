@@ -1,4 +1,4 @@
-.PHONY: all build test test-unit test-contract test-integration test-e2e chaos-integration lint vet fmt cover clean run help sloth-generate test-obs test-rules test-alertmanager test-dashboards test-observability load-up load-down load-baseline load-smoke-local fixture-git-bench chaos-up chaos-up-toxiproxy chaos-down chaos-local chaos-dump chaos-render-rules chaos-render-rules-check chaos-canary chaos-e2e-comprehensive
+.PHONY: all build test test-unit test-contract test-integration test-e2e chaos-integration lint vet fmt cover clean run help sloth-generate test-obs test-rules test-alertmanager test-dashboards test-observability load-up load-down load-baseline load-smoke-local fixture-git-bench chaos-up chaos-up-toxiproxy chaos-down chaos-local chaos-dump chaos-render-rules chaos-render-rules-check chaos-canary chaos-e2e-comprehensive secrets-write secrets-clean receivers-up receivers-down
 
 GO              ?= go
 GOLANGCI_LINT   ?= golangci-lint
@@ -199,3 +199,48 @@ chaos-e2e-comprehensive:  ## Run nightly comprehensive E2E test (all 6 profiles 
 	$(GO) test -race -count=1 -tags=e2e -timeout=30m \
 	  -run TestChaos_Comprehensive \
 	  ./test/chaos/e2e/...
+
+# ---- Phase 2C.4 / A+B — alertmanager secret-file infrastructure -------
+
+.secrets:
+	@mkdir -p .secrets
+
+# secrets-write: populate .secrets/* from env vars (typically loaded
+# from .env via direnv, or set in the operator's shell). Uses
+# `printf "%s"` to avoid trailing newlines that some Alertmanager
+# versions did not trim (auto-trim landed for slack_api_url_file in
+# v0.25.0 and webhook url_file in v0.26.0; routing_key_file has no
+# explicit trim — defense in depth). Empty values are OK at this
+# layer — Alertmanager will fail at runtime with a clear error
+# pointing at the missing credential, surfacing the gap loud.
+secrets-write: .secrets
+	@printf "%s" "$$PAGERDUTY_TEST_ROUTING_KEY"        > .secrets/pagerduty_routing_key
+	@printf "%s" "$$SLACK_TEST_INCIDENTS_WEBHOOK_URL"  > .secrets/slack_incidents_webhook_url
+	@printf "%s" "$$SLACK_TEST_OPS_WEBHOOK_URL"        > .secrets/slack_ops_webhook_url
+	@chmod 600 .secrets/*
+	@echo "secrets-write: 3 files written under .secrets/ (mode 0600)"
+	@for v in PAGERDUTY_TEST_ROUTING_KEY SLACK_TEST_INCIDENTS_WEBHOOK_URL SLACK_TEST_OPS_WEBHOOK_URL; do \
+	  if [ -z "$$(eval echo \$$$$v)" ]; then \
+	    echo "WARN: $$v is empty — Alertmanager will fail at runtime" >&2; \
+	  fi; \
+	done
+
+# secrets-clean: paranoid removal. .secrets/ is gitignored so this
+# is rarely needed in practice — but useful for fresh-clone bring-up.
+secrets-clean:
+	@rm -rf .secrets
+	@echo "secrets-clean: .secrets/ removed"
+
+# receivers-up / receivers-down: start/stop the alertmanager service
+# via the receivers overlay (ops/local/compose.receivers.yaml).
+# Composed from the base compose.yaml + the receivers-specific
+# overlay (alertmanager service + secrets block). Depends on
+# secrets-write so the source files exist at compose-up time. See
+# ops/local/compose.receivers.yaml header for why we use an overlay
+# instead of profile-gating in the base compose (chaos overlay
+# collision avoidance).
+receivers-up: secrets-write
+	docker compose -f ops/local/compose.yaml -f ops/local/compose.receivers.yaml up -d --wait alertmanager
+
+receivers-down:
+	docker compose -f ops/local/compose.yaml -f ops/local/compose.receivers.yaml down

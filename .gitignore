@@ -21,3 +21,8 @@ coverage.html
 
 # OS
 .DS_Store
+
+# Phase 2C.4 / A+B — alertmanager secret files mounted into compose.
+# Populated by `make secrets-write` from .env (also gitignored).
+# NEVER commit credentials.
+.secrets/
