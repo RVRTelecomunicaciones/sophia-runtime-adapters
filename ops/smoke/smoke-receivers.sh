@@ -163,7 +163,89 @@ wait_phase() {
     done
     log_info "wait_phase: done"
 }
-verify_pos() { :; }
+# verify_pos_pagerduty asserts the SmokeTestCritical alert produced
+# a PagerDuty incident on the test service. Uses the Incidents API:
+#   GET /incidents?service_ids[]=<svc>&statuses[]=triggered
+verify_pos_pagerduty() {
+    log_info "verify_pos: querying PagerDuty for SmokeTestCritical incident"
+    local resp
+    resp=$(curl -sSf --max-time 10 \
+        -H "Authorization: Token token=${PAGERDUTY_TEST_API_TOKEN}" \
+        -H "Accept: application/vnd.pagerduty+json;version=2" \
+        "https://api.pagerduty.com/incidents?service_ids%5B%5D=${PAGERDUTY_TEST_SERVICE_ID}&statuses%5B%5D=triggered" \
+        || echo "")
+    if [ -z "$resp" ]; then
+        fail_test "PagerDuty incidents API query failed"
+        return
+    fi
+    local match
+    match=$(printf '%s' "$resp" | jq -r '.incidents[] | select(.title | contains("SmokeTestCritical")) | .id' | head -1)
+    if [ -z "$match" ]; then
+        fail_test "PagerDuty: no incident matching SmokeTestCritical (expected critical alert)"
+    else
+        log_info "verify_pos: PagerDuty PASS — incident $match"
+        # Capture incident ID for cleanup phase.
+        export SMOKE_PD_INCIDENT_ID="$match"
+    fi
+}
+
+# slack_history_contains queries conversations.history for the given
+# channel and returns 0 if any message body contains the needle.
+slack_history_contains() {
+    local channel_id="$1"
+    local needle="$2"
+    local resp
+    resp=$(curl -sSf --max-time 10 \
+        -H "Authorization: Bearer ${SLACK_TEST_BOT_TOKEN}" \
+        "https://slack.com/api/conversations.history?channel=${channel_id}&limit=20" \
+        || echo "")
+    if [ -z "$resp" ]; then
+        return 1
+    fi
+    if printf '%s' "$resp" | jq -e --arg n "$needle" '.messages[]? | select(.text | contains($n))' >/dev/null; then
+        # Capture the latest matching message ts for cleanup.
+        local ts
+        ts=$(printf '%s' "$resp" | jq -r --arg n "$needle" 'first(.messages[]? | select(.text | contains($n)) | .ts)')
+        printf '%s' "$ts"
+        return 0
+    fi
+    return 1
+}
+
+verify_pos_slack_incidents() {
+    log_info "verify_pos: querying Slack #incidents history for SmokeTestCritical"
+    local ts
+    ts=$(slack_history_contains "$SLACK_TEST_INCIDENTS_CHANNEL_ID" "SmokeTestCritical" || echo "")
+    if [ -z "$ts" ]; then
+        fail_test "Slack #incidents: no message matching SmokeTestCritical"
+    else
+        log_info "verify_pos: Slack #incidents PASS — message ts=$ts"
+        export SMOKE_SLACK_INCIDENTS_TS="$ts"
+    fi
+}
+
+verify_pos_slack_ops() {
+    log_info "verify_pos: querying Slack #ops history for SmokeTestWarning"
+    local ts
+    ts=$(slack_history_contains "$SLACK_TEST_OPS_CHANNEL_ID" "SmokeTestWarning" || echo "")
+    if [ -z "$ts" ]; then
+        fail_test "Slack #ops: no message matching SmokeTestWarning"
+    else
+        log_info "verify_pos: Slack #ops PASS — message ts=$ts"
+        export SMOKE_SLACK_OPS_TS="$ts"
+    fi
+}
+
+verify_pos() {
+    log_info "verify_pos: positive verification of 3 firing alerts"
+    verify_pos_pagerduty
+    verify_pos_slack_incidents
+    verify_pos_slack_ops
+    verify_pos_linear   # implemented in Task 3.6
+}
+
+# Stub — implementation added in Task 3.6.
+verify_pos_linear() { :; }
 verify_neg() { :; }
 cleanup()    { :; }
 report()     { :; }
