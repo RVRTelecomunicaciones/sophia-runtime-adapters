@@ -114,15 +114,17 @@ func (l *Lifecycle) handleFiring(ctx context.Context, in WebhookEvent) error {
 		return fmt.Errorf("update issue %s: %w", open.ID, err)
 	}
 
-	// Anti-spam (D2C4AB.9): only comment if interval has elapsed since
-	// CreatedAt. Severity-flip and group-set-change conditions are
-	// derivable from richer state; for v0.8.0 we ship the
-	// time-elapsed branch only — the other two require richer event
-	// state (last-comment time, prior-firing fingerprint set) and
-	// would need adapter-side state which I-AB.7 forbids. The
-	// time-elapsed branch alone caps re-comment frequency to 1 per
-	// RecommentMinInterval per issue, which dominates the spam
-	// scenarios in practice.
+	// Anti-spam (D2C4AB.9): only comment if RecommentMinInterval has
+	// elapsed since the issue's CreatedAt. This suppresses comments
+	// for issues younger than RecommentMinInterval; once an issue
+	// ages past that window, every re-firing event adds a comment.
+	// The fuller approaches (last-comment time, severity-flip
+	// fingerprint, group-set-change) require adapter-side state
+	// which I-AB.7 forbids. Accepted for v0.8.0 — those branches
+	// are deferred per spec D2C4AB.9 note. In practice the
+	// suppression dominates because most re-firings happen during
+	// the initial firing window where Alertmanager group_wait +
+	// repeat_interval pacing is densest, and the issue is young.
 	if now.Sub(open.CreatedAt) >= l.cfg.RecommentMinInterval {
 		comment := fmt.Sprintf("Re-firing at %s; %d active alerts in group.",
 			now.Format(time.RFC3339), in.ActiveCount)
