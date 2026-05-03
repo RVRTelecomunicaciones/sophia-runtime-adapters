@@ -413,16 +413,48 @@ cleanup() {
 
     log_info "cleanup: done"
 }
-report()     { :; }
+# report prints the PASS/FAIL summary, dumps logs on FAIL, and
+# determines the script's exit code per the documented contract:
+#   0 — all positive + negative checks passed; cleanup attempted
+#   1 — verification failure (cleanup still attempted)
+report() {
+    log_info "=========================="
+    log_info "smoke-receivers SUMMARY"
+    log_info "=========================="
+    log_info "verification failures: $TEST_FAILURES"
+    if [ "$TEST_FAILURES" -eq 0 ]; then
+        log_info "RESULT: PASS"
+        return 0
+    fi
+    log_err "RESULT: FAIL ($TEST_FAILURES check(s) failed)"
+    log_err "----- alertmanager logs (last 50) -----"
+    docker logs --tail 50 "$(docker ps -q --filter 'name=alertmanager' | head -1)" 2>&1 || true
+    log_err "----- linear-webhook logs (last 50) -----"
+    docker logs --tail 50 "$(docker ps -q --filter 'name=linear-webhook' | head -1)" 2>&1 || true
+    return 1
+}
 
 main() {
-    preflight
+    # Run preflight first; abort on preflight failure (no point
+    # injecting against a broken stack).
+    if ! preflight; then
+        log_err "preflight FAILED — aborting"
+        exit 1
+    fi
+    # Run the rest in a sequence that ALWAYS reaches cleanup +
+    # report, even if a phase fails internally (verify_pos /
+    # verify_neg use fail_test which doesn't exit; inject + wait
+    # use set -e but that's caught by trap below).
+    trap 'cleanup; report; exit 1' ERR
     inject
     wait_phase
     verify_pos
     verify_neg
+    trap - ERR
     cleanup
-    report
+    if ! report; then
+        exit 1
+    fi
 }
 
 main "$@"
