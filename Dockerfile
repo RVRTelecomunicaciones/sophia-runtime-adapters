@@ -1,6 +1,8 @@
 # syntax=docker/dockerfile:1.7
 
-# ---- build stage ---------------------------------------------------------
+# ---- build stage (shared) ------------------------------------------------
+# One build stage compiles ALL binaries; per-binary runtime stages select
+# the artifact via --target. Per D2C4AB.6.
 FROM golang:1.26.2-alpine AS build
 WORKDIR /src
 
@@ -10,7 +12,7 @@ RUN go mod download
 
 COPY . .
 
-# CGO_ENABLED=0 + trimpath + stripped symbols → static binary fit for
+# CGO_ENABLED=0 + trimpath + stripped symbols → static binaries fit for
 # distroless/static. `-s -w` removes symbol + DWARF info; `-trimpath`
 # removes absolute paths from the binary so reproducibility improves.
 RUN CGO_ENABLED=0 go build \
@@ -18,10 +20,14 @@ RUN CGO_ENABLED=0 go build \
     -ldflags="-s -w" \
     -o /out/runtime-adapters ./cmd/runtime-adapters
 
-# ---- runtime stage -------------------------------------------------------
+RUN CGO_ENABLED=0 go build \
+    -trimpath \
+    -ldflags="-s -w" \
+    -o /out/linear-webhook-adapter ./cmd/linear-webhook-adapter
+
+# ---- runtime-adapters runtime stage --------------------------------------
 # Distroless/static: ~2 MiB base, no shell, no package manager, nonroot user.
-# Production-realistic shape; also what 2C.4 will ship.
-FROM gcr.io/distroless/static:nonroot
+FROM gcr.io/distroless/static:nonroot AS runtime-adapters
 
 COPY --from=build /out/runtime-adapters /runtime-adapters
 
@@ -29,3 +35,13 @@ COPY --from=build /out/runtime-adapters /runtime-adapters
 # compose stack uses service-level `cpus:` and `mem_limit:` to enforce
 # the measurement envelope, so nothing else is declared here.
 ENTRYPOINT ["/runtime-adapters"]
+
+# ---- linear-webhook-adapter runtime stage --------------------------------
+# Same distroless base as runtime-adapters. Listens on :9095. Per D2C4AB.4
+# the adapter has independent lifecycle from runtime-adapters — separate
+# container, separate restart, separate health.
+FROM gcr.io/distroless/static:nonroot AS linear-webhook-adapter
+
+COPY --from=build /out/linear-webhook-adapter /linear-webhook-adapter
+
+ENTRYPOINT ["/linear-webhook-adapter"]

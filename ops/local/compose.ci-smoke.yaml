@@ -57,6 +57,7 @@ services:
     build:
       context: ../..
       dockerfile: Dockerfile
+      target: runtime-adapters   # multi-stage: select runtime-adapters explicitly
     cpus: "0.75"
     mem_limit: 768m
     environment:

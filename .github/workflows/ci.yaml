@@ -453,3 +453,55 @@ jobs:
           # + TestCalibrationReport_Structure skip when artifacts absent.
           # TestCalibrationReport_TemplateRenderable always runs.
           go test -tags loadreport -v ./ops/slo/calibration-reports/...
+
+  # --------------------------------------------------------------------
+  # Phase 2C.4 / A+B — Layer 1: secret scanning (gitleaks)
+  # --------------------------------------------------------------------
+  # Per D2C4AB.16 + I-AB.2. Catches accidental credential commits to
+  # any branch via gitleaks's ~100 default patterns (PagerDuty routing
+  # keys, Slack incoming webhook URLs, Linear API tokens, AWS keys,
+  # GitHub PATs). Runs on every PR and every push to main.
+  secret-scan:
+    name: secret-scan (gitleaks, Layer 1)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read    # gitleaks-action lists PR commits via the GH API
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0     # full history — gitleaks scans the full diff
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # --------------------------------------------------------------------
+  # Phase 2C.4 / A+B — Layer 2: env var name guard
+  # --------------------------------------------------------------------
+  # Per D2C4AB.16 + I-AB.2 + spec §9.2. Rejects any env var with
+  # PROD_ prefix or infix in the CI environment. Convention: prod
+  # credentials use PROD_ (PAGERDUTY_PROD_ROUTING_KEY,
+  # LINEAR_PROD_API_TOKEN); test-tenant vars omit it.
+  env-var-guard:
+    name: env-var-guard (Layer 2)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reject prod credential env vars
+        run: |
+          set -euo pipefail
+          # `env | sed 's/=.*//'` extracts the NAME (left of the first
+          # '=') so we MUST not match against values (which could
+          # legitimately contain the substring 'PROD' inside a path).
+          # The grep -E pattern matches any env var whose NAME starts
+          # with PROD_ or contains _PROD_ or _PRODUCTION_.
+          leaked=$(env | sed 's/=.*//' | grep -E '^(PROD_|.*_PROD_|.*_PRODUCTION_)' || true)
+          if [ -n "$leaked" ]; then
+            echo "FATAL: production credential env vars present in CI environment:"
+            echo "$leaked"
+            echo
+            echo "Per D2C4AB.16 / I-AB.2, CI never loads production credentials."
+            echo "If a workflow added these vars, remove them. If a GitHub Secret"
+            echo "with a PROD_ prefix exists, it must NOT be exposed to this job."
+            exit 1
+          fi
+          echo "env-var-guard PASS: no PROD_ env vars in CI"
