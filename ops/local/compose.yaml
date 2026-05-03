@@ -217,9 +217,64 @@ services:
     depends_on:
       runtime-adapters: { condition: service_started }
 
+  # ---- alertmanager: real receivers (Phase 2C.4 / A+B) -----------------
+  # Phase 2C.4 / A+B B1 — wires ops-critical (PD + Slack) and
+  # ops-warnings (Slack) receivers. Linear webhook adapter joins this
+  # network in B2 as the `linear-webhook` service.
+  #
+  # Credentials are read from files mounted via Docker Compose
+  # secrets (A2C4AB.4 — Alertmanager does not support $VAR
+  # substitution natively; *_file directives are the official
+  # pattern since v0.25.0). The .secrets/ directory on the host
+  # is gitignored and populated by `make secrets-write` from .env
+  # (Task 1.6.5). Operators populate .env from the test tenant per
+  # docs/test-tenant.md (ships in B3). CI never starts this service
+  # against production credentials — the 4-layer guardrail
+  # (gitleaks + env-var-guard + bootstrap mode lock + tenant
+  # fingerprinting) blocks that path.
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    cpus: "0.5"
+    mem_limit: 256m
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yaml"
+      - "--storage.path=/alertmanager"
+    volumes:
+      - ../alertmanager/alertmanager.yaml:/etc/alertmanager/alertmanager.yaml:ro
+    secrets:
+      - pagerduty_routing_key
+      - slack_incidents_webhook_url
+      - slack_ops_webhook_url
+    ports:
+      - "9093:9093"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:9093/-/ready"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+      start_period: 5s
+    profiles: ["receivers"]
+    networks:
+      - runtime-load
+
 networks:
   runtime-load:
     driver: bridge
 
 volumes:
   summaries:
+
+# ---- secrets (Phase 2C.4 / A+B) -----------------------------------------
+# Credentials for the real receivers. Source files live under
+# ./.secrets/ (gitignored) and are populated from .env by `make
+# secrets-write` (Task 1.6.5). Alertmanager v0.27.0 auto-trims
+# trailing whitespace for slack api_url_file (since v0.25.0); the
+# Make target writes pagerduty_routing_key with `printf "%s"` as
+# defense in depth. See spec §11.5.
+secrets:
+  pagerduty_routing_key:
+    file: ../../.secrets/pagerduty_routing_key
+  slack_incidents_webhook_url:
+    file: ../../.secrets/slack_incidents_webhook_url
+  slack_ops_webhook_url:
+    file: ../../.secrets/slack_ops_webhook_url
