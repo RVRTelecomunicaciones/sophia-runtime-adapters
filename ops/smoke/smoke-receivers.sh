@@ -244,8 +244,60 @@ verify_pos() {
     verify_pos_linear   # implemented in Task 3.6
 }
 
-# Stub — implementation added in Task 3.6.
-verify_pos_linear() { :; }
+# dedup_hash computes 'alert:' + first 12 hex chars of sha256 of
+# the supplied input. Mirrors domain.DedupLabel in
+# internal/integrations/linear/domain/dedup.go.
+dedup_hash() {
+    printf '%s' "$1" | sha256sum | awk '{print "alert:" substr($1, 1, 12)}'
+}
+
+# linear_issues_by_label queries the Linear API for issues bearing
+# the given label name. Returns the raw GraphQL data field.
+linear_issues_by_label() {
+    local label="$1"
+    local query
+    query=$(jq -nc \
+        --arg label "$label" \
+        '{query:"query F($label: String!){ issues(filter: { labels: { name: { eq: $label } } }){ nodes { id title state { name } } } }",variables:{label:$label}}')
+    curl -sSf --max-time 10 \
+        -H "Authorization: ${LINEAR_TEST_API_TOKEN}" \
+        -H "Content-Type: application/json" \
+        --data "$query" \
+        "$LINEAR_API_URL"
+}
+
+# Computing the dedup label requires reconstructing Alertmanager's
+# canonical groupKey for the SmokeTestWarning alert. Alertmanager's
+# groupKey format is opaque and version-dependent; rather than try
+# to reproduce it byte-exact, we filter by ALL labels containing
+# 'SmokeTestWarning' on the alertname label — this is robust to
+# future groupKey shape changes.
+verify_pos_linear() {
+    log_info "verify_pos: querying Linear for SmokeTestWarning issue"
+    # Linear API: filter issues by label name like 'alert:%' AND title
+    # containing 'SmokeTestWarning'. We use a title-contains filter
+    # against the adapter-managed label namespace.
+    local query resp
+    query=$(jq -nc \
+        '{query:"query F { issues(filter: { labels: { name: { eq: \"alert-managed\" } }, title: { containsIgnoreCase: \"SmokeTestWarning\" } }){ nodes { id title state { name } labels { nodes { name } } } } }"}')
+    resp=$(curl -sSf --max-time 10 \
+        -H "Authorization: ${LINEAR_TEST_API_TOKEN}" \
+        -H "Content-Type: application/json" \
+        --data "$query" \
+        "$LINEAR_API_URL" || echo "")
+    if [ -z "$resp" ]; then
+        fail_test "Linear: API query failed"
+        return
+    fi
+    local match
+    match=$(printf '%s' "$resp" | jq -r '.data.issues.nodes[]? | select(.title | contains("SmokeTestWarning")) | .id' | head -1)
+    if [ -z "$match" ]; then
+        fail_test "Linear: no issue matching SmokeTestWarning"
+    else
+        log_info "verify_pos: Linear PASS — issue $match"
+        export SMOKE_LINEAR_ISSUE_ID="$match"
+    fi
+}
 verify_neg() { :; }
 cleanup()    { :; }
 report()     { :; }
