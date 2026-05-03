@@ -231,11 +231,16 @@ secrets-clean:
 	@rm -rf .secrets
 	@echo "secrets-clean: .secrets/ removed"
 
-# receivers-up / receivers-down: start/stop the alertmanager
-# service via the 'receivers' profile (compose.yaml). Depends on
-# secrets-write so the source files exist at compose-up time.
+# receivers-up / receivers-down: start/stop the alertmanager service
+# via the receivers overlay (ops/local/compose.receivers.yaml).
+# Composed from the base compose.yaml + the receivers-specific
+# overlay (alertmanager service + secrets block). Depends on
+# secrets-write so the source files exist at compose-up time. See
+# ops/local/compose.receivers.yaml header for why we use an overlay
+# instead of profile-gating in the base compose (chaos overlay
+# collision avoidance).
 receivers-up: secrets-write
-	docker compose -f ops/local/compose.yaml --profile receivers up -d --wait alertmanager
+	docker compose -f ops/local/compose.yaml -f ops/local/compose.receivers.yaml up -d --wait alertmanager
 
 receivers-down:
-	docker compose -f ops/local/compose.yaml --profile receivers down
+	docker compose -f ops/local/compose.yaml -f ops/local/compose.receivers.yaml down

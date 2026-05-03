@@ -1,0 +1,79 @@
+# ops/local/compose.receivers.yaml — Phase 2C.4 / A+B receivers overlay.
+#
+# Adds the alertmanager service + Docker Compose secrets block on top
+# of the base compose.yaml. NOT loaded by the load-baseline measurement
+# env (preserves ADR 0008 envelope) — invoked explicitly by:
+#
+#   make receivers-up      # writes .secrets/, brings alertmanager up
+#   make receivers-down    # stops + removes alertmanager
+#
+# Or directly:
+#
+#   docker compose -f ops/local/compose.yaml \
+#                  -f ops/local/compose.receivers.yaml \
+#                  up -d --wait alertmanager
+#
+# Why a separate overlay (not a 'profiles' field on the base compose):
+# the chaos overlay (compose.chaos.yaml) defines its own alertmanager
+# and a `depends_on: alertmanager` on runtime-adapters. If the base
+# compose.yaml also defined alertmanager (with profiles), the merge
+# inherits the profile field — and chaos runs without --profile receivers
+# would see a profile-filtered alertmanager service, leaving the
+# depends_on dangling ("undefined service alertmanager"). Separating
+# concerns into overlays avoids that merge collision and matches the
+# pattern chaos already uses.
+
+name: runtime-load
+
+services:
+  # alertmanager: real receivers (Phase 2C.4 / A+B B1).
+  #
+  # Wires ops-critical (PD + Slack) and ops-warnings (Slack) receivers.
+  # Linear webhook adapter joins this network in B2 as the
+  # `linear-webhook` service.
+  #
+  # Credentials are read from files mounted via Docker Compose secrets
+  # (A2C4AB.4 — Alertmanager does not support $VAR substitution
+  # natively; *_file directives are the official pattern since v0.25.0).
+  # The .secrets/ directory on the host is gitignored and populated by
+  # `make secrets-write` from .env. Operators populate .env from the
+  # test tenant per docs/test-tenant.md (ships in B3). CI never starts
+  # this service against production credentials — the 4-layer guardrail
+  # blocks that path.
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    cpus: "0.5"
+    mem_limit: 256m
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yaml"
+      - "--storage.path=/alertmanager"
+    volumes:
+      - ../alertmanager/alertmanager.yaml:/etc/alertmanager/alertmanager.yaml:ro
+    secrets:
+      - pagerduty_routing_key
+      - slack_incidents_webhook_url
+      - slack_ops_webhook_url
+    ports:
+      - "9093:9093"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:9093/-/ready"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+      start_period: 5s
+    networks:
+      - runtime-load
+
+# Credentials for the real receivers. Source files live under
+# ./.secrets/ (gitignored) and are populated from .env by `make
+# secrets-write`. Alertmanager v0.27.0 auto-trims trailing whitespace
+# for slack api_url_file (since v0.25.0); the Make target writes
+# pagerduty_routing_key with `printf "%s"` as defense in depth.
+# See spec §11.5.
+secrets:
+  pagerduty_routing_key:
+    file: ../../.secrets/pagerduty_routing_key
+  slack_incidents_webhook_url:
+    file: ../../.secrets/slack_incidents_webhook_url
+  slack_ops_webhook_url:
+    file: ../../.secrets/slack_ops_webhook_url
