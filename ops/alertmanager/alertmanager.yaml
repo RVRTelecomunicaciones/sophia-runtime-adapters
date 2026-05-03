@@ -32,13 +32,13 @@ route:
   repeat_interval: 4h
   routes:
     - matchers: [ 'severity="critical"' ]
-      receiver: null-receiver    # 2C.4 swaps to oncall-pager
+      receiver: ops-critical    # PagerDuty + Slack #incidents (D2C4AB.2)
       group_wait: 30s
       group_interval: 5m
       repeat_interval: 30m
       continue: false
     - matchers: [ 'severity="warning"' ]
-      receiver: null-receiver    # 2C.4 swaps to ops-tickets
+      receiver: ops-warnings    # Slack #ops + Linear webhook (D2C4AB.3); webhook lands in B2
       group_wait: 1m
       group_interval: 15m
       repeat_interval: 4h
@@ -47,9 +47,51 @@ route:
     # silenced by design.
 
 receivers:
+  # null-receiver remains the silenced sink for severity=info (I-AB.1)
+  # and the root catch-all for any future severity that falls through.
   - name: null-receiver
-    # Intentionally empty. Real receivers (oncall-pager, ops-tickets)
-    # land in Phase 2C.4.
+
+  # ops-critical: pages on-call via PagerDuty Events API v2 AND posts
+  # to Slack #incidents in parallel for team visibility (D2C4AB.2 +
+  # A2C4AB.1). Credentials are read from files mounted via Docker
+  # Compose secrets (see Task 1.6 + 1.6.5). Alertmanager v0.27.0
+  # auto-trims trailing whitespace for slack api_url_file (since
+  # v0.25.0); the Make target writes the routing_key file with
+  # printf "%s" as defense-in-depth. See spec A2C4AB.4 for the
+  # rationale on file-based vs $VAR template syntax.
+  - name: ops-critical
+    pagerduty_configs:
+      - routing_key_file: /run/secrets/pagerduty_routing_key
+        severity: '{{ .CommonLabels.severity }}'
+        description: '{{ .CommonAnnotations.summary }}'
+        details:
+          capability: '{{ .CommonLabels.capability }}'
+          adapter:    '{{ .CommonLabels.adapter }}'
+          sloth_slo:  '{{ .CommonLabels.sloth_slo }}'
+          external_url: '{{ .ExternalURL }}'
+    slack_configs:
+      - api_url_file: /run/secrets/slack_incidents_webhook_url
+        channel: "#incidents"
+        title: '🚨 [CRIT] {{ .CommonLabels.alertname }}'
+        text: |
+          *Capability:* `{{ .CommonLabels.capability }}`
+          *Summary:* {{ .CommonAnnotations.summary }}
+          <{{ .ExternalURL }}|View in Alertmanager>
+        send_resolved: true
+
+  # ops-warnings: posts to Slack #ops (B1). Linear webhook ships in
+  # B2 (D2C4AB.3 + D2C4AB.17 bundle plan). Slack credential read from
+  # mounted secret file.
+  - name: ops-warnings
+    slack_configs:
+      - api_url_file: /run/secrets/slack_ops_webhook_url
+        channel: "#ops"
+        title: '⚠️ [WARN] {{ .CommonLabels.alertname }}'
+        text: |
+          *Capability:* `{{ .CommonLabels.capability }}`
+          *Summary:* {{ .CommonAnnotations.summary }}
+          <{{ .ExternalURL }}|View in Alertmanager>
+        send_resolved: true
 
 inhibit_rules:
   - source_matchers: [ 'severity="critical"' ]
