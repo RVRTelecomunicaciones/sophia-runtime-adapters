@@ -114,8 +114,55 @@ preflight() {
 
     log_info "preflight: OK"
 }
-inject()     { :; }
-wait_phase() { :; }
+# inject pushes 3 alerts via amtool: critical, warning, info. Each
+# uses a distinct alertname prefixed with SmokeTest so positive +
+# negative checks can scope by alertname. Per D2C4AB.11.
+inject() {
+    log_info "inject: pushing 3 alerts (critical, warning, info) via amtool"
+    local now
+    now=$(date -u +%FT%TZ)
+
+    amtool --alertmanager.url="$AM_URL" alert add \
+        alertname="${SMOKE_LABEL_PREFIX}Critical" \
+        severity=critical \
+        adapter=smoke \
+        capability=smoke.test@v1 \
+        --start="$now" \
+        --annotation=summary="Smoke test critical — verifies routing to PagerDuty + Slack #incidents"
+
+    amtool --alertmanager.url="$AM_URL" alert add \
+        alertname="${SMOKE_LABEL_PREFIX}Warning" \
+        severity=warning \
+        adapter=smoke \
+        capability=smoke.test@v1 \
+        --start="$now" \
+        --annotation=summary="Smoke test warning — verifies routing to Slack #ops + Linear webhook"
+
+    amtool --alertmanager.url="$AM_URL" alert add \
+        alertname="${SMOKE_LABEL_PREFIX}Info" \
+        severity=info \
+        adapter=smoke \
+        capability=smoke.test@v1 \
+        --start="$now" \
+        --annotation=summary="Smoke test info — must NOT reach any receiver (I-AB.1)"
+
+    log_info "inject: 3 alerts pushed"
+}
+
+# wait_phase sleeps WAIT_SECONDS so Alertmanager group_wait timers
+# (30s critical, 60s warning) elapse and the receivers actually
+# fire. Logs progress every 15s so the operator sees the smoke
+# isn't hung.
+wait_phase() {
+    log_info "wait_phase: sleeping ${WAIT_SECONDS}s for Alertmanager grouping windows + buffer"
+    local elapsed=0
+    while [ "$elapsed" -lt "$WAIT_SECONDS" ]; do
+        sleep 15
+        elapsed=$((elapsed + 15))
+        log_info "wait_phase: ${elapsed}/${WAIT_SECONDS}s elapsed"
+    done
+    log_info "wait_phase: done"
+}
 verify_pos() { :; }
 verify_neg() { :; }
 cleanup()    { :; }
