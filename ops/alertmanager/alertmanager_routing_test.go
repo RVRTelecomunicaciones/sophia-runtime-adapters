@@ -64,11 +64,29 @@ func TestAlertmanager_AllRouteReceiversDeclared(t *testing.T) {
 	for _, r := range cfg.Receivers {
 		names[r.Name] = true
 	}
-	require.True(t, names[cfg.Route.Receiver],
-		"root route receiver %q not declared", cfg.Route.Receiver)
+	// Root receiver: null-receiver remains the silenced sink for severity=info
+	// (I-AB.1). Sub-route receivers: ops-critical (severity=critical) and
+	// ops-warnings (severity=warning) replace the 2C.1 null-receiver
+	// placeholders (D2C4AB.2 / D2C4AB.3).
+	require.Equal(t, "null-receiver", cfg.Route.Receiver,
+		"root route receiver must remain null-receiver for info silencing (I-AB.1)")
+	require.True(t, names["null-receiver"], "null-receiver must be declared")
+	require.True(t, names["ops-critical"], "ops-critical receiver must be declared (D2C4AB.2)")
+	require.True(t, names["ops-warnings"], "ops-warnings receiver must be declared (D2C4AB.3)")
+
+	// Sub-route severity → receiver mapping must match the spec.
+	wantBySeverity := map[string]string{
+		`severity="critical"`: "ops-critical",
+		`severity="warning"`:  "ops-warnings",
+	}
 	for _, r := range cfg.Route.Routes {
 		require.True(t, names[r.Receiver],
 			"sub-route receiver %q not declared", r.Receiver)
+		require.NotEmpty(t, r.Matchers, "sub-route must have matchers")
+		want, ok := wantBySeverity[r.Matchers[0]]
+		require.True(t, ok, "unexpected sub-route matcher %q", r.Matchers[0])
+		require.Equal(t, want, r.Receiver,
+			"sub-route %q must point to receiver %q", r.Matchers[0], want)
 	}
 }
 
