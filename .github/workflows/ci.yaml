@@ -236,6 +236,13 @@ jobs:
     name: integration (PR only)
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    # Layer 3 (D2C4AB.16 / spec §9.3): BuildRuntime aborts under
+    # CI=true unless RUNTIME_TENANT=test. This job runs Go tests
+    # directly against testcontainer Postgres — it IS test
+    # infrastructure, so declare it explicitly. Without this, the
+    # mode lock (correctly) refuses to instantiate the runtime.
+    env:
+      RUNTIME_TENANT: test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -249,6 +256,9 @@ jobs:
     name: e2e (main only)
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    # Layer 3 — same rationale as the integration job above.
+    env:
+      RUNTIME_TENANT: test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

@@ -1,6 +1,8 @@
 package bootstrap
 
 import (
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/sophia-ecosystem/runtime-adapters/internal/infrastructure/config"
@@ -56,5 +58,40 @@ func TestAdapterConfig_TranslatesCorrectly(t *testing.T) {
 	}
 	if ac.HTTP.InlineStreamLimit != 16*1024 {
 		t.Errorf("http InlineStreamLimit: got %d, want %d", ac.HTTP.InlineStreamLimit, 16*1024)
+	}
+}
+
+// TestRuntime_AbortsInCIWithoutTestTenant verifies the Layer 3
+// runtime-side mode lock per spec §9.3 + D2C4AB.16. Aborts startup
+// if CI=true && RUNTIME_TENANT != "test".
+//
+// Uses the helper enforceRuntimeModeLock so the test does NOT
+// require a real Postgres + OTel stack — pure env-var logic.
+func TestRuntime_AbortsInCIWithoutTestTenant(t *testing.T) {
+	tests := []struct {
+		name    string
+		env     map[string]string
+		wantErr bool
+	}{
+		{"local + non-test tenant: ok", map[string]string{"CI": "", "RUNTIME_TENANT": "prod"}, false},
+		{"CI + test tenant: ok", map[string]string{"CI": "true", "RUNTIME_TENANT": "test"}, false},
+		{"CI + non-test tenant: ABORT", map[string]string{"CI": "true", "RUNTIME_TENANT": "prod"}, true},
+		{"CI + missing tenant: ABORT", map[string]string{"CI": "true"}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := enforceRuntimeModeLock(func(k string) string { return tt.env[k] })
+			if (err != nil) != tt.wantErr {
+				t.Errorf("err = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.wantErr && err != nil {
+				if !errors.Is(err, errRuntimeModeLock) {
+					t.Errorf("err must wrap errRuntimeModeLock, got %v", err)
+				}
+				if !strings.Contains(err.Error(), "RUNTIME_TENANT") {
+					t.Errorf("err must mention RUNTIME_TENANT, got %v", err)
+				}
+			}
+		})
 	}
 }

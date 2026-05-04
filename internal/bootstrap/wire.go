@@ -11,8 +11,11 @@ package bootstrap
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	nethttp "net/http"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -38,6 +41,21 @@ import (
 	"github.com/sophia-ecosystem/runtime-adapters/internal/ports/outbound"
 )
 
+// errRuntimeModeLock is the sentinel returned when the Layer 3
+// runtime-side mode lock fires per spec §9.3 + D2C4AB.16.
+var errRuntimeModeLock = errors.New("CI must run with RUNTIME_TENANT=test")
+
+// enforceRuntimeModeLock implements Layer 3 (runtime side) per spec
+// §9.3 + D2C4AB.16. Aborts startup if CI=true && RUNTIME_TENANT !=
+// "test". getenv is injectable for hermetic testing — production
+// callers pass os.Getenv via BuildRuntime.
+func enforceRuntimeModeLock(getenv func(string) string) error {
+	if strings.ToLower(getenv("CI")) == "true" && getenv("RUNTIME_TENANT") != "test" {
+		return fmt.Errorf("%w: got RUNTIME_TENANT=%q", errRuntimeModeLock, getenv("RUNTIME_TENANT"))
+	}
+	return nil
+}
+
 // Runtime is the live wiring returned by BuildRuntime. Consumers
 // (cmd/runtime-adapters/main.go) call Server.ListenAndServe and later
 // Shutdown to tear down.
@@ -61,6 +79,15 @@ type Runtime struct {
 // HTTP server (not yet started), the pgx pool, and a shutdown function.
 // On error, already-opened resources are released before return.
 func BuildRuntime(ctx context.Context, cfg config.Config) (*Runtime, error) {
+	// 0. Layer 3 runtime-side mode lock (Phase 2C.4 / A+B B3).
+	//    Aborts startup if CI=true && RUNTIME_TENANT != "test".
+	//    Pre-empts any other initialization (logger, OTel, pool) so
+	//    a misconfigured CI run never opens connections to prod
+	//    Postgres or pages a real Slack channel.
+	if err := enforceRuntimeModeLock(os.Getenv); err != nil {
+		return nil, err
+	}
+
 	// 1. Root logger. Constructed BEFORE OTel so obs setup (and any later
 	//    step) has a concrete logger available if it needs to emit. A
 	//    logger build failure aborts startup (fail fast — invalid

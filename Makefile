@@ -1,4 +1,4 @@
-.PHONY: all build test test-unit test-contract test-integration test-e2e chaos-integration lint vet fmt cover clean run help sloth-generate test-obs test-rules test-alertmanager test-dashboards test-observability load-up load-down load-baseline load-smoke-local fixture-git-bench chaos-up chaos-up-toxiproxy chaos-down chaos-local chaos-dump chaos-render-rules chaos-render-rules-check chaos-canary chaos-e2e-comprehensive secrets-write secrets-clean receivers-up receivers-down
+.PHONY: all build test test-unit test-contract test-integration test-e2e chaos-integration lint vet fmt cover clean run help sloth-generate test-obs test-rules test-alertmanager test-dashboards test-observability load-up load-down load-baseline load-smoke-local fixture-git-bench chaos-up chaos-up-toxiproxy chaos-down chaos-local chaos-dump chaos-render-rules chaos-render-rules-check chaos-canary chaos-e2e-comprehensive secrets-write secrets-clean receivers-up receivers-down smoke-receivers
 
 GO              ?= go
 GOLANGCI_LINT   ?= golangci-lint
@@ -244,3 +244,8 @@ receivers-up: secrets-write
 
 receivers-down:
 	docker compose -f ops/local/compose.yaml -f ops/local/compose.receivers.yaml down
+
+# ----- Phase 2C.4 / A+B B3 — smoke target -----
+
+smoke-receivers:          ## End-to-end smoke for PD + Slack + Linear receivers (operator-driven)
+	./ops/smoke/smoke-receivers.sh
