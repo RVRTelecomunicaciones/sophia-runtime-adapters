@@ -53,7 +53,17 @@ func TestULIDGen_ProducesValid26CharULIDs(t *testing.T) {
 func TestULIDGen_SeededReaderProducesConsistentFormat(t *testing.T) {
 	// Use a seeded math/rand/v2 source for reproducibility.
 	// We cannot use ulid.Monotonic here without importing ulid in the test package,
-	// so we just verify format and that re-seeding produces the same sequence.
+	// so we just verify format and that re-seeding produces the same entropy.
+	//
+	// ULID layout (26 chars total, Crockford base-32):
+	//   chars 0..9   — millisecond timestamp from ulid.Now() (NOT deterministic
+	//                  by design — its purpose is k-sortability, not clock semantics).
+	//   chars 10..25 — 80-bit randomness drawn from Entropy.
+	//
+	// We compare ONLY the entropy portion: same seed must produce the same
+	// entropy regardless of when the calls land relative to the ms boundary.
+	// Comparing the full 26 chars used to flake on slow CI runners when the
+	// two New() calls straddled a millisecond.
 	src := rand.NewChaCha8([32]byte{1, 2, 3})
 	gen := entities.ULIDGen{Entropy: src}
 
@@ -65,13 +75,14 @@ func TestULIDGen_SeededReaderProducesConsistentFormat(t *testing.T) {
 		t.Fatalf("seeded ULIDGen: NewHandleID(%q) failed: %v", first, err)
 	}
 
-	// Re-seed with same key — expect same first output.
+	// Re-seed with same key — expect same entropy portion.
 	src2 := rand.NewChaCha8([32]byte{1, 2, 3})
 	gen2 := entities.ULIDGen{Entropy: src2}
 	second := gen2.New()
 
-	if first != second {
-		t.Errorf("seeded ULIDGen: same seed produced different output: %q vs %q", first, second)
+	if first[10:] != second[10:] {
+		t.Errorf("seeded ULIDGen: same seed produced different entropy: %q vs %q (entropy %q vs %q)",
+			first, second, first[10:], second[10:])
 	}
 }
 
