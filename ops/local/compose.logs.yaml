@@ -21,6 +21,41 @@ name: runtime-load
 
 services:
 
+  # init-logs-permissions: one-shot init container that fixes ownership
+  # of the named volumes BEFORE consuming services start.
+  #
+  # WHY: Docker creates named volumes as root:root 0755 by default. The
+  # runtime services run as UID 65532 (distroless/static:nonroot) and
+  # cannot write into a root-owned mount. The otel-collector image runs
+  # as UID 10001 and cannot write into otel-checkpoints either.
+  #
+  # This init runs alpine, chowns each volume to its consumer's UID,
+  # then exits 0. Compose's `service_completed_successfully` condition
+  # then unblocks the runtime + collector services. Cost: ~1s of
+  # alpine pull + chown on first run; cached afterward.
+  init-logs-permissions:
+    image: alpine:3.20
+    user: "0:0"
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        # log dirs: runtime services (UID 65532) need to write; collector (UID 10001) reads
+        chown 65532:65532 /var/log/runtime-adapters /var/log/linear-webhook /var/log/grafana-annotations-webhook
+        chmod 0755         /var/log/runtime-adapters /var/log/linear-webhook /var/log/grafana-annotations-webhook
+        # checkpoints dir: collector (UID 10001) writes its filelog offsets
+        chown 10001:10001 /var/lib/otel/checkpoints
+        chmod 0755         /var/lib/otel/checkpoints
+        echo "log volume permissions fixed"
+    volumes:
+      - logs-runtime:/var/log/runtime-adapters
+      - logs-linear:/var/log/linear-webhook
+      - logs-grafana-annotations:/var/log/grafana-annotations-webhook
+      - otel-checkpoints:/var/lib/otel/checkpoints
+    networks:
+      - runtime-load
+
   loki:
     image: grafana/loki:3.3.2   # MUST match ops/loki/.loki-version
     cpus: "1.0"
@@ -52,6 +87,8 @@ services:
       - logs-grafana-annotations:/var/log/grafana-annotations-webhook:ro
       - otel-checkpoints:/var/lib/otel/checkpoints
     depends_on:
+      init-logs-permissions:
+        condition: service_completed_successfully
       loki:
         condition: service_healthy
 
@@ -61,6 +98,9 @@ services:
       RUNTIME_LOG_MIRROR_PATH: /var/log/runtime-adapters/runtime.jsonl
     volumes:
       - logs-runtime:/var/log/runtime-adapters
+    depends_on:
+      init-logs-permissions:
+        condition: service_completed_successfully
 
 # ----- networks (re-declared as `external: false` so compose merge
 # keeps the runtime-load network shape unchanged) -----
