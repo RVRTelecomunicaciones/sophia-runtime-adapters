@@ -535,9 +535,6 @@ jobs:
           LOKI_VERSION=$(cat ops/loki/.loki-version)
           # The Loki binary's `-verify-config` exercises schema_config,
           # storage_config, ruler, distributor.otlp_config and limits.
-          # The file_storage extension's directory existence check is
-          # NOT in scope here (collector-side concern, covered by
-          # otelcol-config-verify with a tmpdir bind mount).
           docker run --rm \
             -v "$PWD/ops/loki/loki.yaml:/etc/loki/loki.yaml:ro" \
             "grafana/loki:$LOKI_VERSION" \

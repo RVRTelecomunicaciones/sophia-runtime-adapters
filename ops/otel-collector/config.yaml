@@ -29,7 +29,6 @@ receivers:
     include:
       - /var/log/runtime-adapters/*.jsonl
     start_at: end
-    storage: file_storage/filelog_offsets
     operators:
       - type: json_parser
         parse_from: body
@@ -56,7 +55,6 @@ receivers:
     include:
       - /var/log/linear-webhook/*.jsonl
     start_at: end
-    storage: file_storage/filelog_offsets
     operators:
       - type: json_parser
         parse_from: body
@@ -83,7 +81,6 @@ receivers:
     include:
       - /var/log/grafana-annotations-webhook/*.jsonl
     start_at: end
-    storage: file_storage/filelog_offsets
     operators:
       - type: json_parser
         parse_from: body
@@ -144,13 +141,14 @@ extensions:
   health_check:
     endpoint: 0.0.0.0:13133
 
-  # file_storage extension persists filelog offset checkpoints across
-  # collector restarts so we don't replay historical lines.
-  file_storage/filelog_offsets:
-    directory: /var/lib/otel/checkpoints
+# NOTE: file_storage offset persistence was DROPPED for V1 (A2C4D.6).
+# Trade-off: on collector restart, filelog start_at: end resumes from
+# the END of each file → records written during the restart window
+# are lost. Acceptable in dev/CI; production-grade durability lands
+# with C (k8s manifests + persistent storage).
 
 service:
-  extensions: [health_check, file_storage/filelog_offsets]
+  extensions: [health_check]
   # NOTE: service.telemetry.metrics is intentionally NOT set here.
   # In OTel Collector Contrib 0.106 the default telemetry config
   # already exposes the collector's own metrics on :8888/metrics

@@ -44,15 +44,11 @@ services:
         # log dirs: runtime services (UID 65532) need to write; collector (UID 10001) reads
         chown 65532:65532 /var/log/runtime-adapters /var/log/linear-webhook /var/log/grafana-annotations-webhook
         chmod 0755         /var/log/runtime-adapters /var/log/linear-webhook /var/log/grafana-annotations-webhook
-        # checkpoints dir: collector (UID 10001) writes its filelog offsets
-        chown 10001:10001 /var/lib/otel/checkpoints
-        chmod 0755         /var/lib/otel/checkpoints
         echo "log volume permissions fixed"
     volumes:
       - logs-runtime:/var/log/runtime-adapters
       - logs-linear:/var/log/linear-webhook
       - logs-grafana-annotations:/var/log/grafana-annotations-webhook
-      - otel-checkpoints:/var/lib/otel/checkpoints
     networks:
       - runtime-load
 
@@ -85,7 +81,6 @@ services:
       - logs-runtime:/var/log/runtime-adapters:ro
       - logs-linear:/var/log/linear-webhook:ro
       - logs-grafana-annotations:/var/log/grafana-annotations-webhook:ro
-      - otel-checkpoints:/var/lib/otel/checkpoints
     depends_on:
       init-logs-permissions:
         condition: service_completed_successfully
@@ -110,7 +105,6 @@ networks:
 
 volumes:
   loki-data:
-  otel-checkpoints:
   logs-runtime:
   logs-linear:
   logs-grafana-annotations:
