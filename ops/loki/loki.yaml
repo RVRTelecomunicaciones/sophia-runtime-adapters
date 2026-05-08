@@ -1,0 +1,61 @@
+# ops/loki/loki.yaml
+#
+# Loki single-binary config for the Phase 2C.4 / D log pipeline.
+# Native OTLP receiver enabled; filesystem TSDB; no auth (single-tenant local).
+# Retention sizing is OUT OF SCOPE per roadmap §D — operational decision in C.
+
+auth_enabled: false
+
+server:
+  http_listen_address: 0.0.0.0
+  http_listen_port: 3100
+  grpc_listen_address: 0.0.0.0
+  grpc_listen_port: 9095   # Loki internal gRPC; not the linear-webhook port (which is HTTP 9095 inside its own container)
+  log_level: info
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: 2024-01-01
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+limits_config:
+  ingestion_rate_mb: 10
+  ingestion_burst_size_mb: 20
+  reject_old_samples: true
+  reject_old_samples_max_age: 168h
+  max_global_streams_per_user: 5000
+  allow_structured_metadata: true
+
+# Enable the OTLP HTTP receiver per D2C4D.4. The collector posts to
+# http://loki:3100/otlp; Loki's otlphttp receiver translates OTLP →
+# Loki streams using the OTel resource attribute `service.name` set
+# explicitly by the filelog receiver per include path (D2C4D.16).
+distributor:
+  otlp_config:
+    default_resource_attributes_as_index_labels:
+      - service.name
+      - service.namespace
+
+ruler:
+  storage:
+    type: local
+    local:
+      directory: /loki/rules
+  rule_path: /tmp/loki-rules
