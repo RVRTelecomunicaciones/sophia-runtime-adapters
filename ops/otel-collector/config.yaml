@@ -19,6 +19,93 @@ receivers:
       grpc:
         endpoint: 0.0.0.0:4317
 
+  # filelog receivers tailing JSONL mirror files (D2C4D.2). One named
+  # receiver per service path so the OTel resource attribute service.name
+  # is set as a literal value (A2C4D.2 / D2C4D.16). The shared json_parser
+  # config is duplicated per receiver — small price for clarity vs a
+  # shared YAML anchor.
+
+  filelog/runtime:
+    include:
+      - /var/log/runtime-adapters/*.jsonl
+    start_at: end
+    storage: file_storage/filelog_offsets
+    operators:
+      - type: json_parser
+        parse_from: body
+        parse_to: attributes
+        timestamp:
+          parse_from: attributes.time
+          layout_type: gotime
+          layout: "2006-01-02T15:04:05.000000000Z07:00"
+        severity:
+          parse_from: attributes.level
+          mapping:
+            debug: DEBUG
+            info: INFO
+            warn: WARN
+            error: ERROR
+      - type: add
+        field: resource["service.name"]
+        value: "runtime-adapters"
+      - type: add
+        field: resource["service.namespace"]
+        value: "sophia-ecosystem"
+
+  filelog/linear:
+    include:
+      - /var/log/linear-webhook/*.jsonl
+    start_at: end
+    storage: file_storage/filelog_offsets
+    operators:
+      - type: json_parser
+        parse_from: body
+        parse_to: attributes
+        timestamp:
+          parse_from: attributes.time
+          layout_type: gotime
+          layout: "2006-01-02T15:04:05.000000000Z07:00"
+        severity:
+          parse_from: attributes.level
+          mapping:
+            debug: DEBUG
+            info: INFO
+            warn: WARN
+            error: ERROR
+      - type: add
+        field: resource["service.name"]
+        value: "linear-webhook"
+      - type: add
+        field: resource["service.namespace"]
+        value: "sophia-ecosystem"
+
+  filelog/grafana-annotations:
+    include:
+      - /var/log/grafana-annotations-webhook/*.jsonl
+    start_at: end
+    storage: file_storage/filelog_offsets
+    operators:
+      - type: json_parser
+        parse_from: body
+        parse_to: attributes
+        timestamp:
+          parse_from: attributes.time
+          layout_type: gotime
+          layout: "2006-01-02T15:04:05.000000000Z07:00"
+        severity:
+          parse_from: attributes.level
+          mapping:
+            debug: DEBUG
+            info: INFO
+            warn: WARN
+            error: ERROR
+      - type: add
+        field: resource["service.name"]
+        value: "grafana-annotations-webhook"
+      - type: add
+        field: resource["service.namespace"]
+        value: "sophia-ecosystem"
+
 processors:
   batch:
     # Small timeout keeps the pull-scrape fresh; collector-side
@@ -36,13 +123,34 @@ exporters:
     # carry trace_id (+ receipt_id as FilteredAttributes).
     enable_open_metrics: true
 
+  # otlphttp exporter targeting Loki's native OTLP endpoint per
+  # D2C4D.4. The exporter completes the OTLP-specific subpath
+  # internally; we only configure the base endpoint.
+  otlphttp/loki:
+    endpoint: http://loki:3100/otlp
+    compression: gzip
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 300s
+    sending_queue:
+      enabled: true
+      num_consumers: 4
+      queue_size: 1000
+
 extensions:
   # Health check at :13133/ for compose healthcheck (wget probe).
   health_check:
     endpoint: 0.0.0.0:13133
 
+  # file_storage extension persists filelog offset checkpoints across
+  # collector restarts so we don't replay historical lines.
+  file_storage/filelog_offsets:
+    directory: /var/lib/otel/checkpoints
+
 service:
-  extensions: [health_check]
+  extensions: [health_check, file_storage/filelog_offsets]
   # NOTE: service.telemetry.metrics is intentionally NOT set here.
   # In OTel Collector Contrib 0.106 the default telemetry config
   # already exposes the collector's own metrics on :8888/metrics
@@ -58,3 +166,7 @@ service:
       receivers: [otlp]
       processors: [batch]
       exporters: [prometheus]
+    logs/loki:
+      receivers: [filelog/runtime, filelog/linear, filelog/grafana-annotations]
+      processors: [batch]
+      exporters: [otlphttp/loki]
