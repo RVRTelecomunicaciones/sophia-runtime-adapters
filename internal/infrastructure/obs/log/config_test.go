@@ -1,6 +1,8 @@
 package log
 
 import (
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -38,4 +40,47 @@ func TestConfigValidate_RejectsBadFormat(t *testing.T) {
 func TestConfigValidate_RejectsBadLevel(t *testing.T) {
 	cfg := Config{Format: "text", Level: "trace"}
 	require.ErrorContains(t, cfg.Validate(), "RUNTIME_LOG_LEVEL")
+}
+
+func TestConfig_MirrorPath_DefaultEmpty(t *testing.T) {
+	t.Setenv("RUNTIME_LOG_MIRROR_PATH", "")
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.MirrorPath != "" {
+		t.Errorf("MirrorPath: got %q, want empty (R10 pure)", cfg.MirrorPath)
+	}
+}
+
+func TestConfig_MirrorPath_AbsolutePathRequired(t *testing.T) {
+	t.Setenv("RUNTIME_LOG_MIRROR_PATH", "relative/path.jsonl")
+	_, err := LoadConfig()
+	if err == nil {
+		t.Fatal("LoadConfig: expected error for relative path, got nil")
+	}
+	if !strings.Contains(err.Error(), "absolute") {
+		t.Errorf("error must mention 'absolute': got %v", err)
+	}
+}
+
+func TestConfig_MirrorPath_ParentMustBeWritable(t *testing.T) {
+	t.Setenv("RUNTIME_LOG_MIRROR_PATH", "/proc/this-cannot-be-written/runtime.jsonl")
+	_, err := LoadConfig()
+	if err == nil {
+		t.Fatal("LoadConfig: expected error for non-writable parent, got nil")
+	}
+}
+
+func TestConfig_MirrorPath_HappyPath(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "runtime.jsonl")
+	t.Setenv("RUNTIME_LOG_MIRROR_PATH", path)
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.MirrorPath != path {
+		t.Errorf("MirrorPath: got %q, want %q", cfg.MirrorPath, path)
+	}
 }
