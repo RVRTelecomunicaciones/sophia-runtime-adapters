@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -93,5 +94,29 @@ func TestRuntime_AbortsInCIWithoutTestTenant(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestRuntime_StartupFailsIfMirrorPathInvalid asserts the fail-fast
+// behavior wired in B1.2 + B1.4: when RUNTIME_LOG_MIRROR_PATH points
+// to a non-writable location, BuildRuntime returns an error from the
+// log.New step BEFORE reaching pool / OTel / adapter construction
+// (D2C4D.10 / I-D.1 / R10 strict-config stance).
+func TestRuntime_StartupFailsIfMirrorPathInvalid(t *testing.T) {
+	// Set RUNTIME_TENANT=test so the Layer 3 mode lock (B3 of A+B)
+	// does not abort first; we want to exercise the logger path.
+	t.Setenv("CI", "")
+	t.Setenv("RUNTIME_TENANT", "test")
+	t.Setenv("RUNTIME_LOG_MIRROR_PATH", "/this-dir-must-not-exist-zzz/runtime.jsonl")
+
+	// Other Config fields left zero — BuildRuntime should fail at
+	// log.New BEFORE reaching pool/OTel/adapter construction.
+	cfg := config.Config{}
+	_, err := BuildRuntime(context.Background(), cfg)
+	if err == nil {
+		t.Fatal("BuildRuntime: expected error for invalid RUNTIME_LOG_MIRROR_PATH, got nil")
+	}
+	if !strings.Contains(err.Error(), "log") {
+		t.Errorf("error must mention 'log': got %v", err)
 	}
 }
