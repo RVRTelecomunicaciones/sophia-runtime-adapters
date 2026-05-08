@@ -1,0 +1,76 @@
+# ops/local/compose.logs.yaml
+#
+# Phase 2C.4 / D overlay — Loki + filelog tailing JSONL mirror files.
+#
+# This overlay is COMPOSABLE on top of the base compose.yaml and
+# (optionally) the receivers + chaos overlays. Loki is declared
+# ONLY here; the chaos overlay does NOT redeclare it (D2C4D.5,
+# spec §2.2).
+#
+# Operator combinations:
+#   make logs-up                            # base + logs
+#   make receivers-up && make logs-up       # base + receivers + logs
+#   docker compose -f compose.yaml -f compose.logs.yaml -f compose.chaos.yaml up   # chaos + logs
+#
+# ADR 0008 envelope preservation: this file does NOT mutate the
+# resource limits of any service in compose.yaml. It adds a NEW
+# service (loki) and EXTENDS existing services with volume mounts
+# only — no cpu/memory changes.
+
+name: runtime-load
+
+services:
+
+  loki:
+    image: grafana/loki:3.3.2   # MUST match ops/loki/.loki-version
+    cpus: "1.0"
+    mem_limit: 512m
+    command:
+      - "-config.file=/etc/loki/loki.yaml"
+    volumes:
+      - ../loki/loki.yaml:/etc/loki/loki.yaml:ro
+      - loki-data:/loki
+    ports:
+      - "3100:3100"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3100/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    networks:
+      - runtime-load
+
+  # Extend the existing otel-collector service with:
+  #   1. read-only bind-mounts of the three mirror dirs;
+  #   2. the offset checkpoint volume.
+  otel-collector:
+    volumes:
+      - ../otel-collector/config.yaml:/etc/otel-collector/config.yaml:ro   # repeated from base for compose merge clarity
+      - logs-runtime:/var/log/runtime-adapters:ro
+      - logs-linear:/var/log/linear-webhook:ro
+      - logs-grafana-annotations:/var/log/grafana-annotations-webhook:ro
+      - otel-checkpoints:/var/lib/otel/checkpoints
+    depends_on:
+      loki:
+        condition: service_healthy
+
+  # Extend runtime-adapters with the writable mirror dir.
+  runtime-adapters:
+    environment:
+      RUNTIME_LOG_MIRROR_PATH: /var/log/runtime-adapters/runtime.jsonl
+    volumes:
+      - logs-runtime:/var/log/runtime-adapters
+
+# ----- networks (re-declared as `external: false` so compose merge
+# keeps the runtime-load network shape unchanged) -----
+networks:
+  runtime-load:
+    driver: bridge
+
+volumes:
+  loki-data:
+  otel-checkpoints:
+  logs-runtime:
+  logs-linear:
+  logs-grafana-annotations:
