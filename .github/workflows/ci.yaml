@@ -515,3 +515,91 @@ jobs:
             exit 1
           fi
           echo "env-var-guard PASS: no PROD_ env vars in CI"
+
+  # --------------------------------------------------------------------
+  # Phase 2C.4 / D — B1.12: 4 gate jobs for the log signal pipeline
+  # --------------------------------------------------------------------
+  # Per A2C4D.5: closure criterion 10 lands here as explicit jobs (no
+  # plan-time deferrals). Each gate is independent + failable on its own.
+
+  loki-config-verify:
+    name: loki-config-verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Loki config
+        run: |
+          set -euo pipefail
+          LOKI_VERSION=$(cat ops/loki/.loki-version)
+          # The Loki binary's `-verify-config` exercises schema_config,
+          # storage_config, ruler, distributor.otlp_config and limits.
+          # The file_storage extension's directory existence check is
+          # NOT in scope here (collector-side concern, covered by
+          # otelcol-config-verify with a tmpdir bind mount).
+          docker run --rm \
+            -v "$PWD/ops/loki/loki.yaml:/etc/loki/loki.yaml:ro" \
+            "grafana/loki:$LOKI_VERSION" \
+            -verify-config -config.file=/etc/loki/loki.yaml
+
+  otelcol-config-verify:
+    name: otelcol-config-verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate otel-collector config
+        run: |
+          set -euo pipefail
+          # The contrib collector's `validate` subcommand exits 0 when
+          # the config parses cleanly. The file_storage extension
+          # checks its directory exists at validate time, so we bind
+          # a tmpdir matching the production mount point.
+          tmpdir=$(mktemp -d)
+          docker run --rm \
+            -v "$PWD/ops/otel-collector/config.yaml:/etc/otelcol/config.yaml:ro" \
+            -v "$tmpdir:/var/lib/otel/checkpoints" \
+            otel/opentelemetry-collector-contrib:0.106.1 \
+            validate --config=/etc/otelcol/config.yaml
+          rm -rf "$tmpdir"
+
+  compose-logs-syntax:
+    name: compose-logs-syntax
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: docker compose config (base + logs)
+        run: docker compose -f ops/local/compose.yaml -f ops/local/compose.logs.yaml config --quiet
+      - name: docker compose config (base + receivers + logs)
+        run: |
+          # The receivers overlay is the A+B file. The 3-way merge must
+          # also resolve cleanly because operators run all three
+          # combined when smoking real receivers AND log ingestion.
+          docker compose \
+            -f ops/local/compose.yaml \
+            -f ops/local/compose.receivers.yaml \
+            -f ops/local/compose.logs.yaml \
+            config --quiet
+
+  loki-label-cardinality-check:
+    name: loki-label-cardinality-check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache: true
+      - name: Cardinality allowlist + denylist
+        # Build-tag gated test: enforces D2C4D.8 by reading both
+        # ops/loki/loki.yaml (default_resource_attributes_as_index_labels
+        # block) AND ops/otel-collector/config.yaml (resource[<key>]
+        # promotion via filelog operators). Test source is at
+        # ops/loki/loki_labels_test.go (B1.9).
+        run: go test -tags loki_labels ./ops/loki/...
