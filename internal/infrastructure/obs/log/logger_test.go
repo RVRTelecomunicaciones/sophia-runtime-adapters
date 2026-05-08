@@ -3,6 +3,9 @@ package log
 import (
 	"context"
 	"log/slog"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -94,4 +97,43 @@ func TestNewWithHandler_NilYieldsNop(t *testing.T) {
 	// Does not panic; output discarded.
 	lg.Info(context.Background(), "silent")
 	lg.Error(context.Background(), "silent-err")
+}
+
+func TestLogger_MirrorPathEmpty_StdoutOnly(t *testing.T) {
+	cfg := Config{Format: "json", Level: "info", MirrorPath: ""}
+	lg, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if lg == nil {
+		t.Fatal("logger is nil")
+	}
+	lg.Info(context.Background(), "test")
+}
+
+func TestLogger_MirrorPathSet_FileGetsContent(t *testing.T) {
+	dir := t.TempDir()
+	mirrorPath := filepath.Join(dir, "runtime.jsonl")
+	cfg := Config{Format: "json", Level: "info", MirrorPath: mirrorPath}
+	lg, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	lg.Info(context.Background(), "msg-marker")
+
+	data, err := os.ReadFile(mirrorPath)
+	if err != nil {
+		t.Fatalf("read mirror: %v", err)
+	}
+	if !strings.Contains(string(data), "msg-marker") {
+		t.Errorf("mirror does NOT contain emitted msg; content=%s", data)
+	}
+}
+
+func TestLogger_MirrorPathInvalidAtStartup_Errors(t *testing.T) {
+	cfg := Config{Format: "json", Level: "info", MirrorPath: "/nonexistent-dir-xyz/runtime.jsonl"}
+	_, err := New(cfg)
+	if err == nil {
+		t.Fatal("New: expected error for non-writable mirror path, got nil")
+	}
 }
