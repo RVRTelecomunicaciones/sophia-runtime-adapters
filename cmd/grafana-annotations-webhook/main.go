@@ -51,27 +51,35 @@ func enforceTenantFingerprint(getenv func(string) string) error {
 }
 
 func main() {
+	os.Exit(run(os.Getenv))
+}
+
+// run is split from main so deferred cleanup (signal.NotifyContext stop)
+// can execute before exit, AND so tests can call run directly without
+// triggering os.Exit. Mirrors cmd/linear-webhook-adapter/main.go for
+// consistency. Returns the process exit code.
+func run(getenv func(string) string) int {
 	// 0. Layer 3 mode lock — pre-empts any side-effecting initialization.
-	if err := enforceModeLock(os.Getenv); err != nil {
+	if err := enforceModeLock(getenv); err != nil {
 		fmt.Fprintf(os.Stderr, "FATAL: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 	// 0.5. Layer 4 tenant fingerprint.
-	if err := enforceTenantFingerprint(os.Getenv); err != nil {
+	if err := enforceTenantFingerprint(getenv); err != nil {
 		fmt.Fprintf(os.Stderr, "FATAL: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 
 	// 1. Logger.
 	logCfg, err := log.LoadConfig()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "FATAL log config: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 	logger, err := log.New(logCfg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "FATAL log new: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 
 	// 2. Adapter config.
@@ -79,7 +87,7 @@ func main() {
 	if err != nil {
 		logger.Error(context.Background(), "config load failed",
 			slog.String("err", err.Error()))
-		os.Exit(1)
+		return 1
 	}
 
 	// 3. Layer 4 fingerprint emission — log the tenant identifier so
@@ -128,7 +136,8 @@ func main() {
 	logger.Info(context.Background(), "listening", slog.String("addr", cfg.ListenAddr))
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		logger.Error(context.Background(), "server error", slog.String("err", err.Error()))
-		os.Exit(1)
+		return 1
 	}
 	logger.Info(context.Background(), "shutdown complete")
+	return 0
 }
