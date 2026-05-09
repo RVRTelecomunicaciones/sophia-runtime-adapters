@@ -1,0 +1,84 @@
+# .github/workflows/annotate-deploy.yaml
+#
+# Phase 2C.4 / D — Bundle 3.
+#
+# Posts a Grafana annotation on every v*.*.* tag push so time-series
+# dashboards visually mark deploys. Per D2C4D.17 + A2C4D.3:
+#   - Uses the DEPLOY secret namespace (NOT the TEST namespace —
+#     they are distinct so the deploy token can target the prod
+#     Grafana while the test token targets a sandbox).
+#   - Skipped silently when ANY of the three secrets is empty (repo
+#     can be cloned + tagged without Grafana setup).
+#   - curl failure → workflow goes red but does NOT revert the tag,
+#     does NOT block any artifact, does NOT block subsequent
+#     deploys (D2C4D.17 / I-D.3). Operator may re-run or ignore.
+#
+# Required GitHub repo secrets (operator-configured):
+#   GRAFANA_DEPLOY_ANNOTATIONS_URL    — base URL of the deploy-target Grafana
+#   GRAFANA_DEPLOY_ANNOTATIONS_TOKEN  — service account token, Annotations:Write scope
+#   GRAFANA_DEPLOY_ENV                — env tag attached to the annotation.
+#                                       Recommended values: dev | test | staging | prod
+#                                       (operator chooses based on which Grafana
+#                                       instance the URL points at).
+
+name: Annotate deploy in Grafana
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  annotate:
+    name: post Grafana annotation
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Compute deploy metadata
+        id: meta
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF#refs/tags/}"
+          sha="${GITHUB_SHA:0:12}"
+          time_ms=$(($(date -u +%s) * 1000))
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "time_ms=$time_ms" >> "$GITHUB_OUTPUT"
+
+      - name: Skip if any deploy secret missing
+        id: gate
+        run: |
+          if [ -z "${GRAFANA_URL:-}" ] || [ -z "${GRAFANA_TOKEN:-}" ] || [ -z "${GRAFANA_ENV:-}" ]; then
+            echo "Grafana deploy annotations skipped (secrets not configured)"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GRAFANA_URL:   ${{ secrets.GRAFANA_DEPLOY_ANNOTATIONS_URL }}
+          GRAFANA_TOKEN: ${{ secrets.GRAFANA_DEPLOY_ANNOTATIONS_TOKEN }}
+          GRAFANA_ENV:   ${{ secrets.GRAFANA_DEPLOY_ENV }}
+
+      - name: Post annotation
+        if: steps.gate.outputs.skip == 'false'
+        run: |
+          set -euo pipefail
+          tag='${{ steps.meta.outputs.tag }}'
+          sha='${{ steps.meta.outputs.sha }}'
+          time_ms='${{ steps.meta.outputs.time_ms }}'
+          # GRAFANA_ENV is the env tag (e.g. "dev", "test", "staging", "prod") —
+          # NOT hardcoded. Operator chooses the value when wiring secrets.
+          curl -sSf -X POST \
+            -H "Authorization: Bearer $GRAFANA_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data "{
+              \"text\": \"deploy $tag ($sha)\",
+              \"tags\": [\"deploy\", \"$GRAFANA_ENV\"],
+              \"time\": $time_ms
+            }" \
+            "$GRAFANA_URL/api/annotations"
+        env:
+          GRAFANA_URL:   ${{ secrets.GRAFANA_DEPLOY_ANNOTATIONS_URL }}
+          GRAFANA_TOKEN: ${{ secrets.GRAFANA_DEPLOY_ANNOTATIONS_TOKEN }}
+          GRAFANA_ENV:   ${{ secrets.GRAFANA_DEPLOY_ENV }}

@@ -1,0 +1,28 @@
+apiVersion: 1
+
+# Loki datasource for log queries (Phase 2C.4 / D, B3).
+#
+# trace_id is parsed from each log line via the matcherRegex below
+# and rendered as a clickable link to Tempo. trace_id is NOT a Loki
+# stream label per D2C4D.8 — it lives in the JSON body of the log
+# record and is extracted at query time. The derived field bridges
+# log → trace correlation in the operator's drill-through flow.
+
+datasources:
+  - name: Loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    isDefault: false
+    editable: false
+    version: 1
+    jsonData:
+      maxLines: 1000
+      timeout: 60
+      derivedFields:
+        - datasourceUid: tempo
+          matcherType: regex
+          matcherRegex: "\"trace_id\":\"([0-9a-f]{32})\""
+          name: trace_id
+          url: "${__value.raw}"

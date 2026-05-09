@@ -4,6 +4,58 @@ All notable changes to `runtime-adapters` will be documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] — 2026-05-09
+
+Phase 2C.4 sub-project D — Loki + log signal export + log dashboards + annotations layer. Fifth sub-project of the operational-readiness track. Wires the runtime + linear-webhook + grafana-annotations-webhook log streams into Loki via filelog tailing JSONL mirror files (R10 stdout contract preserved); ships the new `grafana-annotations-webhook` adapter for alertmanager-driven incident annotations; adds the GHA on-tag deploy-annotations workflow; ships `make logs-smoke` + `make annotations-smoke` operator smoke targets; extends `make smoke-receivers` to verify Grafana annotations end-to-end. ADR 0008 envelope preserved via overlay separation. Spec-complete against `docs/superpowers/specs/2026-05-08-phase-2c.4-d-design.md`.
+
+### Added
+
+- `ops/loki/loki.yaml` + `ops/loki/.loki-version` — Loki single-binary config; OTLP receiver enabled per D2C4D.4; filesystem TSDB; pinned to 3.3.2.
+- `ops/local/compose.logs.yaml` — overlay declaring Loki + extending otel-collector + runtime services with mirror volumes (D2C4D.5). ADR 0008 envelope preserved (zero changes to base compose.yaml). Includes an `init-logs-permissions` init container (alpine:3.20, UID 0) that chowns the named log volumes to UID 65532 (runtime) before consumers start, so distroless services can write into root-owned volumes.
+- `ops/otel-collector/config.yaml` — extended with three NAMED filelog receivers (`filelog/runtime`, `filelog/linear`, `filelog/grafana-annotations`) + `otlphttp/loki` exporter to `http://loki:3100/otlp` + `logs/loki` pipeline. service.name set as a literal OTel resource attribute per filelog include path (A2C4D.2 / D2C4D.16) — robust to mount layout changes. Existing metrics pipeline byte-for-byte UNCHANGED.
+- `internal/infrastructure/obs/log/`:
+  - `handler.go` — `OTelContextHandler` wraps an inner slog handler and injects `trace_id` + `span_id` from ctx SpanContext (D2C4D.9).
+  - `fanout.go` — `SafeFanoutWriter` writes to stdout (primary) AND a mirror writer (best-effort secondary). Mirror failures NEVER suppress stdout writes; mirror errors throttled to ≤1/min on the error sink (D2C4D.3 / I-D.1).
+  - `config.go` extended with `MirrorPath` field; reads `RUNTIME_LOG_MIRROR_PATH`; validates absolute + writable parent (A2C4D.1).
+  - `logger.go` extended to wire `SafeFanoutWriter` + `OTelContextHandler` automatically when mirror path is set.
+- `cmd/grafana-annotations-webhook/` — new Go binary in the same module. Layer 3 mode lock (`errModeLock`) + Layer 4 tenant fingerprint (`errTenantFingerprint`) match the linear-webhook pattern from A+B. Refactored into `func main() { os.Exit(run(os.Getenv)) }` + `func run(getenv) int` for testability + clean defer-aware shutdown.
+- `internal/integrations/grafana/` — flat package (D2C4D.7), no hexagonal subdirs:
+  - `types.go` — `AnnotationRequest` + `AlertmanagerWebhookV4`.
+  - `config.go` — `LoadConfig` + `Validate` (URL + Layer 2 + Layer 4 enforcement).
+  - `client.go` — `GrafanaClient` interface + `HTTPGrafanaClient` impl with status mapping per D2C4D.12 (5xx/transport/429 → `ErrGrafanaClient5xx`; 4xx → `ErrGrafanaClient4xx`). Typed `ClientError{StatusCode, Sentinel, Cause}` so the handler can recover the HTTP status via `errors.As` for structured logging (A2C4D.4).
+  - `mapper.go` — pure function alertmanager v4 → annotations; one annotation per alert (D2C4D.15); deterministic tag order; firing-EndsAt-quirk guard.
+  - `handler.go` — webhook HTTP handler with the deliberate divergence from linear-webhook (4xx → 204 NO retry per D2C4D.12 + spec §4.3) AND structured `level=error` log on 4xx with `grafana_status`, `alertname`, `severity`, `annotation_tags` (A2C4D.4). Logger dependency required at construction.
+- `Dockerfile` — new `grafana-annotations-webhook` runtime stage (distroless/static, port 9096); shared `build` stage compiles all three binaries.
+- `ops/local/compose.receivers.yaml` — adds `grafana-annotations-webhook` service (port 9096); extends linear-webhook with `RUNTIME_LOG_MIRROR_PATH` + writable mirror volume.
+- `ops/alertmanager/alertmanager.yaml` — adds ONE `webhook_configs` entry to BOTH `ops-critical` AND `ops-warnings` pointing to `http://grafana-annotations-webhook:9096/webhook`. Routing tree shape, group_by, inhibit_rules, timing UNCHANGED (preserves D2C4AB.1 / I-D.4).
+- `ops/alertmanager/alertmanager_routing_test.go` — 3 routing assertions tightened/added including `TestAlertmanager_NoDuplicateWebhookPerReceiver` (regression for D2C4D.13).
+- `ops/grafana/provisioning/datasources/loki.yaml` — Loki datasource with `trace_id` derived field linking back to Tempo.
+- `ops/grafana/dashboards/{runtime-shell,runtime-git,runtime-fs,runtime-http}.json` — each dashboard gains a "Recent logs" panel with capability-scoped LogQL filter. `runtime-overview.json` intentionally untouched (per spec §3.4).
+- `.github/workflows/annotate-deploy.yaml` — fires on every `v*.*.*` tag push; posts a global Grafana annotation (no-op when secrets missing per D2C4D.17). Uses the DEPLOY secret namespace (`GRAFANA_DEPLOY_ANNOTATIONS_URL` + `GRAFANA_DEPLOY_ANNOTATIONS_TOKEN` + `GRAFANA_DEPLOY_ENV`) per A2C4D.3 — distinct from the TEST namespace used by the adapter + smoke targets.
+- `ops/smoke/logs-smoke.sh` + `ops/smoke/annotations-smoke.sh` + extended `smoke-receivers.sh` — three operator-driven smoke targets verifying log ingestion, annotation creation, and end-to-end alertmanager → adapter → Grafana flow with positive (firing alerts annotated) + negative (severity=info NOT annotated, I-D.4 holds) checks.
+- `ops/loki/loki_labels_test.go` — build-tag-gated CI regression net enforcing the Loki label allowlist (`service`, `service_name`, `service_namespace`, `level`, `environment`, `tenant_type`) + denylist (`trace_id`, `span_id`, `correlation_id`, `capability`, `adapter`, `error_class`, `retry_hint`, `request_id`, `user_id`, `project_id`, `tenant_id`) per D2C4D.8.
+- 3 integration tests under `test/integration/`: log_pipeline_e2e (mirror dual-write), loki_ingestion_e2e (compose-testcontainers Loki roundtrip), grafana_annotations_e2e (adapter binary end-to-end via httptest stub Grafana).
+- `docs/test-tenant.md` — new Grafana setup section (TEST + DEPLOY service accounts split per A2C4D.3, smoke run sequence, common gotchas).
+- `Makefile` targets: `logs-up`, `logs-down`, `logs-tail`, `logs-smoke`, `annotations-smoke`.
+- `.github/workflows/ci.yaml` — 4 new gate jobs (per A2C4D.5): `loki-config-verify`, `otelcol-config-verify`, `compose-logs-syntax`, `loki-label-cardinality-check`.
+
+### Changed
+
+- `ops/alertmanager/alertmanager.yaml` — `ops-critical` and `ops-warnings` each gain ONE webhook entry pointing to grafana-annotations-webhook. Routing tree shape, group_by, inhibit_rules, timing UNCHANGED.
+
+### Notes
+
+- **No runtime adapter contract change** — runtime-adapters does NOT import the grafana adapter; D1.1 / D1.2 boundary preserved.
+- **No metric contract change** — runtime metrics namespace `runtime_adapters_*` unchanged. R16 cardinality whitelist unchanged.
+- **Loki retention sizing OUT OF SCOPE** — operational decision deferred to C.
+- **In-process log rotation OUT OF SCOPE** — disk-fill on the mirror file is operational risk in V1 per D2C4D.11; if rotation is needed, separate scope with strong tests.
+- **filelog file_storage extension dropped** (A2C4D.6) — earlier B1.6 added persistent offset checkpoints, but the chaos overlay + observability validate-config script did not bind the checkpoints directory. Trade-off: on collector restart, `start_at: end` resumes from EOF → records during the restart window are lost. Acceptable for dev/CI; production-grade durability deferred to C.
+- **Per-alert runbook authoring NOT in D** — 2C.1 deuda separate, candidate for `v0.9.x` patch or fold into C.
+- **Annotations are global** — V1 omits `dashboardUID`/`panelId` per D2C4D.14; tag-based filtering supported.
+- **Status mapping divergence documented** — `grafana-annotations-webhook` returns 204 (no retry) on 4xx, vs `linear-webhook`'s 500 (retry) on 4xx. Different semantic of source-of-truth (annotations are visual hints, Linear is durable state) — see spec §4.3 for the full rationale. On 4xx, structured `level=error` log emits `grafana_status`, `alertname`, `severity`, `annotation_tags` (A2C4D.4) so silent failures are visible in post-mortem.
+- **Operator smoke gates** — `logs-smoke` + `annotations-smoke` + extended `smoke-receivers` are operator-driven (NOT CI gates), matching the A+B / 2C.2 pattern.
+- **Integration test compose-testcontainers flake** — `loki_ingestion_e2e` occasionally fails on first run with a testcontainers-go race ("dependency failed to start: No such container"). Stable on retry; ~40s on warm Docker. CI retries via `gh run rerun`.
+
 ## [0.8.0] — 2026-05-02
 
 Phase 2C.4 sub-project A+B — real alert receivers (PagerDuty + Slack + Linear). Fourth sub-project of the operational-readiness track. Replaces the `null-receiver` placeholders added in Phase 2C.1 with real receivers — critical alerts page on-call via PagerDuty Events API v2 + post to Slack `#incidents` (parallel fire), warnings post to Slack `#ops` + open/update/close Linear issues via a dedicated webhook adapter. `severity=info` remains silenced at the routing root (I-AB.1). Ships `make smoke-receivers` end-to-end smoke target + 4-layer CI guardrail (gitleaks + env-var-guard + bootstrap mode lock + tenant fingerprinting). Code is test-tenant-ready (D2C4AB.18) — production adoption is a purely operational milestone (which env vars are loaded in prod deploy), no further code changes needed. Spec-complete against `docs/superpowers/specs/2026-05-02-phase-2c.4-a-b-design.md`.

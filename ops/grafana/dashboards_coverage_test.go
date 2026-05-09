@@ -180,6 +180,15 @@ func TestDashboards_QueryReferencesResolve(t *testing.T) {
 
 	for _, d := range dashes {
 		for _, p := range walkPanels(d.Panels) {
+			// Skip Loki-backed panels (panel.Type == "logs"): their
+			// targets carry LogQL, not PromQL. The metric-name extractor
+			// is PromQL-aware and would mis-parse `| json` and other
+			// LogQL operators as unknown metrics. Phase 2C.4 / D B3
+			// introduced these panels; the assertion remains for all
+			// PromQL panels (graph, stat, timeseries, etc.).
+			if p.Type == "logs" {
+				continue
+			}
 			for _, tgt := range p.Targets {
 				expr := strings.TrimSpace(tgt.Expr)
 				if expr == "" {

@@ -1,11 +1,17 @@
 {
   "uid": "runtime-shell",
   "title": "Runtime Adapters — Shell",
-  "tags": ["runtime-adapters", "2c.1"],
+  "tags": [
+    "runtime-adapters",
+    "2c.1"
+  ],
   "schemaVersion": 39,
   "editable": false,
   "timezone": "",
-  "time": {"from": "now-6h", "to": "now"},
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
   "refresh": "30s",
   "description": "Shell adapter drill-down. One capability: shell.exec@v1. Phase 1: partial applicable only to git.clone@v1 (D4.6).",
   "templating": {
@@ -15,7 +21,11 @@
         "label": "Data source",
         "type": "datasource",
         "query": "prometheus",
-        "current": {"selected": false, "text": "Prometheus", "value": "prom"},
+        "current": {
+          "selected": false,
+          "text": "Prometheus",
+          "value": "prom"
+        },
         "hide": 0,
         "refresh": 1
       },
@@ -23,7 +33,10 @@
         "name": "capability",
         "label": "capability",
         "type": "query",
-        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
         "query": {
           "query": "label_values(runtime_adapters_execution_total{adapter=\"shell\"}, capability)",
           "refId": "StandardVariableQuery"
@@ -31,7 +44,15 @@
         "multi": true,
         "includeAll": true,
         "allValue": ".+",
-        "current": {"selected": true, "text": ["All"], "value": ["$__all"]},
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
         "refresh": 2,
         "sort": 1
       }
@@ -43,8 +64,16 @@
       "type": "stat",
       "title": "Error budget remaining (30d)",
       "description": "Sloth period_error_budget_remaining for the shell availability SLO. 1.0 = full budget, 0.0 = exhausted.",
-      "datasource": {"type": "prometheus", "uid": "${datasource}"},
-      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
       "fieldConfig": {
         "defaults": {
           "unit": "percentunit",
@@ -53,16 +82,31 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "red", "value": null},
-              {"color": "orange", "value": 0.1},
-              {"color": "green", "value": 0.5}
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.1
+              },
+              {
+                "color": "green",
+                "value": 0.5
+              }
             ]
           }
         },
         "overrides": []
       },
       "options": {
-        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "colorMode": "background",
         "graphMode": "area",
         "textMode": "auto"
@@ -70,7 +114,10 @@
       "targets": [
         {
           "refId": "A",
-          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
           "expr": "min(slo:period_error_budget_remaining:ratio{sloth_slo=\"shell-exec-availability\"})",
           "legendFormat": "availability"
         }
@@ -81,14 +128,39 @@
       "type": "stat",
       "title": "Request rate",
       "description": "Executions per second across all statuses, filtered by $capability.",
-      "datasource": {"type": "prometheus", "uid": "${datasource}"},
-      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
       "fieldConfig": {
-        "defaults": {"unit": "reqps", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}},
+        "defaults": {
+          "unit": "reqps",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
         "overrides": []
       },
       "options": {
-        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "colorMode": "none",
         "graphMode": "area",
         "textMode": "auto"
@@ -96,7 +168,10 @@
       "targets": [
         {
           "refId": "A",
-          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
           "expr": "sum(rate(runtime_adapters_execution_total{adapter=\"shell\",capability=~\"$capability\"}[$__rate_interval]))",
           "legendFormat": "req/s"
         }
@@ -107,14 +182,39 @@
       "type": "stat",
       "title": "Active executions",
       "description": "Currently-in-flight executions (execution.active gauge).",
-      "datasource": {"type": "prometheus", "uid": "${datasource}"},
-      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
       "fieldConfig": {
-        "defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}},
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
         "overrides": []
       },
       "options": {
-        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "colorMode": "none",
         "graphMode": "area",
         "textMode": "auto"
@@ -122,7 +222,10 @@
       "targets": [
         {
           "refId": "A",
-          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
           "expr": "sum(runtime_adapters_execution_active{capability=~\"$capability\"})",
           "legendFormat": "active"
         }
@@ -133,20 +236,48 @@
       "type": "timeseries",
       "title": "Traffic by status",
       "description": "rate(execution_total) stacked by status. Captures success / failure / timeout / cancelled / partial.",
-      "datasource": {"type": "prometheus", "uid": "${datasource}"},
-      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 4},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
       "fieldConfig": {
-        "defaults": {"unit": "reqps", "custom": {"stacking": {"mode": "normal"}}},
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
         "overrides": []
       },
       "options": {
-        "legend": {"displayMode": "table", "placement": "right", "calcs": ["mean", "lastNotNull"]},
-        "tooltip": {"mode": "multi", "sort": "desc"}
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "mean",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "targets": [
         {
           "refId": "A",
-          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
           "expr": "sum by (status) (rate(runtime_adapters_execution_total{adapter=\"shell\",capability=~\"$capability\"}[$__rate_interval]))",
           "legendFormat": "{{status}}"
         }
@@ -157,34 +288,63 @@
       "type": "timeseries",
       "title": "Latency p50 / p95 / p99",
       "description": "histogram_quantile over execution.duration bucket. Exemplars on — click dots to jump to Tempo trace.",
-      "datasource": {"type": "prometheus", "uid": "${datasource}"},
-      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 12},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 12
+      },
       "fieldConfig": {
-        "defaults": {"unit": "s"},
+        "defaults": {
+          "unit": "s"
+        },
         "overrides": []
       },
       "options": {
-        "legend": {"displayMode": "table", "placement": "right", "calcs": ["mean", "lastNotNull"]},
-        "tooltip": {"mode": "multi", "sort": "desc"}
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "mean",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "targets": [
         {
           "refId": "A",
-          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
           "expr": "histogram_quantile(0.50, sum by (le) (rate(runtime_adapters_execution_duration_seconds_bucket{capability=~\"$capability\"}[$__rate_interval])))",
           "legendFormat": "p50",
           "exemplar": true
         },
         {
           "refId": "B",
-          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
           "expr": "histogram_quantile(0.95, sum by (le) (rate(runtime_adapters_execution_duration_seconds_bucket{capability=~\"$capability\"}[$__rate_interval])))",
           "legendFormat": "p95",
           "exemplar": true
         },
         {
           "refId": "C",
-          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
           "expr": "histogram_quantile(0.99, sum by (le) (rate(runtime_adapters_execution_duration_seconds_bucket{capability=~\"$capability\"}[$__rate_interval])))",
           "legendFormat": "p99",
           "exemplar": true
@@ -196,20 +356,41 @@
       "type": "timeseries",
       "title": "Error ratio (failure+timeout) / total",
       "description": "Availability SLI numerator — matches the Sloth spec definition.",
-      "datasource": {"type": "prometheus", "uid": "${datasource}"},
-      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 20},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 20
+      },
       "fieldConfig": {
-        "defaults": {"unit": "percentunit", "min": 0, "max": 1},
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        },
         "overrides": []
       },
       "options": {
-        "legend": {"displayMode": "list", "placement": "bottom"},
-        "tooltip": {"mode": "single", "sort": "none"}
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
       },
       "targets": [
         {
           "refId": "A",
-          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
           "expr": "sum(rate(runtime_adapters_execution_total{adapter=\"shell\",capability=~\"$capability\",status=~\"failure|timeout\"}[$__rate_interval])) / sum(rate(runtime_adapters_execution_total{adapter=\"shell\",capability=~\"$capability\",status=~\"success|failure|timeout\"}[$__rate_interval]))",
           "legendFormat": "error ratio"
         }
@@ -220,28 +401,61 @@
       "type": "timeseries",
       "title": "Saturation — active + pool acquire p95",
       "description": "Active executions plus pgx pool acquire p95. Both are load-side signals.",
-      "datasource": {"type": "prometheus", "uid": "${datasource}"},
-      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 28},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 28
+      },
       "fieldConfig": {
-        "defaults": {"unit": "short"},
+        "defaults": {
+          "unit": "short"
+        },
         "overrides": [
-          {"matcher": {"id": "byName", "options": "pool p95"}, "properties": [{"id": "unit", "value": "s"}]}
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "pool p95"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              }
+            ]
+          }
         ]
       },
       "options": {
-        "legend": {"displayMode": "list", "placement": "bottom"},
-        "tooltip": {"mode": "multi", "sort": "desc"}
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "targets": [
         {
           "refId": "A",
-          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
           "expr": "sum(runtime_adapters_execution_active{capability=~\"$capability\"})",
           "legendFormat": "active"
         },
         {
           "refId": "B",
-          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
           "expr": "histogram_quantile(0.95, sum by (le) (rate(runtime_adapters_pool_connections_acquired_duration_seconds_bucket[$__rate_interval])))",
           "legendFormat": "pool p95"
         }
@@ -252,10 +466,20 @@
       "type": "table",
       "title": "Burn rate detail (current)",
       "description": "Per-SLO 1h burn rate for this adapter. Values > 1 mean budget will exhaust before window ends.",
-      "datasource": {"type": "prometheus", "uid": "${datasource}"},
-      "gridPos": {"h": 6, "w": 24, "x": 0, "y": 36},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 36
+      },
       "fieldConfig": {
-        "defaults": {"unit": "short"},
+        "defaults": {
+          "unit": "short"
+        },
         "overrides": []
       },
       "options": {
@@ -265,7 +489,10 @@
       "targets": [
         {
           "refId": "A",
-          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
           "expr": "max by (sloth_slo) (slo:current_burn_rate:ratio{sloth_slo=~\"shell-.*\"})",
           "legendFormat": "{{sloth_slo}}",
           "format": "table",
@@ -278,10 +505,51 @@
       "type": "text",
       "title": "Logs drill",
       "description": "Placeholder for future Loki drill-down.",
-      "gridPos": {"h": 3, "w": 24, "x": 0, "y": 42},
+      "gridPos": {
+        "h": 3,
+        "w": 24,
+        "x": 0,
+        "y": 42
+      },
       "options": {
         "mode": "markdown",
         "content": "Loki integration deferred — scope TBD (2C.4 or later)."
+      }
+    },
+    {
+      "type": "logs",
+      "title": "Recent logs (capability=shell.exec@v1)",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "id": 10,
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 45
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "{service_name=\"runtime-adapters\"} | json | capability=\"shell.exec@v1\"",
+          "queryType": "range"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "sortOrder": "Descending"
       }
     }
   ]
