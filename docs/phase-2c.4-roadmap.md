@@ -294,7 +294,7 @@ For each sub-project, in order:
 | E | `v0.6.0` | closed | 2026-05-01 |
 | F | `v0.7.0` | closed | 2026-05-02 |
 | A+B | `v0.8.0` | closed | 2026-05-02 |
-| D | `v0.9.0` | not started | — |
+| D | `v0.9.0` | closed | 2026-05-09 |
 | C | `v0.10.0` | not started | — |
 
 Update this table when each sub-project closes. Status values:
