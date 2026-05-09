@@ -91,10 +91,53 @@ services:
       LISTEN_ADDR:                    ":9095"
       RUNTIME_TENANT:                 "${RUNTIME_TENANT:-test}"
       CI:                             "${CI:-}"
+      RUNTIME_LOG_MIRROR_PATH:        "${RUNTIME_LOG_MIRROR_PATH:-}"
     ports:
       - "9095:9095"
+    volumes:
+      - logs-linear:/var/log/linear-webhook
     networks:
       - runtime-load
+
+  # grafana-annotations-webhook: Grafana annotations layer for
+  # alertmanager-driven incidents (Phase 2C.4 / D, B2). Lives with
+  # alertmanager + linear-webhook because all three are alertmanager-
+  # driven webhook adapters with identical lifecycle requirements.
+  #
+  # The CI guardrail Layer 3 (RUNTIME_TENANT) + Layer 4
+  # (GRAFANA_TENANT_TYPE) blocks production credentials from
+  # reaching CI. See spec §9.
+  grafana-annotations-webhook:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      target: grafana-annotations-webhook
+    cpus: "0.5"
+    mem_limit: 256m
+    environment:
+      GRAFANA_URL:                   "${GRAFANA_TEST_URL:-http://grafana:3000}"
+      GRAFANA_SERVICE_ACCOUNT_TOKEN: "${GRAFANA_TEST_SERVICE_ACCOUNT_TOKEN:-}"
+      GRAFANA_TENANT_TYPE:           "${GRAFANA_TENANT_TYPE:-test}"
+      LISTEN_ADDR:                   ":9096"
+      RUNTIME_TENANT:                "${RUNTIME_TENANT:-test}"
+      CI:                            "${CI:-}"
+      RUNTIME_LOG_FORMAT:            "json"
+      RUNTIME_LOG_LEVEL:             "info"
+      RUNTIME_LOG_MIRROR_PATH:       "${RUNTIME_LOG_MIRROR_PATH:-}"
+    ports:
+      - "9096:9096"
+    networks:
+      - runtime-load
+    volumes:
+      - logs-grafana-annotations:/var/log/grafana-annotations-webhook
+
+# Named volumes shared with compose.logs.yaml. When both overlays
+# are merged, the otel-collector's filelog receiver reads from the
+# same physical volume the webhook adapters mirror their JSONL logs
+# to. Volume names must match compose.logs.yaml exactly.
+volumes:
+  logs-linear:
+  logs-grafana-annotations:
 
 # Credentials for the real receivers. Source files live under
 # ./.secrets/ (gitignored) and are populated from .env by `make

@@ -78,6 +78,10 @@ receivers:
           *Summary:* {{ .CommonAnnotations.summary }}
           <{{ .ExternalURL }}|View in Alertmanager>
         send_resolved: true
+    webhook_configs:
+      - url: 'http://grafana-annotations-webhook:9096/webhook'
+        send_resolved: true
+        max_alerts: 0   # send all in group, no truncation
 
   # ops-warnings: posts to Slack #ops AND to Linear via the webhook
   # adapter (B2 wires the webhook). Slack credential read from
@@ -97,6 +101,9 @@ receivers:
       - url: 'http://linear-webhook:9095/webhook'
         send_resolved: true
         max_alerts: 0   # send all in group, no truncation
+      - url: 'http://grafana-annotations-webhook:9096/webhook'
+        send_resolved: true
+        max_alerts: 0
 
 inhibit_rules:
   - source_matchers: [ 'severity="critical"' ]

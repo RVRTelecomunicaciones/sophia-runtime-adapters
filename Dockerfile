@@ -25,6 +25,11 @@ RUN CGO_ENABLED=0 go build \
     -ldflags="-s -w" \
     -o /out/linear-webhook-adapter ./cmd/linear-webhook-adapter
 
+RUN CGO_ENABLED=0 go build \
+    -trimpath \
+    -ldflags="-s -w" \
+    -o /out/grafana-annotations-webhook ./cmd/grafana-annotations-webhook
+
 # ---- runtime-adapters runtime stage --------------------------------------
 # Distroless/static: ~2 MiB base, no shell, no package manager, nonroot user.
 FROM gcr.io/distroless/static:nonroot AS runtime-adapters
@@ -45,3 +50,16 @@ FROM gcr.io/distroless/static:nonroot AS linear-webhook-adapter
 COPY --from=build /out/linear-webhook-adapter /linear-webhook-adapter
 
 ENTRYPOINT ["/linear-webhook-adapter"]
+
+# ---- grafana-annotations-webhook runtime stage ----------------------------
+# Phase 2C.4 / D — Bundle 2. Same distroless base as runtime-adapters and
+# linear-webhook-adapter. Listens on :9096. Per D2C4D.7 the adapter has
+# independent lifecycle from runtime-adapters AND linear-webhook —
+# separate container, separate restart, separate health. The shared
+# `build` stage compiles all three binaries; the runtime image carries
+# only the static binary, no toolchain.
+FROM gcr.io/distroless/static:nonroot AS grafana-annotations-webhook
+
+COPY --from=build /out/grafana-annotations-webhook /grafana-annotations-webhook
+
+ENTRYPOINT ["/grafana-annotations-webhook"]
