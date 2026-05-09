@@ -1,4 +1,4 @@
-.PHONY: all build test test-unit test-contract test-integration test-e2e chaos-integration lint vet fmt cover clean run help sloth-generate test-obs test-rules test-alertmanager test-dashboards test-observability load-up load-down load-baseline load-smoke-local fixture-git-bench chaos-up chaos-up-toxiproxy chaos-down chaos-local chaos-dump chaos-render-rules chaos-render-rules-check chaos-canary chaos-e2e-comprehensive secrets-write secrets-clean receivers-up receivers-down smoke-receivers logs-up logs-down logs-tail
+.PHONY: all build test test-unit test-contract test-integration test-e2e chaos-integration lint vet fmt cover clean run help sloth-generate test-obs test-rules test-alertmanager test-dashboards test-observability load-up load-down load-baseline load-smoke-local fixture-git-bench chaos-up chaos-up-toxiproxy chaos-down chaos-local chaos-dump chaos-render-rules chaos-render-rules-check chaos-canary chaos-e2e-comprehensive secrets-write secrets-clean receivers-up receivers-down smoke-receivers logs-up logs-down logs-tail logs-smoke annotations-smoke
 
 GO              ?= go
 GOLANGCI_LINT   ?= golangci-lint
@@ -264,3 +264,11 @@ logs-tail:                  ## Tail recent runtime logs from Loki via logcli
 	  grafana/logcli:$$LOKI_VERSION \
 	  --addr=http://loki:3100 \
 	  query --tail '{service="runtime-adapters"}'
+
+# ----- Phase 2C.4 / D B3 — operator smoke targets -----
+
+logs-smoke:                 ## End-to-end logs smoke (operator-driven)
+	./ops/smoke/logs-smoke.sh
+
+annotations-smoke:          ## End-to-end annotations smoke (operator-driven)
+	./ops/smoke/annotations-smoke.sh
