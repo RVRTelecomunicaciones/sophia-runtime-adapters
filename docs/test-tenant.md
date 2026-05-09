@@ -152,9 +152,106 @@ Linear Settings → API → Personal API Keys → Create.
   others.
 - → `LINEAR_TEST_API_TOKEN`
 
-## 5. Env var summary
+## 5. Grafana
 
-After completing sections 2-4, the operator's `.env` (copied from
+### 5.1 Test instance
+
+A Grafana instance reachable from the operator's machine. Two options:
+
+- **Local-only** (recommended): use the Grafana service that comes
+  up with `make logs-up` (compose service `grafana` on port 3000).
+  No additional setup; default admin login is `admin` / `admin`
+  (change on first login).
+- **Shared sandbox**: a dedicated Grafana instance for the team's
+  test work. Avoid pointing at production.
+
+### 5.2 Service accounts (TEST and DEPLOY are SEPARATE)
+
+Per A2C4D.3 the test/smoke and deploy/release credentials live in
+DISTINCT namespaces. **Create TWO service accounts** — one for each
+purpose:
+
+#### 5.2.1 TEST service account
+
+For the runtime-side `grafana-annotations-webhook` adapter + the
+operator smoke targets (`logs-smoke`, `annotations-smoke`,
+`smoke-receivers` extended).
+
+1. Grafana UI → Administration → Service accounts → New service
+   account.
+2. Name: `runtime-adapters-annotations-test`.
+3. Role: `Editor` (the minimum role with Annotations:Write).
+   - For tighter scope, create a custom role limited to
+     `annotations:create`, `annotations:write`, `annotations:read`,
+     `annotations:delete` and assign that role.
+4. Add a token: name `runtime-adapters-annotations-test-token`,
+   expiration per the team's rotation policy (recommendation:
+   90 days; align with PD/Slack/Linear tokens).
+5. Capture the token (starts with `glsa_`):
+   - → `GRAFANA_TEST_SERVICE_ACCOUNT_TOKEN` in local `.env`.
+   - Target Grafana: a sandbox instance OR `make logs-up`'s local
+     compose Grafana.
+
+#### 5.2.2 DEPLOY service account
+
+For the GHA `annotate-deploy.yaml` workflow that fires on `v*.*.*`
+tag push. May target a different Grafana (e.g. the production one
+for visibility on prod dashboards).
+
+1. Grafana UI on the deploy-target instance → New service account.
+2. Name: `runtime-adapters-annotations-deploy`.
+3. Role: minimum that grants `annotations:create` (Editor or a
+   custom role).
+4. Add a token: name `runtime-adapters-annotations-deploy-token`.
+5. Capture the token AND the Grafana base URL AND choose an
+   `env` label (recommended values: `dev` | `test` | `staging` |
+   `prod`):
+   - → GitHub repo secret `GRAFANA_DEPLOY_ANNOTATIONS_URL` = base URL.
+   - → GitHub repo secret `GRAFANA_DEPLOY_ANNOTATIONS_TOKEN` = token.
+   - → GitHub repo secret `GRAFANA_DEPLOY_ENV` = the env tag value.
+
+**Why two service accounts**: principle of least privilege. The
+deploy token may have access to the production Grafana; the test
+token must NOT. Even if both are Editor on different instances, a
+leaked test token cannot annotate prod and vice versa.
+
+### 5.3 Run the smokes
+
+```bash
+set -a; . .env; set +a   # load test-tenant env
+
+# 1. logs-smoke — exercises the Loki path
+make logs-smoke
+echo "exit code: $?"
+
+# 2. annotations-smoke — exercises the adapter → Grafana path
+make annotations-smoke
+echo "exit code: $?"
+
+# 3. smoke-receivers (extended) — full end-to-end including
+#    alertmanager → adapter → Grafana annotations
+make smoke-receivers
+echo "exit code: $?"
+```
+
+Expected: all three exit 0. Total wall time ~5-7 minutes.
+
+### 5.4 Common gotchas
+
+- **`401 Unauthorized` from Grafana**: token expired or wrong scope.
+  Recreate a token with Editor role + Annotations:Write.
+- **`No annotation visible in Grafana`** during smoke: check the
+  Grafana annotation panel filter. The smoke uses tag-based queries
+  (`?tags=SmokeTestCritical`); ensure your tag filter isn't
+  hiding test annotations.
+- **Annotations leak into a real dashboard**: V1 annotations are
+  global (D2C4D.14). For test work in a shared instance, manually
+  delete leftover annotations via Grafana UI → Annotations or via
+  the smoke's cleanup phase.
+
+## 6. Env var summary
+
+After completing sections 2-5, the operator's `.env` (copied from
 `.env.example`) should look like:
 
 ```bash
@@ -178,7 +275,7 @@ SLACK_TEST_INCIDENTS_CHANNEL_ID=CXXXXXXXXXX
 SLACK_TEST_OPS_CHANNEL_ID=CXXXXXXXXXX
 ```
 
-## 6. Running the smoke
+## 7. Running the smoke
 
 ```bash
 # 1) Source the env
@@ -204,7 +301,7 @@ If it fails:
 - Verify amtool can reach the alertmanager:
   `amtool --alertmanager.url=http://localhost:9093 alert query`.
 
-## 7. Cleanup between runs
+## 8. Cleanup between runs
 
 The smoke's cleanup phase resolves the PagerDuty incident, deletes
 the Slack messages, archives the Linear issue, and silences the
@@ -219,7 +316,7 @@ If cleanup fails, manually:
   the author of these messages).
 - Linear UI → archive the SmokeTest issue.
 
-## 8. Rotation policy
+## 9. Rotation policy
 
 Rotate every credential at least once per quarter. Rotation is the
 operator's responsibility — there is no automated rotation in
