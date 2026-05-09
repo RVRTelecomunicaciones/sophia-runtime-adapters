@@ -15,7 +15,13 @@ type Logger struct {
 }
 
 // New builds a Logger from Config. cfg is validated; returns error on
-// invalid enum values (R10).
+// invalid enum values (R10). When cfg.MirrorPath != "", emissions are
+// fanned out to BOTH stdout (R10 primary) and the mirror file (best-
+// effort secondary) via SafeFanoutWriter — mirror failures cannot
+// suppress stdout writes (D2C4D.3 / I-D.1).
+//
+// All emissions pass through OTelContextHandler, which injects
+// trace_id + span_id from the active span in ctx (D2C4D.9).
 func New(cfg Config) (*Logger, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("log.New: %w", err)
@@ -28,17 +34,26 @@ func New(cfg Config) (*Logger, error) {
 		Level:     level,
 		AddSource: cfg.AddSource,
 	}
-	var h slog.Handler
+	// Wire the writer: stdout-only or safe fanout to mirror file.
+	var w io.Writer = os.Stdout
+	if cfg.MirrorPath != "" {
+		mirror, err := os.OpenFile(cfg.MirrorPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+		if err != nil {
+			return nil, fmt.Errorf("log.New: open mirror %q: %w", cfg.MirrorPath, err)
+		}
+		w = NewSafeFanoutWriter(os.Stdout, mirror, os.Stderr)
+	}
+	var inner slog.Handler
 	switch cfg.Format {
 	case "json":
-		h = slog.NewJSONHandler(os.Stdout, opts)
+		inner = slog.NewJSONHandler(w, opts)
 	case "text":
-		h = slog.NewTextHandler(os.Stdout, opts)
+		inner = slog.NewTextHandler(w, opts)
 	default:
 		// already caught by Validate; defensive
 		return nil, fmt.Errorf("log.New: unreachable: format %q", cfg.Format)
 	}
-	return &Logger{inner: slog.New(h)}, nil
+	return &Logger{inner: slog.New(NewOTelContextHandler(inner))}, nil
 }
 
 // NewNop returns a Logger whose output is discarded. Used as the never-nil

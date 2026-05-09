@@ -1,4 +1,4 @@
-.PHONY: all build test test-unit test-contract test-integration test-e2e chaos-integration lint vet fmt cover clean run help sloth-generate test-obs test-rules test-alertmanager test-dashboards test-observability load-up load-down load-baseline load-smoke-local fixture-git-bench chaos-up chaos-up-toxiproxy chaos-down chaos-local chaos-dump chaos-render-rules chaos-render-rules-check chaos-canary chaos-e2e-comprehensive secrets-write secrets-clean receivers-up receivers-down smoke-receivers
+.PHONY: all build test test-unit test-contract test-integration test-e2e chaos-integration lint vet fmt cover clean run help sloth-generate test-obs test-rules test-alertmanager test-dashboards test-observability load-up load-down load-baseline load-smoke-local fixture-git-bench chaos-up chaos-up-toxiproxy chaos-down chaos-local chaos-dump chaos-render-rules chaos-render-rules-check chaos-canary chaos-e2e-comprehensive secrets-write secrets-clean receivers-up receivers-down smoke-receivers logs-up logs-down logs-tail
 
 GO              ?= go
 GOLANGCI_LINT   ?= golangci-lint
@@ -249,3 +249,18 @@ receivers-down:
 
 smoke-receivers:          ## End-to-end smoke for PD + Slack + Linear receivers (operator-driven)
 	./ops/smoke/smoke-receivers.sh
+
+# ----- Phase 2C.4 / D B1 — log pipeline targets -----
+
+logs-up:                    ## Bring up Loki + filelog pipeline (compose.yaml + compose.logs.yaml)
+	docker compose -f ops/local/compose.yaml -f ops/local/compose.logs.yaml up -d --wait loki
+
+logs-down:
+	docker compose -f ops/local/compose.yaml -f ops/local/compose.logs.yaml down
+
+logs-tail:                  ## Tail recent runtime logs from Loki via logcli
+	@LOKI_VERSION=$$(cat ops/loki/.loki-version); \
+	docker run --rm --network runtime-load \
+	  grafana/logcli:$$LOKI_VERSION \
+	  --addr=http://loki:3100 \
+	  query --tail '{service="runtime-adapters"}'

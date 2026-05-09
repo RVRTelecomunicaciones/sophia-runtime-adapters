@@ -3,15 +3,17 @@ package log
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 )
 
 // Config tunes the Logger. Zero values fall back to Phase 2C.1 defaults
 // (FORMAT=text, LEVEL=info, ADD_SOURCE=false). Spec §5.6.
 type Config struct {
-	Format    string // "text" | "json"
-	Level     string // "debug" | "info" | "warn" | "error"
-	AddSource bool
+	Format     string // "text" | "json"
+	Level      string // "debug" | "info" | "warn" | "error"
+	AddSource  bool
+	MirrorPath string // absolute path; empty → stdout only (R10 pure)
 }
 
 // LoadConfig reads RUNTIME_LOG_* env vars. Missing or empty → defaults.
@@ -31,6 +33,7 @@ func LoadConfig() (Config, error) {
 		}
 		cfg.AddSource = b
 	}
+	cfg.MirrorPath = os.Getenv("RUNTIME_LOG_MIRROR_PATH")
 	return cfg, cfg.Validate()
 }
 
@@ -45,6 +48,18 @@ func (c Config) Validate() error {
 	case "debug", "info", "warn", "error":
 	default:
 		return fmt.Errorf("RUNTIME_LOG_LEVEL must be debug|info|warn|error, got %q", c.Level)
+	}
+	if c.MirrorPath != "" {
+		if !filepath.IsAbs(c.MirrorPath) {
+			return fmt.Errorf("RUNTIME_LOG_MIRROR_PATH must be an absolute path, got %q", c.MirrorPath)
+		}
+		parent := filepath.Dir(c.MirrorPath)
+		f, err := os.CreateTemp(parent, ".runtime-log-mirror-check-")
+		if err != nil {
+			return fmt.Errorf("RUNTIME_LOG_MIRROR_PATH parent %q is not writable: %w", parent, err)
+		}
+		_ = f.Close()
+		_ = os.Remove(f.Name())
 	}
 	return nil
 }
