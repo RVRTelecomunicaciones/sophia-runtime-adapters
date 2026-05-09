@@ -91,7 +91,9 @@ preflight() {
         SLACK_TEST_INCIDENTS_CHANNEL_ID \
         SLACK_TEST_OPS_CHANNEL_ID \
         LINEAR_TEST_API_TOKEN \
-        LINEAR_TEST_TEAM_ID
+        LINEAR_TEST_TEAM_ID \
+        GRAFANA_TEST_URL \
+        GRAFANA_TEST_SERVICE_ACCOUNT_TOKEN
     require_cmd amtool
     require_cmd curl
     require_cmd jq
@@ -236,12 +238,33 @@ verify_pos_slack_ops() {
     fi
 }
 
+# verify_pos_grafana_annotations queries Grafana's annotations API by
+# tag — both SmokeTestCritical (from ops-critical fanout) and
+# SmokeTestWarning (from ops-warnings fanout) MUST be present per
+# D2C4D.13 (alertmanager fanout to grafana-annotations-webhook).
+verify_pos_grafana_annotations() {
+    for marker in SmokeTestCritical SmokeTestWarning; do
+        log_info "verify_pos: querying Grafana annotations for $marker"
+        local annotations count
+        annotations=$(curl -sSf -H "Authorization: Bearer ${GRAFANA_TEST_SERVICE_ACCOUNT_TOKEN}" \
+            "${GRAFANA_TEST_URL}/api/annotations?tags=${marker}&limit=10" \
+            || echo "[]")
+        count=$(printf '%s' "$annotations" | jq 'length' 2>/dev/null || echo 0)
+        if [ "${count:-0}" -gt 0 ]; then
+            log_info "verify_pos: Grafana annotations PASS — $count annotation(s) for $marker"
+        else
+            fail_test "Grafana annotations: no annotation matching $marker (D2C4D.13 violation)"
+        fi
+    done
+}
+
 verify_pos() {
     log_info "verify_pos: positive verification of 3 firing alerts"
     verify_pos_pagerduty
     verify_pos_slack_incidents
     verify_pos_slack_ops
     verify_pos_linear   # implemented in Task 3.6
+    verify_pos_grafana_annotations   # D B3.9
 }
 
 # dedup_hash computes 'alert:' + first 12 hex chars of sha256 of
@@ -346,6 +369,19 @@ verify_neg() {
     else
         log_info "verify_neg: Linear PASS — no SmokeTestInfo issue"
     fi
+
+    # D B3.9 extension: Grafana annotations MUST NOT include
+    # SmokeTestInfo (info silencing holds end-to-end — I-AB.1 + I-D.4).
+    local ga_resp ga_count
+    ga_resp=$(curl -sSf -H "Authorization: Bearer ${GRAFANA_TEST_SERVICE_ACCOUNT_TOKEN}" \
+        "${GRAFANA_TEST_URL}/api/annotations?tags=SmokeTestInfo&limit=10" \
+        || echo "[]")
+    ga_count=$(printf '%s' "$ga_resp" | jq 'length' 2>/dev/null || echo 0)
+    if [ "${ga_count:-0}" -eq 0 ]; then
+        log_info "verify_neg: Grafana annotations PASS — SmokeTestInfo not annotated"
+    else
+        fail_test "Grafana annotations: SmokeTestInfo LEAKED ($ga_count annotations) — I-AB.1 + I-D.4 violation"
+    fi
 }
 # cleanup runs after verification (positive + negative). Each step
 # is fail-soft per D2C4AB.14 — logs warning, continues. Cleanup is
@@ -410,6 +446,21 @@ cleanup() {
         --comment="smoke-receivers cleanup" \
         --author="smoke-receivers" \
         >/dev/null 2>&1 || log_warn "cleanup: amtool silence add failed (non-blocking)"
+
+    # 5) Grafana: delete SmokeTest* annotations (D B3.9).
+    log_info "cleanup: deleting SmokeTest* annotations from Grafana"
+    for marker in SmokeTestCritical SmokeTestWarning SmokeTestInfo; do
+        local ids
+        ids=$(curl -sSf -H "Authorization: Bearer ${GRAFANA_TEST_SERVICE_ACCOUNT_TOKEN}" \
+            "${GRAFANA_TEST_URL}/api/annotations?tags=${marker}&limit=20" 2>/dev/null \
+            | jq -r '.[].id' 2>/dev/null || true)
+        for id in $ids; do
+            curl -sS -X DELETE \
+                -H "Authorization: Bearer ${GRAFANA_TEST_SERVICE_ACCOUNT_TOKEN}" \
+                "${GRAFANA_TEST_URL}/api/annotations/${id}" \
+                >/dev/null 2>&1 || log_warn "cleanup: Grafana annotation $id delete failed (non-blocking)"
+        done
+    done
 
     log_info "cleanup: done"
 }
