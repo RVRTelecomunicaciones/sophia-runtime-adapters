@@ -207,8 +207,13 @@ func TestAlertmanager_OpsCriticalHasPagerDutyAndSlack(t *testing.T) {
 		"ops-critical must have exactly 1 pagerduty_configs entry (D2C4AB.2)")
 	require.Len(t, rec.SlackConfigs, 1,
 		"ops-critical must have exactly 1 slack_configs entry (A2C4AB.1 — Slack mandatory)")
-	require.Empty(t, rec.WebhookConfigs,
-		"ops-critical must NOT have webhook_configs (Linear is warning-tier only, D2C4AB.3)")
+	require.Len(t, rec.WebhookConfigs, 1,
+		"ops-critical must have exactly 1 webhook_configs entry (D2C4D.13 — points at grafana-annotations-webhook for incident annotations)")
+	gaURL, _ := rec.WebhookConfigs[0]["url"].(string)
+	require.Contains(t, gaURL, "grafana-annotations-webhook",
+		"ops-critical webhook URL must point at grafana-annotations-webhook (not linear-webhook); got %q", gaURL)
+	require.NotContains(t, gaURL, "linear-webhook",
+		"ops-critical must NOT include linear-webhook — Linear is warning-tier only (D2C4AB.3)")
 }
 
 // TestAlertmanager_OpsWarningsHasSlackAndWebhook verifies the
@@ -238,15 +243,53 @@ func TestAlertmanager_OpsWarningsHasSlackAndWebhook(t *testing.T) {
 		"ops-warnings must NOT have pagerduty_configs (warnings do not page; D2C4AB.3)")
 	// B2: webhook_configs = 1 — points at the linear-webhook adapter
 	// service on port 9095 (D2C4AB.3 + D2C4AB.4).
-	require.Len(t, rec.WebhookConfigs, 1,
-		"ops-warnings must have exactly 1 webhook_configs entry pointing at linear-webhook (D2C4AB.3)")
-	require.NotEmpty(t, rec.WebhookConfigs[0]["url"],
-		"webhook_configs[0].url must be set")
-	url, _ := rec.WebhookConfigs[0]["url"].(string)
-	require.Contains(t, url, "linear-webhook",
-		"webhook_configs[0].url must contain 'linear-webhook' (compose service DNS), got %q", url)
-	require.Contains(t, url, ":9095",
-		"webhook_configs[0].url must reference port 9095, got %q", url)
+	require.Len(t, rec.WebhookConfigs, 2,
+		"ops-warnings must have exactly 2 webhook_configs entries: linear-webhook + grafana-annotations-webhook (D2C4AB.3 + D2C4D.13)")
+
+	// Collect URLs to verify both expected webhooks are present (order-agnostic).
+	urls := make([]string, 0, len(rec.WebhookConfigs))
+	for _, wh := range rec.WebhookConfigs {
+		u, _ := wh["url"].(string)
+		require.NotEmpty(t, u, "every webhook_configs entry must have a url")
+		urls = append(urls, u)
+	}
+
+	var hasLinear, hasGrafana bool
+	for _, u := range urls {
+		if strings.Contains(u, "linear-webhook") && strings.Contains(u, ":9095") {
+			hasLinear = true
+		}
+		if strings.Contains(u, "grafana-annotations-webhook") && strings.Contains(u, ":9096") {
+			hasGrafana = true
+		}
+	}
+	require.True(t, hasLinear,
+		"ops-warnings must include linear-webhook:9095 webhook (D2C4AB.3); urls=%v", urls)
+	require.True(t, hasGrafana,
+		"ops-warnings must include grafana-annotations-webhook:9096 webhook (D2C4D.13); urls=%v", urls)
+}
+
+// TestAlertmanager_NoDuplicateWebhookPerReceiver enforces D2C4D.13:
+// each webhook URL appears AT MOST ONCE per receiver. V1 = one
+// annotation per alert per group; duplicating the webhook entry
+// would double-create annotations and is a known footgun if
+// alertmanager.yaml is hand-edited.
+func TestAlertmanager_NoDuplicateWebhookPerReceiver(t *testing.T) {
+	cfg := loadAM(t)
+	for _, rec := range cfg.Receivers {
+		seen := make(map[string]int)
+		for _, wh := range rec.WebhookConfigs {
+			u, _ := wh["url"].(string)
+			if u == "" {
+				continue
+			}
+			seen[u]++
+		}
+		for u, count := range seen {
+			require.Equal(t, 1, count,
+				"receiver %q has duplicate webhook URL %q (count=%d, want 1) — D2C4D.13", rec.Name, u, count)
+		}
+	}
 }
 
 // --- helpers ---
