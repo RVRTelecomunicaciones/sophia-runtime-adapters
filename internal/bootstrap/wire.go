@@ -283,7 +283,12 @@ func BuildRuntime(ctx context.Context, cfg config.Config) (*Runtime, error) {
 
 	// 9. HTTP router (inbound). rootLogger is threaded into the chain so
 	//    LoggerMiddleware binds a request-scoped logger into ctx (§5.5).
-	router := inboundhttp.NewRouter(execSvc, querySvc, rootLogger)
+	//    pool is passed as the Readiness probe (P1.4 / ADR-0005) — its
+	//    Ping(ctx) method satisfies inboundhttp.Readiness directly so no
+	//    adapter shim is required. The router enforces the 2s probe
+	//    timeout itself; passing the live pool keeps liveness/readiness
+	//    consistent with the pool lifecycle managed by Shutdown below.
+	router := inboundhttp.NewRouter(execSvc, querySvc, rootLogger, pool)
 	server := &nethttp.Server{
 		Addr:    cfg.HTTPAddr,
 		Handler: router,

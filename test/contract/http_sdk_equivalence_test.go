@@ -53,7 +53,7 @@ func TestHTTPAndSDK_ExecuteProduceEquivalentJSON(t *testing.T) {
 	svc := buildFakeService(t)
 
 	// HTTP path.
-	server := httptest.NewServer(inboundhttp.NewRouter(svc, svc, log.NewNop()))
+	server := httptest.NewServer(inboundhttp.NewRouter(svc, svc, log.NewNop(), nil))
 	defer server.Close()
 
 	payload := `{"correlation_id":"01HZXK5JC6QK7XV0YQXA0QJ0YZ","adapter_id":"shell","capability_name":"exec","capability_version":"v1","payload":{"cmd":"echo"},"timeout_budget_ms":5000}`
@@ -103,7 +103,7 @@ func TestHTTPAndSDK_ExecuteProduceEquivalentJSON(t *testing.T) {
 
 func TestHTTPAndSDK_ListCapabilitiesProduceEquivalentJSON(t *testing.T) {
 	svc := buildFakeService(t)
-	server := httptest.NewServer(inboundhttp.NewRouter(svc, svc, log.NewNop()))
+	server := httptest.NewServer(inboundhttp.NewRouter(svc, svc, log.NewNop(), nil))
 	defer server.Close()
 
 	// HTTP.

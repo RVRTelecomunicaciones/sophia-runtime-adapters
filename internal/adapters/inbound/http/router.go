@@ -15,9 +15,14 @@ import (
 // bound into the request context by LoggerMiddleware; a nil logger
 // falls back to log.NewNop() (never-nil invariant).
 //
+// readiness is OPTIONAL — when non-nil, GET /readyz is mounted and
+// probes the dependency with a 2s timeout (P1.4 / ADR-0005). When nil,
+// the route is omitted entirely, returning 404. /healthz (liveness)
+// remains always-on and dependency-free.
+//
 // T52 (execute) and T53 (capabilities + receipts) provide the real
 // handler implementations wired below.
-func NewRouter(svc inbound.RuntimeService, query inbound.QueryService, logger *log.Logger) http.Handler {
+func NewRouter(svc inbound.RuntimeService, query inbound.QueryService, logger *log.Logger, readiness Readiness) http.Handler {
 	if svc == nil {
 		panic("http.NewRouter: RuntimeService is required")
 	}
@@ -47,11 +52,20 @@ func NewRouter(svc inbound.RuntimeService, query inbound.QueryService, logger *l
 		r.Get("/receipts/{id}", NewReceiptsHandler(query))
 	})
 
-	// Health check (useful for ops from day one — not in spec but
-	// trivial and non-controversial).
+	// Liveness probe (useful for ops from day one — not in spec but
+	// trivial and non-controversial). Dependency-free by design: a
+	// 200 here means "the process is up and routing", nothing more.
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
+
+	// Readiness probe (P1.4 / ADR-0005). Mounted only when a probe
+	// was wired by the caller — keeps the contract test suite and
+	// SDK-equivalence tests free from DB-readiness coupling.
+	// Convention: -z suffix to mirror /healthz.
+	if readiness != nil {
+		r.Method(http.MethodGet, "/readyz", NewReadyzHandler(readiness))
+	}
 
 	return r
 }
