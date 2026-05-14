@@ -48,7 +48,10 @@ func (s stubQuery) GetReceipt(_ context.Context, _ shared.ReceiptID, _ inbound.G
 
 func newTestRouter(t *testing.T) http.Handler {
 	t.Helper()
-	return NewRouter(stubRuntime{t: t}, stubQuery{t: t}, log.NewNop())
+	// nil readiness — /readyz is intentionally NOT mounted for these
+	// generic router tests. See readyz_handler_test.go for /readyz
+	// coverage with a stub probe.
+	return NewRouter(stubRuntime{t: t}, stubQuery{t: t}, log.NewNop(), nil)
 }
 
 func doRequest(t *testing.T, router http.Handler, method, path string) *http.Response {
@@ -67,7 +70,7 @@ func TestNewRouter_PanicsOnNilSvc(t *testing.T) {
 			t.Error("expected panic for nil RuntimeService, got none")
 		}
 	}()
-	NewRouter(nil, stubQuery{}, log.NewNop())
+	NewRouter(nil, stubQuery{}, log.NewNop(), nil)
 }
 
 func TestNewRouter_PanicsOnNilQuery(t *testing.T) {
@@ -76,7 +79,7 @@ func TestNewRouter_PanicsOnNilQuery(t *testing.T) {
 			t.Error("expected panic for nil QueryService, got none")
 		}
 	}()
-	NewRouter(stubRuntime{}, nil, log.NewNop())
+	NewRouter(stubRuntime{}, nil, log.NewNop(), nil)
 }
 
 func TestHealthz_Returns200(t *testing.T) {
