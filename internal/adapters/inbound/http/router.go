@@ -1,11 +1,13 @@
 package http
 
 import (
+	"crypto/rand"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 
+	"github.com/sophia-ecosystem/runtime-adapters/internal/adapters/inbound/http/middleware"
 	"github.com/sophia-ecosystem/runtime-adapters/internal/infrastructure/obs/log"
 	"github.com/sophia-ecosystem/runtime-adapters/internal/ports/inbound"
 )
@@ -35,11 +37,22 @@ func NewRouter(svc inbound.RuntimeService, query inbound.QueryService, logger *l
 
 	r := chi.NewRouter()
 
-	// Middleware chain (spec §5.5):
-	//   chimw.RequestID → LoggerMiddleware → requestIDHeader → panicRecoverer
-	// LoggerMiddleware runs AFTER chimw.RequestID (to inherit the request-id
-	// ctx) and BEFORE panicRecoverer (so recovered panics have a logger
-	// already bound in ctx).
+	// Middleware chain (spec §5.5 + ADR-0005 P2.2e):
+	//   middleware.TraceW3C → chimw.RequestID → LoggerMiddleware
+	//     → requestIDHeader → panicRecoverer
+	//
+	// TraceW3C is FIRST so every downstream middleware and handler runs
+	// with the OTEL SpanContext already bridged into ctx. This makes:
+	//   - panics logged by panicRecoverer (via slog default) inherit
+	//     trace_id + span_id through OTelContextHandler (obs/log);
+	//   - LoggerMiddleware's request-scoped logger emit trace_id +
+	//     span_id without extra wiring (the handler reads from ctx);
+	//   - any span created downstream (e.g. inside the execute path)
+	//     inherit the orchestator-supplied remote SpanContext.
+	//
+	// rand.Reader is the production source for fallback trace/span
+	// generation; tests pass a deterministic io.Reader (R12).
+	r.Use(middleware.TraceW3C(rand.Reader, nil))
 	r.Use(chimw.RequestID)
 	r.Use(LoggerMiddleware(logger))
 	r.Use(requestIDHeader)

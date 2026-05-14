@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,7 @@ import (
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/stretchr/testify/require"
 
+	"github.com/sophia-ecosystem/runtime-adapters/internal/adapters/inbound/http/middleware"
 	"github.com/sophia-ecosystem/runtime-adapters/internal/domain/execution/entities"
 	"github.com/sophia-ecosystem/runtime-adapters/internal/domain/shared"
 	"github.com/sophia-ecosystem/runtime-adapters/internal/infrastructure/obs/log"
@@ -220,6 +222,7 @@ func TestNewRouter_LoggerMiddlewareBoundInChain(t *testing.T) {
 	// installs, then mount a probe handler. If the chain is correct, the
 	// probe sees a non-nil logger in ctx.
 	r := chi.NewRouter()
+	r.Use(middleware.TraceW3C(rand.Reader, nil))
 	r.Use(chimw.RequestID)
 	r.Use(LoggerMiddleware(log.NewNop()))
 	r.Use(requestIDHeader)
