@@ -34,7 +34,14 @@ func NewPhase1Capabilities() ([]Capability, error) {
 		partial            bool
 		def                time.Duration
 	}{
-		{"shell", "exec", "v1", false, 30 * time.Second},
+		// shell.exec@v1 must accommodate long-running AI agent CLIs
+		// (opencode + LLM round-trip). The orch dispatcher passes per-
+		// request timeout_budget_ms (apply default = 1_800_000 = 30min);
+		// the effective timeout is min(budget, default, max). A 30-second
+		// default capped every dispatch and was the 9th wire-alignment
+		// gap discovered during M-E0 Validation Gap #5. 10 minutes is a
+		// realistic ceiling for an apply-phase implement-agent call.
+		{"shell", "exec", "v1", false, 10 * time.Minute},
 		{"git", "status", "v1", false, 10 * time.Second},
 		{"git", "clone", "v1", true, 120 * time.Second},
 		{"git", "diff", "v1", false, 15 * time.Second},
