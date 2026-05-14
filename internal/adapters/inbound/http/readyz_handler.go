@@ -11,10 +11,10 @@ import (
 // passes the pool directly without any adapter shim.
 //
 // Kept as a tiny interface (one method) for two reasons:
-//   1. Hexagonal hygiene — the inbound HTTP layer must not import a
-//      concrete pgx type.
-//   2. Tests in this package can substitute an in-memory probe (success
-//      / failure / slow) without touching real Postgres.
+//  1. Hexagonal hygiene — the inbound HTTP layer must not import a
+//     concrete pgx type.
+//  2. Tests in this package can substitute an in-memory probe (success
+//     / failure / slow) without touching real Postgres.
 type Readiness interface {
 	Ping(ctx context.Context) error
 }
