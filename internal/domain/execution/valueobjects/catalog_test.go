@@ -94,7 +94,7 @@ func TestNewPhase1Capabilities_DefaultTimeouts(t *testing.T) {
 		t.Fatalf("NewPhase1Capabilities() error: %v", err)
 	}
 	wantTimeout := map[string]time.Duration{
-		"shell.exec@v1":            30 * time.Second,
+		"shell.exec@v1":            10 * time.Minute,
 		"git.status@v1":            10 * time.Second,
 		"git.clone@v1":             120 * time.Second,
 		"git.diff@v1":              15 * time.Second,
