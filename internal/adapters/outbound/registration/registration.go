@@ -83,6 +83,7 @@ func RegisterAllPhase1(
 		{"git.clone@v1", gitAdapter.NormalizeClone},
 		{"git.diff@v1", gitAdapter.NormalizeDiff},
 		{"git.commit@v1", gitAdapter.NormalizeCommit},
+		{"git.worktree.create@v1", gitAdapter.NormalizeWorktreeCreate},
 		{"filesystem.read_file@v1", fsAdapter.NormalizeRead},
 		{"filesystem.write_file@v1", fsAdapter.NormalizeWrite},
 		{"http.request@v1", httpAdapter.Normalize},

@@ -94,11 +94,11 @@ func TestAdapter_IDReturnsGit(t *testing.T) {
 	}
 }
 
-func TestAdapter_CapabilitiesReturns4(t *testing.T) {
+func TestAdapter_CapabilitiesReturns5(t *testing.T) {
 	a := newTestAdapter(t)
 	caps := a.Capabilities()
-	if len(caps) != 4 {
-		t.Fatalf("len(Capabilities()) = %d, want 4", len(caps))
+	if len(caps) != 5 {
+		t.Fatalf("len(Capabilities()) = %d, want 5", len(caps))
 	}
 }
 
@@ -109,6 +109,7 @@ func TestAdapter_CapabilitiesHaveCorrectCanonicals(t *testing.T) {
 		"git.clone@v1",
 		"git.diff@v1",
 		"git.commit@v1",
+		"git.worktree.create@v1",
 	}
 	got := map[string]bool{}
 	for _, c := range a.Capabilities() {
@@ -139,10 +140,11 @@ func TestAdapter_OnlyCloneAllowsPartial(t *testing.T) {
 func TestAdapter_CapabilityDefaultTimeouts(t *testing.T) {
 	a := newTestAdapter(t)
 	wantTimeouts := map[string]time.Duration{
-		"status": defaultStatusTimeout,
-		"clone":  defaultCloneTimeout,
-		"diff":   defaultDiffTimeout,
-		"commit": defaultCommitTimeout,
+		"status":          defaultStatusTimeout,
+		"clone":           defaultCloneTimeout,
+		"diff":            defaultDiffTimeout,
+		"commit":          defaultCommitTimeout,
+		"worktree.create": defaultWorktreeCreateTimeout,
 	}
 	for _, c := range a.Capabilities() {
 		want, ok := wantTimeouts[c.Name()]

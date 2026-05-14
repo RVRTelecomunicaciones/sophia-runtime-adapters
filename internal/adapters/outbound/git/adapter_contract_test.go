@@ -105,6 +105,30 @@ func TestGitAdapter_ContractSuite(t *testing.T) {
 				json.RawMessage(`not json`),
 			},
 		},
+		"git.worktree.create@v1": {
+			Valid: jsonRawC(t, map[string]any{
+				"path":          filepath.Join(t.TempDir(), "wt-target"),
+				"upstream_path": repoDir,
+				"base_ref":      "HEAD",
+			}),
+			Invalid: []json.RawMessage{
+				jsonRawC(t, map[string]any{}),                                        // missing all
+				jsonRawC(t, map[string]any{"path": "/wt"}),                           // missing upstream + base_ref
+				jsonRawC(t, map[string]any{"path": "/wt", "upstream_path": repoDir}), // missing base_ref
+				jsonRawC(t, map[string]any{
+					"path":          "/etc/wt",
+					"upstream_path": repoDir,
+					"base_ref":      "HEAD",
+				}), // outside allowlist
+				jsonRawC(t, map[string]any{
+					"path":          "/wt",
+					"upstream_path": repoDir,
+					"base_ref":      "HEAD",
+					"unknown_field": 1,
+				}), // strict decode rejects unknown
+				json.RawMessage(`not json`),
+			},
+		},
 	})
 }
 

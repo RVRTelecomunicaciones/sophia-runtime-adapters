@@ -15,11 +15,11 @@ import (
 // git adapter (§5.4).
 const AdapterIDString = "git"
 
-// Adapter implements outbound.Adapter for the 4 git capabilities
-// (status / clone / diff / commit). Dispatching happens by capability
-// name; the per-capability implementations live in T35..T38 files
-// (status.go, clone.go, diff.go, commit.go) and are wired here as
-// methods on Adapter.
+// Adapter implements outbound.Adapter for the git capabilities (status
+// / clone / diff / commit / worktree.create). Dispatching happens by
+// capability name; the per-capability implementations live in
+// status.go, clone.go, diff.go, commit.go, worktree_create.go and are
+// wired here as methods on Adapter.
 type Adapter struct {
 	id           valueobjects.AdapterID
 	capabilities []valueobjects.Capability
@@ -50,7 +50,7 @@ func NewAdapter(cfg Config, clk shared.Clock) (*Adapter, error) {
 		c, e := valueobjects.NewCapability(id, name, "v1", partial, def)
 		return c, e
 	}
-	caps := make([]valueobjects.Capability, 0, 4)
+	caps := make([]valueobjects.Capability, 0, 5)
 	for _, e := range []struct {
 		name    string
 		partial bool
@@ -60,6 +60,7 @@ func NewAdapter(cfg Config, clk shared.Clock) (*Adapter, error) {
 		{"clone", true, defaultCloneTimeout},
 		{"diff", false, defaultDiffTimeout},
 		{"commit", false, defaultCommitTimeout},
+		{"worktree.create", false, defaultWorktreeCreateTimeout},
 	} {
 		c, err := mk(e.name, e.partial, e.def)
 		if err != nil {
@@ -98,6 +99,8 @@ func (a *Adapter) Execute(ctx context.Context, cap valueobjects.Capability, payl
 			return &diffRaw{ctxErr: err}, nil
 		case "commit":
 			return &commitRaw{ctxErr: err}, nil
+		case "worktree.create":
+			return &worktreeCreateRaw{ctxErr: err}, nil
 		default:
 			return &statusRaw{ctxErr: err}, nil
 		}
@@ -111,6 +114,8 @@ func (a *Adapter) Execute(ctx context.Context, cap valueobjects.Capability, payl
 		return a.diff(ctx, cap, payload)
 	case "commit":
 		return a.commit(ctx, cap, payload)
+	case "worktree.create":
+		return a.worktreeCreate(ctx, cap, payload)
 	default:
 		return &statusRaw{validation: fmt.Sprintf("unknown capability for git adapter: %s", cap.Canonical())}, nil
 	}

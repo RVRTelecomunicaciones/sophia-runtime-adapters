@@ -195,7 +195,7 @@ func TestNewQueryService_RejectsEmptyRuntimeVersion(t *testing.T) {
 // ListCapabilities
 // ---------------------------------------------------------------------------
 
-func TestListCapabilities_NoFilter_ReturnsAll8(t *testing.T) {
+func TestListCapabilities_NoFilter_ReturnsAll9(t *testing.T) {
 	repo := testdoubles.NewInMemoryReceiptRepository(nil)
 	svc := newQueryService(t, repo)
 
@@ -203,8 +203,8 @@ func TestListCapabilities_NoFilter_ReturnsAll8(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(resp.Capabilities) != 8 {
-		t.Errorf("expected 8 capabilities, got %d", len(resp.Capabilities))
+	if len(resp.Capabilities) != 9 {
+		t.Errorf("expected 9 capabilities, got %d", len(resp.Capabilities))
 	}
 	if resp.RuntimeVersion != "0.1.0-test" {
 		t.Errorf("runtime_version = %q, want %q", resp.RuntimeVersion, "0.1.0-test")
@@ -214,7 +214,7 @@ func TestListCapabilities_NoFilter_ReturnsAll8(t *testing.T) {
 	}
 }
 
-func TestListCapabilities_FilterGit_Returns4(t *testing.T) {
+func TestListCapabilities_FilterGit_Returns5(t *testing.T) {
 	repo := testdoubles.NewInMemoryReceiptRepository(nil)
 	svc := newQueryService(t, repo)
 
@@ -226,8 +226,8 @@ func TestListCapabilities_FilterGit_Returns4(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(resp.Capabilities) != 4 {
-		t.Errorf("expected 4 git capabilities, got %d", len(resp.Capabilities))
+	if len(resp.Capabilities) != 5 {
+		t.Errorf("expected 5 git capabilities, got %d", len(resp.Capabilities))
 	}
 	for _, c := range resp.Capabilities {
 		if c.AdapterID().String() != "git" {
