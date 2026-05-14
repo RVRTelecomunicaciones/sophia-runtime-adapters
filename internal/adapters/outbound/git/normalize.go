@@ -13,8 +13,9 @@ import (
 	"github.com/sophia-ecosystem/runtime-adapters/internal/domain/shared"
 )
 
-// NormalizeStatus / NormalizeClone / NormalizeDiff / NormalizeCommit are
-// the registered closures consumed by services.ResultNormalizer.
+// NormalizeStatus / NormalizeClone / NormalizeDiff / NormalizeCommit /
+// NormalizeWorktreeCreate are the registered closures consumed by
+// services.ResultNormalizer.
 
 // NormalizeStatus normalizes a git.status@v1 raw outcome.
 func (a *Adapter) NormalizeStatus(_ valueobjects.Capability, raw services.AdapterRawOutcome, clk shared.Clock) (entities.ExecutionResult, error) {
@@ -318,6 +319,94 @@ func (a *Adapter) NormalizeCommit(_ valueobjects.Capability, raw services.Adapte
 	meta := map[string]string{
 		"commit_sha": r.commitSHA,
 		"branch":     r.branch,
+	}
+	return entities.NewExecutionResult(
+		valueobjects.StatusSuccess, valueobjects.HintNonRetryable,
+		"", "",
+		nil, nil, nil,
+		artifacts, meta,
+		0, 0, msToDuration(r.durationMs), now,
+	)
+}
+
+// NormalizeWorktreeCreate normalizes a git.worktree.create@v1 raw outcome.
+// On success emits a directory artifact + git_commit artifact (and
+// git_ref when Branch was requested).
+func (a *Adapter) NormalizeWorktreeCreate(_ valueobjects.Capability, raw services.AdapterRawOutcome, clk shared.Clock) (entities.ExecutionResult, error) {
+	r, ok := raw.(*worktreeCreateRaw)
+	if !ok {
+		return entities.ExecutionResult{}, fmt.Errorf("git.NormalizeWorktreeCreate: unexpected raw type %T", raw)
+	}
+	now := clk.Now()
+
+	if r.ctxErr != nil {
+		if errors.Is(r.ctxErr, context.DeadlineExceeded) {
+			return entities.NewExecutionResult(
+				valueobjects.StatusTimeout, valueobjects.HintRetryable,
+				valueobjects.ErrTimeout, r.ctxErr.Error(),
+				nil, nil, nil, nil, nil, 0, 0, msToDuration(r.durationMs), now,
+			)
+		}
+		return entities.NewExecutionResult(
+			valueobjects.StatusCancelled, valueobjects.HintNonRetryable,
+			valueobjects.ErrCancelled, r.ctxErr.Error(),
+			nil, nil, nil, nil, nil, 0, 0, msToDuration(r.durationMs), now,
+		)
+	}
+	if r.validation != "" {
+		return entities.NewExecutionResult(
+			valueobjects.StatusFailure, valueobjects.HintNonRetryable,
+			valueobjects.ErrValidationFailure, r.validation,
+			nil, nil, nil, nil, nil, 0, 0, msToDuration(r.durationMs), now,
+		)
+	}
+	if r.runErr != nil {
+		return entities.NewExecutionResult(
+			valueobjects.StatusFailure, valueobjects.HintUnknown,
+			valueobjects.ErrExternalFailure, r.runErr.Error(),
+			nil, nil, nil, nil, nil, 0, 0, msToDuration(r.durationMs), now,
+		)
+	}
+
+	// Success — emit artifacts (directory + git_commit; git_ref when Branch given).
+	var artifacts []entities.Artifact
+	if r.worktreePath != "" {
+		if dirArt, err := entities.NewArtifact(
+			entities.ArtifactDirectory,
+			"file://"+r.worktreePath,
+			0, "",
+			map[string]string{"path": r.worktreePath},
+		); err == nil {
+			artifacts = append(artifacts, dirArt)
+		}
+	}
+	if r.headSHA != "" {
+		if commitArt, err := entities.NewArtifact(
+			entities.ArtifactGitCommit,
+			"git://"+r.worktreePath+"#"+r.headSHA,
+			0, "",
+			map[string]string{"sha": r.headSHA},
+		); err == nil {
+			artifacts = append(artifacts, commitArt)
+		}
+	}
+	if r.branch != "" {
+		if refArt, err := entities.NewArtifact(
+			entities.ArtifactGitRef,
+			"git://"+r.worktreePath+"@"+r.branch,
+			0, "",
+			map[string]string{"ref": r.branch, "sha": r.headSHA},
+		); err == nil {
+			artifacts = append(artifacts, refArt)
+		}
+	}
+
+	meta := map[string]string{
+		"worktree_path": r.worktreePath,
+		"head_sha":      r.headSHA,
+	}
+	if r.branch != "" {
+		meta["branch"] = r.branch
 	}
 	return entities.NewExecutionResult(
 		valueobjects.StatusSuccess, valueobjects.HintNonRetryable,

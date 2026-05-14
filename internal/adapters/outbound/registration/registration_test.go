@@ -63,10 +63,10 @@ func TestRegisterAllPhase1_HappyPath(t *testing.T) {
 		}
 	}
 
-	// Verify all 8 canonicals registered with normalizer.
+	// Verify all 9 canonicals registered with normalizer.
 	registered := norm.Registered()
-	if len(registered) != 8 {
-		t.Errorf("expected 8 registered normalizers, got %d: %v", len(registered), registered)
+	if len(registered) != 9 {
+		t.Errorf("expected 9 registered normalizers, got %d: %v", len(registered), registered)
 	}
 }
 

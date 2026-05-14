@@ -46,6 +46,12 @@ func NewPhase1Capabilities() ([]Capability, error) {
 		{"git", "clone", "v1", true, 120 * time.Second},
 		{"git", "diff", "v1", false, 15 * time.Second},
 		{"git", "commit", "v1", false, 15 * time.Second},
+		// git.worktree.create@v1: clone-based worktree provisioning.
+		// 60s budget covers small/medium repos; large monorepos can override
+		// via per-request timeout_budget_ms up to MaxTimeoutBudget. Atomic
+		// (NOT partial) — the dest directory either ends up cloned + on the
+		// requested ref, or no change is committed.
+		{"git", "worktree.create", "v1", false, 60 * time.Second},
 		{"filesystem", "read_file", "v1", false, 5 * time.Second},
 		{"filesystem", "write_file", "v1", false, 10 * time.Second},
 		{"http", "request", "v1", false, 15 * time.Second},

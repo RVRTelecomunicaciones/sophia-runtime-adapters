@@ -137,11 +137,45 @@ type commitRaw struct {
 
 func (*commitRaw) IsAdapterRawOutcome() {}
 
+// WorktreeCreatePayload — git.worktree.create@v1. Provisions a dedicated
+// workspace directory (Path) by cloning UpstreamPath at BaseRef. If
+// Branch is set, a new branch by that name is created from BaseRef and
+// checked out in the cloned worktree; otherwise the worktree is detached
+// on BaseRef. Path MUST NOT already exist (or must be empty) — the op
+// is atomic.
+//
+// This is a clone-based worktree (NOT `git worktree add` linked-worktree)
+// because go-git v5 does not implement Worktrees.Add. The clone gives
+// each worktree its own .git/, doubling disk use but providing strong
+// isolation between parallel apply-phase agents.
+type WorktreeCreatePayload struct {
+	Path         string `json:"path"`
+	UpstreamPath string `json:"upstream_path"`
+	BaseRef      string `json:"base_ref"`
+	Branch       string `json:"branch,omitempty"`
+}
+
+// worktreeCreateRaw holds the raw outcome of a git.worktree.create@v1
+// execution. headSHA captures the resolved BaseRef commit hash so the
+// caller can verify the worktree's starting point.
+type worktreeCreateRaw struct {
+	validation   string
+	worktreePath string
+	branch       string
+	headSHA      string
+	durationMs   int64
+	ctxErr       error
+	runErr       error
+}
+
+func (*worktreeCreateRaw) IsAdapterRawOutcome() {}
+
 // Default capability timeouts mirror vo.NewPhase1Capabilities for the
 // integration test default.
 const (
-	defaultStatusTimeout = 10 * time.Second
-	defaultCloneTimeout  = 120 * time.Second
-	defaultDiffTimeout   = 15 * time.Second
-	defaultCommitTimeout = 15 * time.Second
+	defaultStatusTimeout         = 10 * time.Second
+	defaultCloneTimeout          = 120 * time.Second
+	defaultDiffTimeout           = 15 * time.Second
+	defaultCommitTimeout         = 15 * time.Second
+	defaultWorktreeCreateTimeout = 60 * time.Second
 )

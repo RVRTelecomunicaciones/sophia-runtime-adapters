@@ -12,8 +12,8 @@ func TestNewPhase1Capabilities_Count(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPhase1Capabilities() error: %v", err)
 	}
-	if len(caps) != 8 {
-		t.Errorf("len = %d, want 8", len(caps))
+	if len(caps) != 9 {
+		t.Errorf("len = %d, want 9", len(caps))
 	}
 }
 
@@ -30,6 +30,7 @@ func TestNewPhase1Capabilities_Order(t *testing.T) {
 		"git.clone@v1",
 		"git.diff@v1",
 		"git.commit@v1",
+		"git.worktree.create@v1",
 		"filesystem.read_file@v1",
 		"filesystem.write_file@v1",
 		"http.request@v1",
@@ -54,6 +55,7 @@ func TestNewPhase1Capabilities_Canonicals(t *testing.T) {
 		"git.clone@v1":             true,
 		"git.diff@v1":              true,
 		"git.commit@v1":            true,
+		"git.worktree.create@v1":   true,
 		"filesystem.read_file@v1":  true,
 		"filesystem.write_file@v1": true,
 		"http.request@v1":          true,
@@ -99,6 +101,7 @@ func TestNewPhase1Capabilities_DefaultTimeouts(t *testing.T) {
 		"git.clone@v1":             120 * time.Second,
 		"git.diff@v1":              15 * time.Second,
 		"git.commit@v1":            15 * time.Second,
+		"git.worktree.create@v1":   60 * time.Second,
 		"filesystem.read_file@v1":  5 * time.Second,
 		"filesystem.write_file@v1": 10 * time.Second,
 		"http.request@v1":          15 * time.Second,
@@ -145,7 +148,7 @@ func TestNewPhase1Capabilities_FilterByAdapter(t *testing.T) {
 		want    int
 	}{
 		{"shell", 1},
-		{"git", 4},
+		{"git", 5},
 		{"filesystem", 2},
 		{"http", 1},
 	}
@@ -172,8 +175,8 @@ func TestMustNewPhase1Capabilities_NoPanic(t *testing.T) {
 		}
 	}()
 	caps = MustNewPhase1Capabilities()
-	if len(caps) != 8 {
-		t.Errorf("MustNewPhase1Capabilities() len = %d, want 8", len(caps))
+	if len(caps) != 9 {
+		t.Errorf("MustNewPhase1Capabilities() len = %d, want 9", len(caps))
 	}
 }
 
