@@ -232,6 +232,57 @@ slos:
         labels:
           severity: warning
 
+  # ---- git.worktree.create@v1 -------------------------------------------
+  # PROVISIONAL — calibration deferred until the orch switches from
+  # mkdir + shell.exec@v1 to this typed capability (V1.5). Budgets mirror
+  # git.clone@v1 because the impl is clone-based (PlainCloneContext) +
+  # one checkout; same disk + I/O profile.
+  - name: "git-worktree-create-availability"
+    objective: 99.5
+    description: "git.worktree.create@v1 non-error execution rate"
+    labels:
+      capability: "git.worktree.create@v1"
+    sli:
+      events:
+        error_query: |
+          sum(rate(runtime_adapters_execution_total{capability="git.worktree.create@v1",status=~"failure|timeout"}[{{.window}}]))
+        total_query: |
+          sum(rate(runtime_adapters_execution_total{capability="git.worktree.create@v1",status=~"success|failure|timeout"}[{{.window}}]))
+    alerting:
+      name: GitWorktreeCreateAvailabilityBurn
+      labels:
+        capability: "git.worktree.create@v1"
+      page_alert:
+        labels:
+          severity: critical
+      ticket_alert:
+        labels:
+          severity: warning
+
+  - name: "git-worktree-create-latency"
+    objective: 99.0
+    description: "99% of git.worktree.create@v1 successful executions complete under 30s (PROVISIONAL — calibration deferred to V1.5 orch switch; budget mirrors git.clone@v1)"
+    labels:
+      capability: "git.worktree.create@v1"
+    sli:
+      events:
+        error_query: |
+          sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.worktree.create@v1"}[{{.window}}]))
+          -
+          sum(rate(runtime_adapters_execution_duration_seconds_bucket{capability="git.worktree.create@v1",le="30"}[{{.window}}]))
+        total_query: |
+          sum(rate(runtime_adapters_execution_duration_seconds_count{capability="git.worktree.create@v1"}[{{.window}}]))
+    alerting:
+      name: GitWorktreeCreateLatencyBurn
+      labels:
+        capability: "git.worktree.create@v1"
+      page_alert:
+        labels:
+          severity: critical
+      ticket_alert:
+        labels:
+          severity: warning
+
   # ---- cancellation-rate SLOs (PROVISIONAL — Phase 2C.4 / G) -------------
   # Note: cancellation `total_query` is UNFILTERED (no status~ clause) by
   # design — cancellation can displace any status (including partial), so
@@ -319,6 +370,28 @@ slos:
       name: GitCommitCancellationRateBurn
       labels:
         capability: "git.commit@v1"
+      page_alert:
+        labels:
+          severity: critical
+      ticket_alert:
+        labels:
+          severity: warning
+
+  - name: "git-worktree-create-cancellation-rate"
+    objective: 99.0   # PROVISIONAL — cancellation rate < 1% (G, 2C.4)
+    description: "git.worktree.create@v1 caller-cancellation rate (PROVISIONAL — see file header)"
+    labels:
+      capability: "git.worktree.create@v1"
+    sli:
+      events:
+        error_query: |
+          sum(rate(runtime_adapters_execution_total{capability="git.worktree.create@v1",status="cancelled"}[{{.window}}]))
+        total_query: |
+          sum(rate(runtime_adapters_execution_total{capability="git.worktree.create@v1"}[{{.window}}]))
+    alerting:
+      name: GitWorktreeCreateCancellationRateBurn
+      labels:
+        capability: "git.worktree.create@v1"
       page_alert:
         labels:
           severity: critical
