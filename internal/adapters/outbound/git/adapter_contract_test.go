@@ -112,8 +112,8 @@ func TestGitAdapter_ContractSuite(t *testing.T) {
 				"base_ref":      "HEAD",
 			}),
 			Invalid: []json.RawMessage{
-				jsonRawC(t, map[string]any{}), // missing all
-				jsonRawC(t, map[string]any{"path": "/wt"}),                          // missing upstream + base_ref
+				jsonRawC(t, map[string]any{}),                                        // missing all
+				jsonRawC(t, map[string]any{"path": "/wt"}),                           // missing upstream + base_ref
 				jsonRawC(t, map[string]any{"path": "/wt", "upstream_path": repoDir}), // missing base_ref
 				jsonRawC(t, map[string]any{
 					"path":          "/etc/wt",
