@@ -1,0 +1,109 @@
+# Default values for sophia-runtime-adapters.
+# Override via `helm install -f my-values.yaml` or `--set key=value`.
+
+image:
+  # The Dockerfile ships TWO runtime targets:
+  #   - runtime-adapters       — distroless/static, ~30 MB, NO opencode/git
+  #   - runtime-adapters-llm   — debian:12-slim, ~520 MB, opencode + git + tini
+  #
+  # The repository tag SHOULD encode the target (`-llm` suffix is the
+  # convention recommended by ADR-0012 in this repo). Default below is
+  # the distroless target — flip to `-llm` when the dispatcher needs
+  # to invoke opencode in-cluster.
+  repository: ghcr.io/rvrtelecomunicaciones/sophia-runtime-adapters
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+# llm.enabled toggles the opencode-config + auth.json mounts that ONLY
+# the runtime-adapters-llm target needs. When true, you MUST also flip
+# image.tag to a `-llm` variant (this chart does not auto-detect).
+llm:
+  enabled: false
+
+replicaCount: 1
+
+service:
+  type: ClusterIP
+  port: 8080
+
+resources:
+  limits:
+    cpu: "2"      # higher than orch — runtime spawns LLM subprocesses (when LLM target)
+    memory: "1Gi"
+  requests:
+    cpu: "200m"
+    memory: "256Mi"
+
+config:
+  httpAddr: ":8080"
+  env: production       # development | staging | production
+  version: "0.1.0"
+  provenanceSource: http
+  chaosEnabled: false
+  otelEnabled: false
+  # Allowed-paths for shell.exec@v1. The LLM target ships opencode in
+  # /usr/local/bin so include that there. The distroless target only
+  # has the runtime binary itself; shell.exec@v1 is effectively unable
+  # to spawn external processes regardless of this whitelist.
+  allowedCommandsPath: "/usr/local/bin:/usr/bin:/bin"
+  allowedWorkingDirs: "/tmp"
+  allowedFilesystemRoots: "/tmp"
+
+# Database connection. runtime-adapters uses pgx and embedded
+# golang-migrate (migrations run in-process at boot via wire.go).
+secrets:
+  postgresDsn: ""   # postgres://user:pass@host:5432/runtime_adapters?sslmode=require
+
+# OpenCode auth.json — mounted as a Secret so the opencode subprocess
+# inherits the operator's OAuth credentials. ONLY needed when llm.enabled=true.
+# Dev: base64-encode your ~/.local/share/opencode/auth.json and paste
+# under `openCodeAuthJson`. Prod: prefer a SecretRef from External
+# Secrets Operator pulling from Vault/AWS SM.
+openCodeAuth:
+  # Base64-encoded JSON content. Empty disables the mount (opencode
+  # then falls back to provider env vars like ANTHROPIC_API_KEY).
+  authJsonBase64: ""
+
+# OpenCode permissions config — pre-grants bash/edit/write/read/
+# external_directory to "allow" so the headless subprocess does not
+# hang on the upstream `ask`-default permission prompt
+# (anomalyco/opencode#14473). Mounted as ConfigMap (no secrets here).
+openCodeConfig:
+  permissionAllow:
+    bash: true
+    edit: true
+    write: true
+    read: true
+    externalDirectory: true
+
+probes:
+  liveness:
+    path: /healthz
+    initialDelaySeconds: 10
+    periodSeconds: 10
+  readiness:
+    path: /readyz
+    initialDelaySeconds: 5
+    periodSeconds: 5
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+
+securityContext:
+  allowPrivilegeEscalation: false
+  # When llm.enabled=true, opencode writes to ~/.config/opencode and
+  # /tmp on first run; readOnlyRootFilesystem must be false in that
+  # case. The chart auto-flips this in the deployment template.
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+serviceAccount:
+  create: true
+  name: ""
+
+podAnnotations: {}
