@@ -1,0 +1,46 @@
+# ops/local/compose.llm.yaml
+#
+# OVERLAY for compose.yaml (or sophia-orchestator/ops/local/compose.full-stack.yaml)
+# that swaps the distroless `runtime-adapters` build target for the
+# `runtime-adapters-llm` target — same Go binary, different runtime image
+# (debian:12-slim base) bundling the opencode CLI + git + tini.
+#
+# Use when you want the orchestrator's dispatcher to invoke a real LLM via
+# `shell.exec@v1` -> `opencode run -m <model> "..."` end-to-end inside the
+# container. For pure capability execution (no LLM), prefer the default
+# `runtime-adapters` target which keeps the distroless surface.
+#
+# USAGE
+#   # Standalone runtime-only stack (this repo's compose.yaml as the base):
+#   docker compose -f ops/local/compose.yaml -f ops/local/compose.llm.yaml up -d --build
+#
+#   # Full Sophia stack (from sophia-orchestator/ops/local):
+#   docker compose \
+#     -f compose.full-stack.yaml \
+#     -f ../../../sophia-runtime-adapters/ops/local/compose.llm.yaml \
+#     up -d --build
+#
+# CONFIG
+#   - opencode-config.json (sibling file) is mounted read-only at
+#     /home/nonroot/.config/opencode/opencode.json. It pre-grants
+#     bash/edit/write/read/external_directory permissions to avoid the
+#     upstream `ask`-default headless hang (issue anomalyco/opencode#14473).
+#   - LLM provider auth is the operator's responsibility. Either:
+#       a) mount ~/.local/share/opencode/auth.json as a secret, or
+#       b) pass the provider's API key env var (ANTHROPIC_API_KEY,
+#          OPENAI_API_KEY, etc.) directly to the runtime-adapters service.
+#   - Default model selection lives in the orchestrator
+#     (SOPHIA_DISPATCHER_MODEL); the runtime is provider-agnostic.
+
+services:
+  runtime-adapters:
+    build:
+      target: runtime-adapters-llm
+    environment:
+      # The LLM target ships opencode + git in /usr/local/bin and
+      # /usr/bin — narrow the shell.exec@v1 PATH allowlist accordingly.
+      RUNTIME_ALLOWED_COMMANDS_PATH: "/usr/local/bin:/usr/bin:/bin"
+    volumes:
+      # Permission overrides — opencode without this hangs in headless
+      # mode on its first tool-use approval prompt (issue #14473).
+      - ./opencode-config.json:/home/nonroot/.config/opencode/opencode.json:ro
