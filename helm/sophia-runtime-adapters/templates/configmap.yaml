@@ -1,0 +1,25 @@
+{{- if .Values.llm.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "sophia-runtime-adapters.fullname" . }}-opencode-config
+  labels:
+    {{- include "sophia-runtime-adapters.labels" . | nindent 4 }}
+data:
+  # Mounted at /home/nonroot/.config/opencode/opencode.json. Pre-grants
+  # the permissions opencode would otherwise prompt for at first
+  # tool-use; without this, the subprocess hangs on the missing TTY
+  # (upstream bug anomalyco/opencode#14473, closed but the default
+  # unchanged).
+  opencode.json: |
+    {
+      "$schema": "https://opencode.ai/config.json",
+      "permission": {
+        "bash": "{{ if .Values.openCodeConfig.permissionAllow.bash }}allow{{ else }}deny{{ end }}",
+        "edit": "{{ if .Values.openCodeConfig.permissionAllow.edit }}allow{{ else }}deny{{ end }}",
+        "write": "{{ if .Values.openCodeConfig.permissionAllow.write }}allow{{ else }}deny{{ end }}",
+        "read": "{{ if .Values.openCodeConfig.permissionAllow.read }}allow{{ else }}deny{{ end }}",
+        "external_directory": "{{ if .Values.openCodeConfig.permissionAllow.externalDirectory }}allow{{ else }}deny{{ end }}"
+      }
+    }
+{{- end }}

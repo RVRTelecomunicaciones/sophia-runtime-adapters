@@ -1,0 +1,113 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "sophia-runtime-adapters.fullname" . }}
+  labels:
+    {{- include "sophia-runtime-adapters.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "sophia-runtime-adapters.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "sophia-runtime-adapters.selectorLabels" . | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "sophia-runtime-adapters.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: runtime-adapters
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: {{ .Values.securityContext.allowPrivilegeEscalation }}
+            # opencode (LLM target) writes to ~/.config and /tmp on first
+            # run; readOnlyRootFilesystem must be false in that case.
+            readOnlyRootFilesystem: {{ if .Values.llm.enabled }}false{{ else }}{{ .Values.securityContext.readOnlyRootFilesystem }}{{ end }}
+            capabilities:
+              {{- toYaml .Values.securityContext.capabilities | nindent 14 }}
+          env:
+            - name: RUNTIME_HTTP_ADDR
+              value: {{ .Values.config.httpAddr | quote }}
+            - name: RUNTIME_ENV
+              value: {{ .Values.config.env | quote }}
+            - name: RUNTIME_VERSION
+              value: {{ .Values.config.version | quote }}
+            - name: RUNTIME_PROVENANCE_SOURCE
+              value: {{ .Values.config.provenanceSource | quote }}
+            - name: RUNTIME_CHAOS_ENABLED
+              value: {{ .Values.config.chaosEnabled | quote }}
+            - name: OTEL_ENABLED
+              value: {{ .Values.config.otelEnabled | quote }}
+            - name: RUNTIME_ALLOWED_COMMANDS_PATH
+              value: {{ .Values.config.allowedCommandsPath | quote }}
+            - name: RUNTIME_ALLOWED_WORKING_DIRS
+              value: {{ .Values.config.allowedWorkingDirs | quote }}
+            - name: RUNTIME_ALLOWED_FILESYSTEM_ROOTS
+              value: {{ .Values.config.allowedFilesystemRoots | quote }}
+          envFrom:
+            - secretRef:
+                name: {{ include "sophia-runtime-adapters.fullname" . }}-secrets
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.probes.liveness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.probes.readiness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          {{- if .Values.llm.enabled }}
+          volumeMounts:
+            - name: opencode-config
+              mountPath: /home/nonroot/.config/opencode/opencode.json
+              subPath: opencode.json
+              readOnly: true
+            {{- if .Values.openCodeAuth.authJsonBase64 }}
+            - name: opencode-auth
+              mountPath: /home/nonroot/.local/share/opencode/auth.json
+              subPath: auth.json
+              readOnly: true
+            {{- end }}
+            # Writable scratch (opencode runtime files + bun cache).
+            - name: scratch
+              mountPath: /tmp
+            - name: opencode-data
+              mountPath: /home/nonroot/.local/share/opencode
+          {{- end }}
+      {{- if .Values.llm.enabled }}
+      volumes:
+        - name: opencode-config
+          configMap:
+            name: {{ include "sophia-runtime-adapters.fullname" . }}-opencode-config
+            items:
+              - key: opencode.json
+                path: opencode.json
+        {{- if .Values.openCodeAuth.authJsonBase64 }}
+        - name: opencode-auth
+          secret:
+            secretName: {{ include "sophia-runtime-adapters.fullname" . }}-opencode-auth
+            items:
+              - key: auth.json
+                path: auth.json
+        {{- end }}
+        - name: scratch
+          emptyDir: {}
+        - name: opencode-data
+          emptyDir: {}
+      {{- end }}
