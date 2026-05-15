@@ -600,3 +600,42 @@ jobs:
         # promotion via filelog operators). Test source is at
         # ops/loki/loki_labels_test.go (B1.9).
         run: go test -tags loki_labels ./ops/loki/...
+
+
+  build-llm-image:
+    name: Build LLM-capable runtime image (amd64 + arm64)
+    runs-on: ubuntu-latest
+    # Independent of unit/contract — image build is not gated by Go test
+    # outcomes (those run in lint-unit-contract). This job validates that
+    # the runtime-adapters-llm Dockerfile target builds clean on both
+    # archs and that the upstream opencode tarball still resolves.
+    # See ADR-0012.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build linux/amd64
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: runtime-adapters-llm
+          platforms: linux/amd64
+          push: false
+          load: false
+          tags: sophia-runtime-adapters-llm:ci-amd64
+          cache-from: type=gha,scope=runtime-llm-amd64
+          cache-to: type=gha,scope=runtime-llm-amd64,mode=max
+
+      - name: Build linux/arm64
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: runtime-adapters-llm
+          platforms: linux/arm64
+          push: false
+          load: false
+          tags: sophia-runtime-adapters-llm:ci-arm64
+          cache-from: type=gha,scope=runtime-llm-arm64
+          cache-to: type=gha,scope=runtime-llm-arm64,mode=max
