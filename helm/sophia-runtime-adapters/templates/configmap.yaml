@@ -1,4 +1,4 @@
-{{- if .Values.llm.enabled }}
+{{- if eq .Values.llm.target "opencode" }}
 apiVersion: v1
 kind: ConfigMap
 metadata:

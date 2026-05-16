@@ -2,23 +2,52 @@
 # Override via `helm install -f my-values.yaml` or `--set key=value`.
 
 image:
-  # The Dockerfile ships TWO runtime targets:
-  #   - runtime-adapters       — distroless/static, ~30 MB, NO opencode/git
-  #   - runtime-adapters-llm   — debian:12-slim, ~520 MB, opencode + git + tini
+  # The Dockerfile ships FOUR runtime targets. Set image.tag to the
+  # appropriate suffix and set llm.target to match:
   #
-  # The repository tag SHOULD encode the target (`-llm` suffix is the
-  # convention recommended by ADR-0012 in this repo). Default below is
-  # the distroless target — flip to `-llm` when the dispatcher needs
-  # to invoke opencode in-cluster.
+  #   Target name                    Tag suffix          llm.target
+  #   ----------------------------   -----------------   -----------
+  #   runtime-adapters               (none / "0.1.0")    (unset)
+  #   runtime-adapters-llm-opencode  0.1.0-llm-opencode  opencode
+  #   runtime-adapters-llm-ollama    0.1.0-llm-ollama    ollama
+  #   runtime-adapters-llm-aider     0.1.0-llm-aider     aider
+  #
+  # The `-llm` tag suffix is a backward-compatible alias for
+  # `-llm-opencode`; existing deployments that already set tag to
+  # "0.1.0-llm" continue to work without a values.yaml change.
   repository: ghcr.io/rvrtelecomunicaciones/sophia-runtime-adapters
   tag: "0.1.0"
   pullPolicy: IfNotPresent
 
-# llm.enabled toggles the opencode-config + auth.json mounts that ONLY
-# the runtime-adapters-llm target needs. When true, you MUST also flip
-# image.tag to a `-llm` variant (this chart does not auto-detect).
+# llm.target selects the LLM dispatcher variant. Accepted values:
+#
+#   ""         (empty / unset) — distroless target, no LLM mounts.
+#              This is the default. Use image.tag without a suffix.
+#
+#   "opencode" — opencode CLI bundled. Mounts opencode-config
+#              ConfigMap and (optionally) opencode auth.json Secret.
+#              Requires image.tag ending in "-llm-opencode" (or the
+#              backward-compatible "-llm" alias).
+#
+#   "ollama"   — ollama binary bundled; daemon runs EXTERNALLY. The
+#              chart injects OLLAMA_HOST env var (see llm.ollamaHost).
+#              Requires image.tag ending in "-llm-ollama".
+#              No auth.json or opencode ConfigMap is mounted.
+#
+#   "aider"    — aider-chat installed via pipx at /usr/local/bin/aider.
+#              Requires image.tag ending in "-llm-aider". API keys
+#              (ANTHROPIC_API_KEY / OPENAI_API_KEY) must be supplied
+#              via secrets.aiderEnv (same pattern as secrets.postgresDsn).
+#              No auth.json or opencode ConfigMap is mounted.
 llm:
-  enabled: false
+  target: ""
+
+  # ollamaHost is the OLLAMA_HOST injected when llm.target="ollama".
+  # Point this at the Service / Deployment running the ollama daemon
+  # (e.g. the ollama/ollama Helm chart deployed in namespace "ollama").
+  # The adapter hits this endpoint; no GPU drivers are needed in the
+  # runtime-adapters-llm-ollama image itself.
+  ollamaHost: "http://ollama.ollama.svc.cluster.local:11434"
 
 replicaCount: 1
 
@@ -41,10 +70,11 @@ config:
   provenanceSource: http
   chaosEnabled: false
   otelEnabled: false
-  # Allowed-paths for shell.exec@v1. The LLM target ships opencode in
-  # /usr/local/bin so include that there. The distroless target only
-  # has the runtime binary itself; shell.exec@v1 is effectively unable
-  # to spawn external processes regardless of this whitelist.
+  # Allowed-paths for shell.exec@v1. The LLM targets ship opencode /
+  # ollama / aider in /usr/local/bin so include that there. The
+  # distroless target only has the runtime binary itself; shell.exec@v1
+  # is effectively unable to spawn external processes regardless of
+  # this whitelist.
   allowedCommandsPath: "/usr/local/bin:/usr/bin:/bin"
   allowedWorkingDirs: "/tmp"
   allowedFilesystemRoots: "/tmp"
@@ -54,8 +84,18 @@ config:
 secrets:
   postgresDsn: ""   # postgres://user:pass@host:5432/runtime_adapters?sslmode=require
 
+  # aiderEnv is only used when llm.target="aider". Supply at least one of:
+  #   ANTHROPIC_API_KEY: "sk-ant-..."   # Claude models (recommended)
+  #   OPENAI_API_KEY:    "sk-..."       # GPT-4 models
+  # These are injected into the container via a dedicated Secret and
+  # loaded via envFrom (same pattern as postgresDsn). Empty map disables
+  # the Secret (no mount occurs when llm.target != "aider").
+  aiderEnv: {}
+
 # OpenCode auth.json — mounted as a Secret so the opencode subprocess
-# inherits the operator's OAuth credentials. ONLY needed when llm.enabled=true.
+# inherits the operator's OAuth credentials. ONLY needed when
+# llm.target="opencode" (or the backward-compatible "llm.enabled=true"
+# path). Ignored for ollama and aider targets.
 # Dev: base64-encode your ~/.local/share/opencode/auth.json and paste
 # under `openCodeAuthJson`. Prod: prefer a SecretRef from External
 # Secrets Operator pulling from Vault/AWS SM.
@@ -68,6 +108,7 @@ openCodeAuth:
 # external_directory to "allow" so the headless subprocess does not
 # hang on the upstream `ask`-default permission prompt
 # (anomalyco/opencode#14473). Mounted as ConfigMap (no secrets here).
+# Only rendered when llm.target="opencode".
 openCodeConfig:
   permissionAllow:
     bash: true
@@ -94,7 +135,7 @@ podSecurityContext:
 
 securityContext:
   allowPrivilegeEscalation: false
-  # When llm.enabled=true, opencode writes to ~/.config/opencode and
+  # When llm.target is set, LLM subprocesses write to ~/.config and
   # /tmp on first run; readOnlyRootFilesystem must be false in that
   # case. The chart auto-flips this in the deployment template.
   readOnlyRootFilesystem: true
