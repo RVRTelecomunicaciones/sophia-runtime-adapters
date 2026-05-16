@@ -1,8 +1,10 @@
 # LLM-Capable Runtime Deployment — Design (Opción B)
 
-**Status**: design · created 2026-05-15 · pending implementation
+**Status**: shipped (4 targets) — opencode 2026-05-15 (PR via ADR-0012) · ollama + aider + DRY base 2026-05-15 (PR #62)
 **Driver**: cycle SDD real con LLM bloqueado en distroless puro (audit 2026-05-14)
 **Companion**: opción A (binario local) ya validada y funcionando como workaround dev.
+
+> **Nota de lectura (post-PR #62)**: este doc se conserva como design + decision log histórico. Para la **referencia operacional actual** de los 4 targets shipped (`runtime-adapters`, `-llm-opencode`, `-llm-ollama`, `-llm-aider`), ver el segundo apéndice al final del doc y `helm/sophia-runtime-adapters/values.yaml`. Para el **routing por phase** entre providers, ver `sophia-orchestator/docs/operations/llm-providers.md`.
 
 ## Problem statement
 
@@ -20,9 +22,9 @@
 
 ## Non-goals (out of scope)
 
-- Multi-LLM provider switch — eso es V2 (factory de adapters por agent_role).
-- Embedding del LLM en sí (modelos locales como Llama). Solo embedding del CLI client.
-- Soporte cross-arch — empezamos con linux/arm64 + linux/amd64 build matrix.
+- ~~Multi-LLM provider switch — eso es V2 (factory de adapters por agent_role).~~ **RESUELTO 2026-05-15**: V2 factory shipped en sophia-orchestator (PRs #18/#19/#20) + los 3 image targets en este repo (PR #62). Ver apéndice 2.
+- Embedding del LLM en sí (modelos locales como Llama). Solo embedding del CLI client. **Nota**: el target `-llm-ollama` ships el `ollama` CLI, NO el daemon ni los modelos — conecta a un daemon externo via `OLLAMA_HOST`. La premisa de no embeber modelos sigue.
+- Soporte cross-arch — empezamos con linux/arm64 + linux/amd64 build matrix. **Resuelto**: los 3 targets LLM se buildean para ambas arch (CI matrix en `.github/workflows/build-images.yaml`).
 
 ## Inventario de subprocesses que el runtime invoca
 
@@ -207,6 +209,7 @@ ADR nuevo: `docs/adr/0007-runtime-llm-capable-target.md`
 
 3. **Multi-LLM previsto**: cuando llegue V2, ¿el container también incluye `claude-code`, `cursor`, `aider`?
    - Recomendación: targets separados (`runtime-adapters-claude-code`, `runtime-adapters-aider`, etc.) que extienden una base común. Evita single image con todos los CLIs (atrás de cada uno hay deps pesadas).
+   - **Resuelto 2026-05-15 (PR #62)** — exactamente este approach: stage `llm-base` DRY + 3 LLM targets (`-llm-opencode`, `-llm-ollama`, `-llm-aider`). `claude-code` queda fuera mientras Anthropic siga bloqueando OAuth third-party (Feb 2026 ToS).
 
 4. **Image registry**: ¿GHCR como las otras images? ¿Tag scheme (`runtime-adapters:1.0.0-llm`)?
    - Recomendación: GHCR con tag suffix `-llm` para distinguir del distroless default.
@@ -239,15 +242,18 @@ Validado el 2026-05-15: `execution complete | duration_ms=4277 | status=success`
 
 ## Trade-offs honestos
 
-| Tema | Distroless puro (status quo) | LLM-capable (B.3) |
-|---|---|---|
-| Tamaño | ~30MB | ~200MB |
-| Surface attack | mínima | git + opencode + curl |
-| LLM cycles | ❌ no funcionan | ✅ funcionan |
-| Update opencode | N/A | requiere rebuild |
-| Producción | ✅ shipped | ⚠️ depende del use case |
+> Esta tabla refleja la situación **post-PR #62** (4 targets shipped). La versión original de la tabla (2 columnas) está conservada en el historial de git para referencia.
 
-**Strategy**: ambos targets coexisten. Use `runtime-adapters` para deploys puramente reactivos (capabilities sin LLM). Use `runtime-adapters-llm` cuando el cycle SDD se vaya a ejecutar contra ese container.
+| Tema | `runtime-adapters` (distroless) | `-llm-opencode` | `-llm-ollama` | `-llm-aider` |
+|---|---|---|---|---|
+| Base | distroless/static | debian:12-slim + tini | debian:12-slim + tini | debian:12-slim + tini + python3 |
+| Tamaño aprox. | ~30MB | ~520MB | ~80MB (CLI sin daemon) | ~500MB (pipx venv) |
+| Surface attack | mínima | git + opencode + curl | git + ollama CLI | git + python3 + aider venv |
+| LLM cycles | ❌ no funcionan | ✅ vía OAuth en auth.json | ✅ contra `OLLAMA_HOST` externo | ✅ vía API keys env (ANTHROPIC_API_KEY etc.) |
+| Update CLI | N/A | rebuild + bump `OPENCODE_VERSION` | rebuild + bump `OLLAMA_VERSION` | rebuild + bump aider via pipx pin |
+| Producción | ✅ shipped | ✅ shipped | ✅ shipped (necesita daemon externo) | ✅ shipped (necesita secrets de provider) |
+
+**Strategy**: los 4 targets coexisten. `runtime-adapters` para deploys puramente reactivos. Los 3 `-llm-*` se eligen según qué adapter tiene que invocar `shell.exec@v1` el orchestator (cf. `SOPHIA_DISPATCHER_PROVIDER_*` en orchestator). El operador NO mezcla varios CLIs en una sola imagen — cada deployment elige UN target LLM y configura `helm.values.llm.target = opencode|ollama|aider` para que el chart monte sólo lo correspondiente.
 
 ## Próximo paso
 
@@ -282,3 +288,76 @@ Opción B fue implementada y validada el mismo día. Ver **ADR-0012** para la de
 | Tamaño final real **519 MB** (vs 200 MB estimado) — bun-compiled opencode pesa ~120 MB descomprimido | Documentado en ADR como trade-off aceptado |
 | OAuth credentials viven en `~/.local/share/opencode/auth.json` del HOST | Bind-mount como secret read-only en compose overlay |
 | Anthropic bloquea server-side el OAuth Claude Code de third-party tools | Usar `github-copilot/claude-sonnet-4.6` (Microsoft tiene deal con Anthropic para Copilot) |
+
+
+---
+
+## Apéndice 2 — Multi-LLM expansion (2026-05-15, PR #62)
+
+La Fase 1 (apéndice anterior) entregó `runtime-adapters-llm` con `opencode` bundled. PR #62 amplió esa base a **4 image targets** con stage común DRY, manteniendo el contrato del operador (`shell.exec@v1` + `RUNTIME_ALLOWED_COMMANDS_PATH`) intacto.
+
+### Targets shipped
+
+| Tag suffix | Base | Bundled CLIs | Cuándo usar |
+|---|---|---|---|
+| _(none)_ — `runtime-adapters` | distroless/static | — | Deploys reactivos sin LLM (capabilities-only). |
+| `-llm-opencode` | `llm-base` (debian:12-slim + tini + git) | `opencode` 1.14.48 + auth.json bind-mount | Default LLM target — orchestator usa opencode como provider por defecto. |
+| `-llm-ollama` | `llm-base` | `ollama` CLI (no daemon) | Cuando `SOPHIA_DISPATCHER_PROVIDER_*=ollama` está activo. La imagen NO trae daemon — conecta a uno externo via `OLLAMA_HOST` env (default chart: `http://ollama.ollama.svc.cluster.local:11434`). |
+| `-llm-aider` | `llm-base` + `python3` | aider via pipx venv | Cuando `SOPHIA_DISPATCHER_PROVIDER_APPLY=aider` está activo. Las creds (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`) viven en `helm.values.secrets.aiderEnv`, no en auth.json. |
+
+Para backward-compat el tag `-llm` sin suffix se mantiene como alias de `-llm-opencode`.
+
+### Helm migration: `llm.enabled` → `llm.target`
+
+Values schema cambió de toggle booleano a enum:
+
+```yaml
+# Antes (Fase 1):
+llm:
+  enabled: true   # mountaba opencode auth.json y nada más
+
+# Después (PR #62):
+llm:
+  target: opencode | ollama | aider | ""   # "" desactiva mounts LLM
+```
+
+El chart consulta `llm.target` para decidir qué montar:
+- `opencode` → monta `auth.json` Secret (igual que antes).
+- `ollama` → expone `OLLAMA_HOST` env, NO monta auth.json ni aiderEnv.
+- `aider` → monta `secrets.aiderEnv` Secret (`ANTHROPIC_API_KEY` etc.), NO monta auth.json ni `OLLAMA_HOST`.
+- `""` (vacío) → ningún mount LLM (equivalente al antiguo `llm.enabled: false`).
+
+Migration path para deploys existentes con `llm.enabled: true`:
+```bash
+helm upgrade ... --set llm.target=opencode --set llm.enabled=null
+```
+
+### CI matrix
+
+`.github/workflows/build-images.yaml` ahora buildea **3 targets × 2 platforms = 6 jobs en matriz**:
+
+```yaml
+strategy:
+  matrix:
+    target:   [runtime-adapters-llm-opencode, runtime-adapters-llm-ollama, runtime-adapters-llm-aider]
+    platform: [linux/amd64, linux/arm64]
+```
+
+Push a `ghcr.io/rvrtelecomunicaciones/sophia-runtime-adapters:<version>-<target-suffix>` solo en main; en PRs se buildea sin push para validar.
+
+### Findings adicionales (más allá del apéndice 1)
+
+| Gotcha | Fix aplicado |
+|---|---|
+| `ARG OLLAMA_VERSION=0.9.0` global antes del primer `FROM` no fluye al re-declarar dentro del stage `ollama-bin` (mismo bug que `OPENCODE_VERSION` en Fase 1) | Re-declarar con default explícito DENTRO del stage. Patrón `ARG`-en-stage replicado para los 2 nuevos targets. |
+| El tarball de ollama tiene layout `bin/ollama` (no `ollama` en root) | Extract a `/tmp/ollama-dl/` y copy desde `/tmp/ollama-dl/bin/ollama` |
+| pipx venv de aider pesa ~350 MB (full Python dep tree de aider-chat) | Aceptado en el ADR (~500 MB final, comparable al opencode target) |
+| Aider necesita `python3` (`libpython3.11.so`) en el runtime image, pero NO `pip` ni `pipx` | El stage `aider-bin` corre pipx en build-time, copia la venv self-contained al runtime image. Runtime no tiene pipx. |
+| Validación local: `ollama run` en la imagen reporta "could not connect to a running Ollama instance" | Esperado — la imagen NO trae daemon. El operator debe correr `ollama serve` externo o usar uno managed. |
+
+### Ver también
+
+- `helm/sophia-runtime-adapters/values.yaml` — nuevo schema `llm.target`
+- `Dockerfile` — stages `llm-base` + `ollama-bin` + `aider-bin` + 4 targets finales
+- `.github/workflows/build-images.yaml` — CI matrix
+- `sophia-orchestator/docs/operations/llm-providers.md` — operator-facing routing guide para los 3 providers
