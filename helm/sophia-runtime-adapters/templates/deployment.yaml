@@ -27,9 +27,9 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
             allowPrivilegeEscalation: {{ .Values.securityContext.allowPrivilegeEscalation }}
-            # opencode (LLM target) writes to ~/.config and /tmp on first
-            # run; readOnlyRootFilesystem must be false in that case.
-            readOnlyRootFilesystem: {{ if .Values.llm.enabled }}false{{ else }}{{ .Values.securityContext.readOnlyRootFilesystem }}{{ end }}
+            # LLM targets write to ~/.config and /tmp on first run;
+            # readOnlyRootFilesystem must be false when any LLM target is set.
+            readOnlyRootFilesystem: {{ if .Values.llm.target }}false{{ else }}{{ .Values.securityContext.readOnlyRootFilesystem }}{{ end }}
             capabilities:
               {{- toYaml .Values.securityContext.capabilities | nindent 14 }}
           env:
@@ -51,9 +51,23 @@ spec:
               value: {{ .Values.config.allowedWorkingDirs | quote }}
             - name: RUNTIME_ALLOWED_FILESYSTEM_ROOTS
               value: {{ .Values.config.allowedFilesystemRoots | quote }}
+            {{- if eq .Values.llm.target "ollama" }}
+            # OLLAMA_HOST tells the ollama CLI (and any Go HTTP client)
+            # where the externally-managed ollama daemon is listening.
+            # Default points at the standard ollama/ollama Helm release
+            # in the "ollama" namespace. Override via llm.ollamaHost.
+            - name: OLLAMA_HOST
+              value: {{ .Values.llm.ollamaHost | quote }}
+            {{- end }}
           envFrom:
             - secretRef:
                 name: {{ include "sophia-runtime-adapters.fullname" . }}-secrets
+            {{- if and (eq .Values.llm.target "aider") .Values.secrets.aiderEnv }}
+            # aider API keys (ANTHROPIC_API_KEY / OPENAI_API_KEY).
+            # Only mounted when llm.target="aider" and secrets.aiderEnv is set.
+            - secretRef:
+                name: {{ include "sophia-runtime-adapters.fullname" . }}-aider-env
+            {{- end }}
           ports:
             - name: http
               containerPort: 8080
@@ -72,7 +86,7 @@ spec:
             periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-          {{- if .Values.llm.enabled }}
+          {{- if eq .Values.llm.target "opencode" }}
           volumeMounts:
             - name: opencode-config
               mountPath: /home/nonroot/.config/opencode/opencode.json
@@ -90,7 +104,7 @@ spec:
             - name: opencode-data
               mountPath: /home/nonroot/.local/share/opencode
           {{- end }}
-      {{- if .Values.llm.enabled }}
+      {{- if eq .Values.llm.target "opencode" }}
       volumes:
         - name: opencode-config
           configMap:
