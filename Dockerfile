@@ -103,28 +103,20 @@ RUN apt-get update \
  && rm -rf /tmp/opencode-dl \
  && /usr/local/bin/opencode --version
 
-# ---- runtime-adapters-llm runtime stage ---------------------------------
-# debian:12-slim base with opencode CLI + git + tini for cycles SDD reales.
-# Coexists with the distroless `runtime-adapters` target above:
-#   - `runtime-adapters` (default): minimal, no LLM dispatcher possible
-#   - `runtime-adapters-llm` (this): can spawn opencode subprocess
+# ---- llm-base stage (shared LLM runtime foundation) ---------------------
+# Common base for all three LLM-capable targets:
+#   - runtime-adapters-llm-opencode (opencode CLI dispatcher)
+#   - runtime-adapters-llm-ollama   (ollama binary, daemon runs externally)
+#   - runtime-adapters-llm-aider    (aider-chat via pipx)
 #
-# Use this target when shell.exec@v1 needs to invoke opencode (i.e. the
-# orchestrator's dispatcher is wired to OpenCode). For pure capability
-# execution without LLM, prefer the distroless target.
+# Provides: debian:12-slim + tini PID 1 + nonroot user 65532 + ca-certificates
+# + git + openssh-client.
 #
-# Tini (PID 1) is REQUIRED here per upstream bug anomalyco/opencode#17516
-# (opencode run hangs after tool calls); tini reaps zombies and forwards
-# signals cleanly. Combined with shell.exec@v1's enforced timeout this
-# bounds the worst-case impact of the bug.
-#
-# Permissions defaults are set via /home/nonroot/.config/opencode/opencode.json
-# (mounted as a read-only secret in compose.llm.yaml) to avoid the upstream
-# headless-hang behavior of the default `ask` permission level (issue #14473).
-#
-# See ADR-0009 for full design rationale (base image choice, version pin,
-# checksum policy, multi-arch support).
-FROM debian:12-slim AS runtime-adapters-llm
+# Tini (PID 1) is REQUIRED across all LLM targets: LLM subprocesses fork
+# child processes that may not exit cleanly; tini reaps zombies and forwards
+# signals correctly. Combined with shell.exec@v1's enforced timeout_budget_ms
+# this bounds the worst-case impact of any upstream subprocess hang.
+FROM debian:12-slim AS llm-base
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
         ca-certificates \
@@ -136,10 +128,158 @@ RUN apt-get update \
  && useradd --system --uid 65532 --gid 65532 \
         --home-dir /home/nonroot --create-home \
         --shell /bin/bash nonroot \
- && mkdir -p /home/nonroot/.config/opencode /home/nonroot/.local/share/opencode \
+ && mkdir -p /home/nonroot/.config /home/nonroot/.local/share \
+ && chown -R nonroot:nonroot /home/nonroot
+
+COPY --from=build /out/runtime-adapters /usr/local/bin/runtime-adapters
+
+ENV HOME=/home/nonroot
+USER nonroot
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/runtime-adapters"]
+
+# ---- runtime-adapters-llm-opencode runtime stage ------------------------
+# debian:12-slim base with opencode CLI + git + tini for real SDD cycles.
+# Coexists with the distroless `runtime-adapters` target:
+#   - `runtime-adapters`             (default): minimal, no LLM dispatcher
+#   - `runtime-adapters-llm-opencode` (this):   can spawn opencode subprocess
+#
+# Use this target when shell.exec@v1 needs to invoke opencode (the
+# orchestrator's dispatcher is wired to OpenCode). For pure capability
+# execution without LLM, prefer the distroless target.
+#
+# Permissions defaults are set via /home/nonroot/.config/opencode/opencode.json
+# (mounted as a read-only secret in compose.llm.yaml) to avoid the upstream
+# headless-hang behavior of the default `ask` permission level (issue #14473).
+#
+# See ADR-0012 for full design rationale (base image choice, version pin,
+# checksum policy, multi-arch support).
+FROM llm-base AS runtime-adapters-llm-opencode
+RUN mkdir -p /home/nonroot/.config/opencode /home/nonroot/.local/share/opencode \
  && chown -R nonroot:nonroot /home/nonroot
 COPY --from=opencode-bin /usr/local/bin/opencode /usr/local/bin/opencode
-COPY --from=build /out/runtime-adapters /usr/local/bin/runtime-adapters
+
+# ---- runtime-adapters-llm (alias for runtime-adapters-llm-opencode) -----
+# Backward-compatible alias. Existing deployments that reference the
+# `-llm` tag suffix continue to work without a values.yaml change.
+# New deployments should use the explicit `-llm-opencode` suffix per
+# the llm.target="opencode" Helm value.
+FROM runtime-adapters-llm-opencode AS runtime-adapters-llm
+
+# ---- ollama-bin stage ---------------------------------------------------
+# Fetches the official ollama static binary for the target architecture.
+# The install script from ollama.com/download is the upstream-recommended
+# installation method; we extract only the binary placement from it and
+# do NOT start the daemon here. The operator is expected to run the ollama
+# daemon externally (ollama/ollama image or host binary) and expose it at
+# OLLAMA_HOST. The adapter hits that endpoint; no GPU drivers needed in
+# this image.
+#
+# Install approach: the official install script places the binary at
+# /usr/local/bin/ollama. We replicate that placement directly by
+# downloading the prebuilt binary from the GitHub release assets —
+# same source the install script uses — avoiding the need to execute
+# the script in the build context. Asset naming:
+#   amd64 → ollama-linux-amd64.tgz   (inside: bin/ollama)
+#   arm64 → ollama-linux-arm64.tgz
+FROM debian:12-slim AS ollama-bin
+# Default pinned here (inside the stage) so it takes effect without
+# --build-arg. Pattern matches the opencode-bin stage above.
+ARG OLLAMA_VERSION=0.9.0
+ARG TARGETARCH
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates curl \
+ && rm -rf /var/lib/apt/lists/* \
+ && case "${TARGETARCH}" in \
+      amd64) ASSET="ollama-linux-amd64.tgz" ;; \
+      arm64) ASSET="ollama-linux-arm64.tgz" ;; \
+      *) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+ && mkdir -p /tmp/ollama-dl \
+ && curl -fsSL \
+      "https://github.com/ollama/ollama/releases/download/v${OLLAMA_VERSION}/${ASSET}" \
+      -o /tmp/ollama-dl/ollama.tgz \
+ && tar -xzf /tmp/ollama-dl/ollama.tgz -C /tmp/ollama-dl \
+ && install -m 0755 /tmp/ollama-dl/bin/ollama /usr/local/bin/ollama \
+ && rm -rf /tmp/ollama-dl \
+ && /usr/local/bin/ollama --version
+
+# ---- runtime-adapters-llm-ollama runtime stage --------------------------
+# LLM target for ollama-backed dispatch. Bundles the ollama BINARY only —
+# NOT the daemon. The operator runs the ollama daemon externally (e.g.
+# ollama/ollama:latest Kubernetes Deployment or a host process with GPU
+# access) and exposes it at OLLAMA_HOST. This image hits that endpoint
+# via shell.exec@v1 → `ollama run <model>` or via the Ollama HTTP API
+# directly from Go code.
+#
+# Why binary-only (no daemon)?
+#   - GPU drivers, CUDA/ROCm libs, and large model weights live outside
+#     this container by design — putting them here would balloon the image
+#     to tens of GB and break the single-responsibility principle.
+#   - The operator manages model availability and GPU scheduling on the
+#     daemon side; the adapter only needs the CLI binary to interact.
+#
+# OLLAMA_HOST default: http://ollama.ollama.svc.cluster.local:11434
+# Override via the Helm chart (llm.target="ollama" → env var injected).
+FROM llm-base AS runtime-adapters-llm-ollama
+COPY --from=ollama-bin /usr/local/bin/ollama /usr/local/bin/ollama
+
+# ---- aider-bin stage ----------------------------------------------------
+# Installs aider-chat via pipx so Python dependencies are fully isolated
+# from the system Python. pipx creates a dedicated virtualenv per tool in
+# /root/.local/pipx/venvs/aider-chat/ and symlinks the binary into
+# /root/.local/bin/aider (or with --home the pipx home directory).
+#
+# We install as root in this intermediate stage so that we can then copy
+# the entire pipx virtualenv tree into the final llm-base image and place
+# the binary at /usr/local/bin/aider (required: allowedCommandsPath is
+# /usr/local/bin:/usr/bin:/bin in both compose and Helm).
+#
+# pipx vs pip:
+#   - pip install --system-site-packages pollutes the system Python which
+#     risks breakage if any other package later pip-installs conflicting
+#     deps; pipx strictly isolates per-tool.
+#   - The resulting venv is self-contained and copyable as-is; no pip or
+#     Python toolchain is needed in the final runtime image beyond the
+#     venv's own interpreter.
+FROM debian:12-slim AS aider-bin
+ARG AIDER_VERSION=0.82.2
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        python3 \
+        python3-venv \
+        pipx \
+ && rm -rf /var/lib/apt/lists/* \
+ && PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin \
+    pipx install "aider-chat==${AIDER_VERSION}" \
+ && /usr/local/bin/aider --version
+
+# ---- runtime-adapters-llm-aider runtime stage ---------------------------
+# LLM target for aider-backed dispatch. aider-chat lands at
+# /usr/local/bin/aider (from the pipx install above copied via the
+# aider-bin stage), satisfying the allowedCommandsPath whitelist
+# (/usr/local/bin:/usr/bin:/bin) without any config change.
+#
+# aider does NOT bundle its own API keys — the operator MUST supply:
+#   ANTHROPIC_API_KEY  — for Claude models (recommended)
+#   OPENAI_API_KEY     — for GPT-4 models
+# via the Helm chart (llm.target="aider" → secrets.aiderEnv Secret).
+#
+# The Python venv (created by pipx in aider-bin) is self-contained and
+# does not require pip/pipx/python3 to be present in the runtime image —
+# the venv ships its own Python interpreter. We install python3 and
+# python3-venv via apt for libpython3.X.so (the shared library the venv
+# interpreter links to at runtime), then clean up the Python dev tooling.
+FROM llm-base AS runtime-adapters-llm-aider
+# python3 provides the shared library (libpython3.11.so.1.0 on debian:12)
+# that the pipx-created venv interpreter links against at runtime. Without
+# it the aider binary crashes with "error while loading shared libraries".
+USER root
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+        python3 \
+ && rm -rf /var/lib/apt/lists/*
+COPY --from=aider-bin /opt/pipx /opt/pipx
+COPY --from=aider-bin /usr/local/bin/aider /usr/local/bin/aider
 USER nonroot
-ENV HOME=/home/nonroot
-ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/runtime-adapters"]
