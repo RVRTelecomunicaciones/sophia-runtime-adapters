@@ -27,7 +27,7 @@ func TestDedupLabel_FormatAlertColonTwelveHexChars(t *testing.T) {
 		t.Errorf("DedupLabel suffix length = %d, want 12", len(suffix))
 	}
 	for _, c := range suffix {
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
 			t.Errorf("DedupLabel suffix contains non-hex char %q in %q", c, got)
 		}
 	}

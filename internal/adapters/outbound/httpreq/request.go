@@ -70,7 +70,7 @@ func (a *Adapter) request(ctx context.Context, payload valueobjects.Payload) (se
 		}
 		return &httpRaw{runErr: err, durationMs: a.elapsedMs(t0)}, nil
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Read up to maxBody+1 to detect truncation.
 	limited := io.LimitReader(resp.Body, int64(maxBody)+1)

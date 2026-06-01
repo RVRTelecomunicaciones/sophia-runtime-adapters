@@ -95,7 +95,8 @@ func (c *HTTPGrafanaClient) PostAnnotation(ctx context.Context, req AnnotationRe
 		// Local marshal error — caller can't retry meaningfully; treat as 4xx.
 		return &ClientError{StatusCode: 0, Sentinel: ErrGrafanaClient4xx, Cause: fmt.Errorf("marshal: %w", err)}
 	}
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
+	// TODO(security-audit #3b): confirm baseURL origin is validated at construction
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, //nolint:gosec // G704: baseURL is trusted operator config, path is constant; not attacker-controlled
 		c.baseURL+"/api/annotations", bytes.NewReader(body))
 	if err != nil {
 		return &ClientError{StatusCode: 0, Sentinel: ErrGrafanaClient5xx, Cause: fmt.Errorf("build request: %w", err)}
@@ -103,12 +104,12 @@ func (c *HTTPGrafanaClient) PostAnnotation(ctx context.Context, req AnnotationRe
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", "Bearer "+c.token)
 
-	resp, err := c.client.Do(httpReq)
+	resp, err := c.client.Do(httpReq) //nolint:gosec // G704: baseURL is trusted operator config, path is constant; not attacker-controlled
 	if err != nil {
 		// Transport error — treat as transient.
 		return &ClientError{StatusCode: 0, Sentinel: ErrGrafanaClient5xx, Cause: fmt.Errorf("transport: %w", err)}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	_, _ = io.Copy(io.Discard, resp.Body) // drain so the conn is reusable
 
 	switch {

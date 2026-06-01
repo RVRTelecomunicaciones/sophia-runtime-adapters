@@ -65,7 +65,7 @@ type rawExpectedOutcome struct {
 // the Catalog. This function does NOT do path hardening (Task 1.7 adds
 // LoadProfile that wraps parseProfile with allowlist + symlink check).
 func parseProfile(path string, cat Catalog) (*Profile, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // G304: path is allowlist-validated by LoadProfile (loader.go) before parseProfile is called; not user-controlled input
 	if err != nil {
 		return nil, fmt.Errorf("chaos: read profile %q: %w", path, err)
 	}

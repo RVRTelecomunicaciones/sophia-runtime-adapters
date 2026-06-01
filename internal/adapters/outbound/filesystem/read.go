@@ -39,7 +39,7 @@ func (a *Adapter) readFile(ctx context.Context, payload valueobjects.Payload) (s
 	if err != nil {
 		return &readRaw{runErr: fmt.Errorf("open: %w", err), durationMs: a.elapsedMs(t0)}, nil
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	info, err := f.Stat()
 	if err != nil {

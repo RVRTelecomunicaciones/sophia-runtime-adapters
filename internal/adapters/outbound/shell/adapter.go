@@ -87,7 +87,7 @@ func (a *Adapter) Execute(ctx context.Context, cap valueobjects.Capability, payl
 	}
 
 	// Build command — no shell interpolation, direct exec.
-	cmd := exec.CommandContext(ctx, resolvedCmd, p.Args...)
+	cmd := exec.CommandContext(ctx, resolvedCmd, p.Args...) //nolint:gosec // G204: command is allowlist-validated by resolveCommand; args passed directly to exec.CommandContext, no shell interpolation
 	cmd.Dir = resolvedWD
 	cmd.Env = a.cfg.buildEnv(p.Env)
 	if len(p.Stdin) > 0 {

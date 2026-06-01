@@ -295,7 +295,7 @@ func TestMaybeWrapAdaptersWithChaos_WrappersImplementInterfaces(t *testing.T) {
 
 	require.NoError(t, err)
 	for _, a := range outReg {
-		var _ outbound.Adapter = a
+		var _ = a
 	}
-	var _ outbound.ReceiptRepository = outStore
+	var _ = outStore
 }

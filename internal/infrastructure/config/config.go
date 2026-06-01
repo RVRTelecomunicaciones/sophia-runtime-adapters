@@ -126,7 +126,7 @@ func (c Config) Validate() error {
 		return fmt.Errorf("RuntimeVersion must not be empty")
 	}
 	if c.Hostname == "" {
-		return fmt.Errorf("Hostname must not be empty")
+		return fmt.Errorf("hostname must not be empty")
 	}
 	if !validProvenanceSource(c.ProvenanceSource) {
 		return fmt.Errorf("ProvenanceSource %q invalid (must be one of governance|sdk|http|cli|test)", c.ProvenanceSource)

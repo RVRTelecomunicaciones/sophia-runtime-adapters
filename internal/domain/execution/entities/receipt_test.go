@@ -202,8 +202,8 @@ func TestNewExecutionReceipt_NilClockRejected(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for nil clock, got nil")
 	}
-	if !strings.Contains(err.Error(), "Clock") {
-		t.Errorf("error %q should mention Clock", err.Error())
+	if !strings.Contains(err.Error(), "clock") {
+		t.Errorf("error %q should mention clock", err.Error())
 	}
 }
 
