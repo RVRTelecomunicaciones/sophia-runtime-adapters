@@ -80,7 +80,7 @@ func NewExecutionHandle(gen IDGenerator, cid shared.CorrelationID, cap valueobje
 		return ExecutionHandle{}, fmt.Errorf("IDGenerator is required")
 	}
 	if clk == nil {
-		return ExecutionHandle{}, fmt.Errorf("Clock is required")
+		return ExecutionHandle{}, fmt.Errorf("clock is required")
 	}
 	hid, err := shared.NewHandleID(gen.New())
 	if err != nil {

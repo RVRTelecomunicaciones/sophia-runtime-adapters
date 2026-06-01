@@ -100,7 +100,7 @@ func NewExecutionReceipt(
 		return ExecutionReceipt{}, fmt.Errorf("IDGenerator is required")
 	}
 	if clk == nil {
-		return ExecutionReceipt{}, fmt.Errorf("Clock is required")
+		return ExecutionReceipt{}, fmt.Errorf("clock is required")
 	}
 	rid, err := shared.NewReceiptID(gen.New())
 	if err != nil {

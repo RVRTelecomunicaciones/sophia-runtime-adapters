@@ -1,16 +1,21 @@
+# Schema v2 — golangci-lint >= v2.x.
+# Migrated from the v1 schema (disable-all/linters-settings) on 2026-06-01.
+# CI uses golangci-lint-action@v7 with version v2.12 (binary mode); the v7
+# action ships binaries built with a recent Go, so they lint Go 1.26 code
+# without the "binary built with an older Go" rejection — `goinstall` is no
+# longer needed.
+version: "2"
+
 run:
   timeout: 5m
-  go: "1.26"
   tests: true
 
 linters:
-  disable-all: true
+  default: none
   enable:
     - errcheck
     - errorlint
     - gocritic
-    - gofmt
-    - goimports
     - gosec
     - govet
     - ineffassign
@@ -19,11 +24,27 @@ linters:
     - staticcheck
     - unused
 
-linters-settings:
-  gosec:
-    excludes:
-      - G104 # errcheck covers it
-  revive:
+  settings:
+    gosec:
+      excludes:
+        - G104 # errcheck covers it
+    revive:
+      rules:
+        - name: exported
+          disabled: true # we'll add doc.go files later
+
+  exclusions:
+    generated: lax
     rules:
-      - name: exported
-        disabled: true # we'll add doc.go files later
+      # Test files legitimately ignore resp.Body.Close() errors, use 0755 temp
+      # dirs, embed fixture credentials in fake DSNs, and open files via
+      # variables — none are production threats.
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gosec
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

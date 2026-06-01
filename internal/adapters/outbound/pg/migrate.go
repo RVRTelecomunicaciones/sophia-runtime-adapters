@@ -29,7 +29,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	if err != nil {
 		return fmt.Errorf("embedded migration source: %w", err)
 	}
-	defer src.Close()
+	defer func() { _ = src.Close() }()
 
 	// Acquire a dedicated connection; golang-migrate's pgx/v5 driver
 	// requires a stdlib-compatible *sql.DB OR a pgx.Conn. We adapt
@@ -81,7 +81,7 @@ func MigrateDSN(ctx context.Context, dsn string) error {
 	if err != nil {
 		return fmt.Errorf("embedded migration source: %w", err)
 	}
-	defer src.Close()
+	defer func() { _ = src.Close() }()
 
 	m, err := migrate.NewWithSourceInstance("iofs", src, "pgx5://"+stripScheme(dsn))
 	if err != nil {

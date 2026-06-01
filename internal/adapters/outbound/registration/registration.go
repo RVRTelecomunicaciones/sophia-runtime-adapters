@@ -108,7 +108,7 @@ func RegisterAllPhase1(
 func VerifyCoversPhase1Catalog(normalizer *services.ResultNormalizer) error {
 	caps, err := valueobjects.NewPhase1Capabilities()
 	if err != nil {
-		return fmt.Errorf("Phase 1 catalog: %w", err)
+		return fmt.Errorf("phase 1 catalog: %w", err)
 	}
 	registered := map[string]bool{}
 	for _, c := range normalizer.Registered() {
@@ -116,7 +116,7 @@ func VerifyCoversPhase1Catalog(normalizer *services.ResultNormalizer) error {
 	}
 	for _, c := range caps {
 		if !registered[c.Canonical()] {
-			return fmt.Errorf("Phase 1 catalog mismatch: capability %q has no registered normalizer", c.Canonical())
+			return fmt.Errorf("phase 1 catalog mismatch: capability %q has no registered normalizer", c.Canonical())
 		}
 	}
 	return nil

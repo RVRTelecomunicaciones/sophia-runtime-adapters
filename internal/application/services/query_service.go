@@ -30,10 +30,10 @@ type QueryServiceConfig struct {
 // NewQueryService validates config and returns a ready service.
 func NewQueryService(cfg QueryServiceConfig) (*QueryServiceImpl, error) {
 	if cfg.Registry == nil {
-		return nil, fmt.Errorf("Registry is required")
+		return nil, fmt.Errorf("registry is required")
 	}
 	if cfg.Receipts == nil {
-		return nil, fmt.Errorf("Receipts is required")
+		return nil, fmt.Errorf("receipts is required")
 	}
 	if cfg.RuntimeVersion == "" {
 		return nil, fmt.Errorf("RuntimeVersion is required")

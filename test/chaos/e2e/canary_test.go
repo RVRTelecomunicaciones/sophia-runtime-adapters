@@ -208,8 +208,8 @@ func readSLOName(t *testing.T) string {
 		Labels map[string]string `yaml:"labels"`
 	}
 	type groupYAML struct {
-		Name  string      `yaml:"name"`
-		Rules []ruleYAML  `yaml:"rules"`
+		Name  string     `yaml:"name"`
+		Rules []ruleYAML `yaml:"rules"`
 	}
 	type docYAML struct {
 		Groups []groupYAML `yaml:"groups"`

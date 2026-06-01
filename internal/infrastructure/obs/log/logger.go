@@ -37,7 +37,7 @@ func New(cfg Config) (*Logger, error) {
 	// Wire the writer: stdout-only or safe fanout to mirror file.
 	var w io.Writer = os.Stdout
 	if cfg.MirrorPath != "" {
-		mirror, err := os.OpenFile(cfg.MirrorPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+		mirror, err := os.OpenFile(cfg.MirrorPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 		if err != nil {
 			return nil, fmt.Errorf("log.New: open mirror %q: %w", cfg.MirrorPath, err)
 		}
